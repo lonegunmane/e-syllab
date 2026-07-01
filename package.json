@@ -1,0 +1,41 @@
+{
+  "name": "e-sylab-secure-learning",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --env-file=.env.local server.ts",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "npx tsx server.ts"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@google/genai": "^1.35.0",
+    "@solana/web3.js": "^1.98.4",
+    "buffer": "^6.0.3",
+    "express": "^5.2.1",
+    "lucide-react": "^0.462.0",
+    "motion": "^12.38.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "recharts": "^2.13.0",
+    "resend": "^6.12.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.7.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "tsx": "^4.21.0",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

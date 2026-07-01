@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.local
+school-keypair.json
+*-keypair.json
+solana-release-x86_64-pc-windows-msvc/
+migrated_prompt_history/
+.vercel/

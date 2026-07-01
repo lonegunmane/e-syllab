@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.vercel/
+
+# !! CRITICAL — never commit these !!
+.env
+.env.local
+.env.production
+school-keypair.json
+*-keypair.json
+
+# Solana CLI binary (no need in repo)
+solana-release-x86_64-pc-windows-msvc/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

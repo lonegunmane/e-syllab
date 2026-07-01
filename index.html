@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- importmap MUST be first script in head -->
+  <script type="importmap">
+  {
+    "imports": {
+      "vite": "https://esm.sh/vite@^7.3.1",
+      "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+      "react/": "https://esm.sh/react@^19.2.3/",
+      "react": "https://esm.sh/react@^19.2.3",
+      "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+      "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+      "recharts": "https://esm.sh/recharts@^3.6.0",
+      "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    }
+  }
+  </script>
+
+  <!-- Buffer polyfill — must come before any module that uses Buffer -->
+  <script type="module">
+    import { Buffer } from 'https://esm.sh/buffer@6.0.3';
+    window.Buffer   = Buffer;
+    globalThis.Buffer = Buffer;
+  </script>
+
+  <!-- Core meta -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="description" content="E-SYLLAB — Blockchain-secured digital learning platform for Zambian secondary schools." />
+
+  <!-- PWA — theme and app behaviour -->
+  <meta name="theme-color" content="#7c3aed" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="E-SYLLAB" />
+
+  <!-- Prevent phone number detection on iOS -->
+  <meta name="format-detection" content="telephone=no" />
+
+  <!-- Title -->
+  <title>E-SYLLAB — Secure Learning</title>
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="/manifest.json" />
+
+  <!-- Apple touch icon (shown on iOS home screen) -->
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png" />
+
+  <!-- Apple splash screens (shown while app is loading on iOS) -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              50:  '#f5f3ff',
+              100: '#ede9fe',
+              200: '#ddd6fe',
+              300: '#c4b5fd',
+              400: '#a78bfa',
+              500: '#8b5cf6',
+              600: '#7c3aed',
+              700: '#6d28d9',
+              800: '#5b21b6',
+              900: '#4c1d95',
+              950: '#2e1065',
+            },
+          },
+          // Safe area insets for notched phones (iPhone X+)
+          padding: {
+            'safe-top':    'env(safe-area-inset-top)',
+            'safe-bottom': 'env(safe-area-inset-bottom)',
+            'safe-left':   'env(safe-area-inset-left)',
+            'safe-right':  'env(safe-area-inset-right)',
+          },
+        },
+      },
+    };
+  </script>
+
+  <!-- Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Base ──────────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      /* Prevent iOS bounce scroll on the body */
+      overscroll-behavior: none;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #0c0a1f;
+      background-image:
+        radial-gradient(at 0% 0%, rgba(124,58,237,0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(139,92,246,0.10) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(167,139,250,0.05) 0px, transparent 50%);
+      min-height: 100vh;
+      /* Fill the safe area on notched phones */
+      min-height: -webkit-fill-available;
+      color: #f8fafc;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    #root {
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+      /* Push content below the iOS status bar */
+      padding-top: env(safe-area-inset-top);
+    }
+
+    /* ── Scrollbars ─────────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1a1635; }
+    ::-webkit-scrollbar-thumb { background: #4c1d95; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #6d28d9; }
+
+    /* ── Glass card ─────────────────────────────────────────────────────────── */
+    .glass-card {
+      background: rgba(255,255,255,0.03);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 8px 32px 0 rgba(0,0,0,0.37);
+    }
+
+    /* ── Animations ─────────────────────────────────────────────────────────── */
+    .animate-in         { animation: animIn 0.3s ease-out; }
+    .fade-in            { animation: fadeIn 0.3s ease-out; }
+    .slide-in-from-top-2    { animation: slideTop 0.3s ease-out; }
+    .slide-in-from-bottom-2 { animation: slideBot 0.3s ease-out; }
+
+    @keyframes animIn    { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeIn    { from { opacity:0; } to { opacity:1; } }
+    @keyframes slideTop  { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes slideBot  { from { opacity:0; transform:translateY(8px); }  to { opacity:1; transform:translateY(0); } }
+
+    /* ── Mobile tap highlight ───────────────────────────────────────────────── */
+    button, a { -webkit-tap-highlight-color: transparent; }
+
+    /* ── Bottom nav safe area (Android/iOS) ────────────────────────────────── */
+    .bottom-nav {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    /* ── PWA install banner ─────────────────────────────────────────────────── */
+    #install-banner {
+      display: none;
+      position: fixed;
+      bottom: calc(env(safe-area-inset-bottom) + 1rem);
+      left: 1rem;
+      right: 1rem;
+      z-index: 9999;
+      background: rgba(26,22,53,0.95);
+      border: 1px solid rgba(124,58,237,0.4);
+      border-radius: 1rem;
+      padding: 1rem 1.25rem;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      animation: slideBot 0.4s ease-out;
+    }
+    #install-banner.show { display: flex; align-items: center; gap: 1rem; }
+    #install-banner .ib-icon { font-size: 2rem; flex-shrink: 0; }
+    #install-banner .ib-text { flex: 1; }
+    #install-banner .ib-title { font-weight: 700; color: #fff; font-size: 0.9rem; }
+    #install-banner .ib-sub   { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+    #install-banner .ib-btn   {
+      padding: 0.5rem 1rem;
+      background: #7c3aed;
+      color: #fff;
+      border: none;
+      border-radius: 0.75rem;
+      font-weight: 700;
+      font-size: 0.8rem;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #install-banner .ib-close {
+      background: none; border: none; color: #64748b;
+      cursor: pointer; font-size: 1.2rem; flex-shrink: 0; padding: 0.25rem;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <!-- PWA install prompt banner -->
+  <div id="install-banner">
+    <span class="ib-icon">📚</span>
+    <div class="ib-text">
+      <div class="ib-title">Add E-SYLLAB to your home screen</div>
+      <div class="ib-sub">Works offline · No app store needed</div>
+    </div>
+    <button class="ib-btn" id="install-btn">Install</button>
+    <button class="ib-close" id="dismiss-btn">✕</button>
+  </div>
+
+  <!-- App entry point -->
+  <script type="module" src="/index.tsx"></script>
+
+  <!-- PWA install prompt logic -->
+  <script>
+    let deferredPrompt = null;
+    const banner      = document.getElementById('install-banner');
+    const installBtn  = document.getElementById('install-btn');
+    const dismissBtn  = document.getElementById('dismiss-btn');
+
+    // Capture the browser's install prompt
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      deferredPrompt = e;
+      // Only show if not already installed and user hasn't dismissed before
+      if (!localStorage.getItem('pwa-dismissed')) {
+        setTimeout(() => banner.classList.add('show'), 3000);
+      }
+    });
+
+    installBtn?.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      banner.classList.remove('show');
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log('[PWA] Install outcome:', outcome);
+      deferredPrompt = null;
+    });
+
+    dismissBtn?.addEventListener('click', () => {
+      banner.classList.remove('show');
+      localStorage.setItem('pwa-dismissed', '1');
+    });
+
+    // Hide banner if already installed
+    window.addEventListener('appinstalled', () => {
+      banner.classList.remove('show');
+      deferredPrompt = null;
+      console.log('[PWA] App installed successfully');
+    });
+  </script>
+</body>
+</html>
