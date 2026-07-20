@@ -227,7 +227,7 @@ export const Layout: React.FC<LayoutProps> = ({
                 <p className="text-sm font-semibold text-white leading-none">{user.name}</p>
                 <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mt-0.5 capitalize">{user.role}</p>
               </div>
-              <button onClick={() => setIsAvatarEditing(!isAvatarEditing)} className="relative block rounded-full focus:outline-none group">
+              <button onClick={() => setIsAvatarEditing(!isAvatarEditing)} className="relative block rounded-full bg-slate-950/90 border border-white/10 p-0.5 focus:outline-none group">
                 <img
                   src={user.avatar}
                   className="w-9 h-9 rounded-full object-cover border-2 border-white/10 group-hover:border-primary-500 transition-all shadow-lg"
@@ -240,7 +240,7 @@ export const Layout: React.FC<LayoutProps> = ({
 
               {/* Avatar edit dropdown */}
               {isAvatarEditing && (
-                <div className="absolute right-0 top-full mt-2 w-64 glass-card p-4 rounded-xl z-40 animate-in fade-in slide-in-from-top-1">
+                <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900/95 border border-white/10 shadow-lg p-4 rounded-xl z-40 animate-in fade-in slide-in-from-top-1">
                   <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
                     <Camera className="w-4 h-4 text-primary-400" /> Change Profile Picture
                   </h3>

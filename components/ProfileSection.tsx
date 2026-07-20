@@ -48,7 +48,7 @@ export const ProfileSection: React.FC<ProfileSectionProps> = ({ user, onUpdateUs
             await new Promise(resolve => setTimeout(resolve, 800));
             const updatedUser = db.updateUserProfile(user.id, formData);
             if (newPassword.trim() !== '') {
-                db.updatePassword(user.id, newPassword);
+                await db.updatePassword(user.id, newPassword);
             }
             if (updatedUser) {
                 onUpdateUser(updatedUser);

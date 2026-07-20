@@ -1,5 +1,6 @@
 import { User, UserRole, CurriculumResource, Message, GradeRecord, ResourceCategory, VaultDocument, DocumentStatus } from '../types';
 import { blockchainService } from './blockchain';
+import bcrypt from 'bcryptjs';
 
 // Interface matching the 'auth_credentials' table
 export interface AuthCredential {
@@ -55,8 +56,11 @@ export const db = {
         }
       ];
       
+      // Use bcryptjs.hashSync for synchronous hashing in initialization
+      const adminPasswordHash = bcrypt.hashSync('1357', 10);
+      
       const initialCreds: AuthCredential[] = [
-        { userId: '3', passwordHash: this.hashPassword('1357'), lastLogin: null, createdAt: new Date().toISOString(), passwordResetRequired: true }
+        { userId: '3', passwordHash: adminPasswordHash, lastLogin: null, createdAt: new Date().toISOString(), passwordResetRequired: true }
       ];
 
       const initialCurriculum: CurriculumResource[] = [
@@ -100,8 +104,9 @@ export const db = {
     }
   },
 
+  // Deprecated: Use bcrypt directly instead. This is kept for backward compatibility only.
   hashPassword(password: string): string {
-    return btoa(password); 
+    return bcrypt.hashSync(password, 10);
   },
 
   findUserByEmail(email: string): User | undefined {
@@ -119,7 +124,7 @@ export const db = {
     return credentials.find(c => c.userId === userId);
   },
 
-  authenticateUser(email: string, password: string): { user: User, needsPasswordReset: boolean } | null {
+  async authenticateUser(email: string, password: string): Promise<{ user: User, needsPasswordReset: boolean } | null> {
     this.init();
     const allUsers = this.getTable(this.tables.USERS) as User[];
     const potentialUsers = allUsers.filter(u => u.email === email);
@@ -130,23 +135,28 @@ export const db = {
 
     for (const user of potentialUsers) {
       const cred = allCredentials.find(c => c.userId === user.id);
-      if (cred && cred.passwordHash === this.hashPassword(password)) {
-        const credIndex = allCredentials.findIndex(c => c.userId === user.id);
-        if (credIndex > -1) {
-          allCredentials[credIndex].lastLogin = new Date().toISOString();
-          this.saveTable(this.tables.CREDENTIALS, allCredentials);
+      if (cred) {
+        // Use bcryptjs to compare passwords securely
+        const passwordMatch = await bcrypt.compare(password, cred.passwordHash);
+        if (passwordMatch) {
+          const credIndex = allCredentials.findIndex(c => c.userId === user.id);
+          if (credIndex > -1) {
+            allCredentials[credIndex].lastLogin = new Date().toISOString();
+            this.saveTable(this.tables.CREDENTIALS, allCredentials);
+          }
+          return { user, needsPasswordReset: !!cred.passwordResetRequired };
         }
-        return { user, needsPasswordReset: !!cred.passwordResetRequired };
       }
     }
     return null;
   },
   
-  updatePassword(userId: string, newPassword: string): void {
+  async updatePassword(userId: string, newPassword: string): Promise<void> {
     const credentials = this.getTable(this.tables.CREDENTIALS) as AuthCredential[];
     const credIndex = credentials.findIndex(c => c.userId === userId);
     if (credIndex > -1) {
-        credentials[credIndex].passwordHash = this.hashPassword(newPassword);
+        // Use bcryptjs to hash the new password securely
+        credentials[credIndex].passwordHash = await bcrypt.hash(newPassword, 10);
         credentials[credIndex].passwordResetRequired = false;
         this.saveTable(this.tables.CREDENTIALS, credentials);
     }
@@ -226,9 +236,12 @@ export const db = {
       newUser.blockchainId = `pending-${Date.now()}`;
     }
 
+    // Use bcryptjs to hash the password securely
+    const passwordHash = await bcrypt.hash(password, 10);
+
     const newCred: AuthCredential = {
       userId: newUser.id,
-      passwordHash: this.hashPassword(password),
+      passwordHash: passwordHash,
       lastLogin: null,
       createdAt: new Date().toISOString()
     };

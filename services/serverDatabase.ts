@@ -1,0 +1,751 @@
+import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import bcrypt from 'bcryptjs';
+import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential } from '../types';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const dbPath = path.join(__dirname, '..', 'data', 'esylab.db');
+
+// Ensure data directory exists
+const dataDir = path.dirname(dbPath);
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+let sqlDb: SqlJsDatabase;
+let SQL: any;
+
+/**
+ * Server Database Service using sql.js
+ * Manages all persistent data in SQLite
+ */
+export const serverDb = {
+  // ─── Initialization ────────────────────────────────────────────────────────
+  async init(): Promise<void> {
+    // Initialize sql.js
+    if (!SQL) {
+      SQL = await initSqlJs();
+    }
+
+    // Load existing database or create new one
+    if (fs.existsSync(dbPath)) {
+      const buf = fs.readFileSync(dbPath);
+      sqlDb = new SQL.Database(buf);
+    } else {
+      sqlDb = new SQL.Database();
+    }
+
+    this.createTables();
+    this.seedInitialData();
+    this.save();
+  },
+
+  save(): void {
+    const data = sqlDb.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(dbPath, buffer);
+  },
+
+  createTables(): void {
+    // Users table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('STUDENT', 'TEACHER', 'ADMIN')),
+        avatar TEXT,
+        blockchainId TEXT,
+        contact TEXT,
+        school TEXT,
+        gender TEXT,
+        residentialAddress TEXT,
+        teachingGrades TEXT,
+        teachingClasses TEXT,
+        teachingSubjects TEXT,
+        grade TEXT,
+        className TEXT,
+        enrolledSubjects TEXT,
+        isProfileComplete BOOLEAN DEFAULT 0,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      )
+    `);
+
+    // Auth credentials table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS auth_credentials (
+        userId TEXT PRIMARY KEY,
+        passwordHash TEXT NOT NULL,
+        lastLogin TEXT,
+        passwordResetRequired BOOLEAN DEFAULT 0,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Curriculum resources table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS curriculum_resources (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        gradeLevel TEXT NOT NULL,
+        description TEXT,
+        category TEXT NOT NULL CHECK(category IN ('DOCUMENT', 'ANNOUNCEMENT')),
+        authorRole TEXT NOT NULL CHECK(authorRole IN ('STUDENT', 'TEACHER', 'ADMIN')),
+        uploadedById TEXT,
+        uploadedByName TEXT,
+        fileName TEXT,
+        fileType TEXT,
+        fileData BLOB,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        FOREIGN KEY (uploadedById) REFERENCES users(id) ON DELETE SET NULL
+      )
+    `);
+
+    // Messages table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        senderId TEXT NOT NULL,
+        senderName TEXT NOT NULL,
+        recipientId TEXT,
+        recipientName TEXT,
+        subject TEXT,
+        content TEXT NOT NULL,
+        \`read\` BOOLEAN DEFAULT 0,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (senderId) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (recipientId) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Grades table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS grades (
+        id TEXT PRIMARY KEY,
+        studentId TEXT NOT NULL,
+        teacherId TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        grade REAL NOT NULL,
+        feedback TEXT,
+        recordedAt TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (teacherId) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Vault documents table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS vault_documents (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        type TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('PENDING', 'APPROVED', 'REJECTED')),
+        teacherId TEXT NOT NULL,
+        teacherName TEXT NOT NULL,
+        fileName TEXT,
+        fileType TEXT,
+        fileData BLOB,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        FOREIGN KEY (teacherId) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+  },
+
+  seedInitialData(): void {
+    try {
+      // Check if admin exists
+      const stmt = sqlDb.prepare('SELECT id FROM users WHERE email = ?');
+      stmt.bind(['admin@gmail.com']);
+      const hasAdmin = stmt.step();
+      stmt.free();
+
+      if (hasAdmin) {
+        return; // Already seeded
+      }
+
+      const adminId = '3';
+      const now = new Date().toISOString();
+      const passwordHash = bcrypt.hashSync('1357', 10);
+
+      // Insert admin user
+      let insertStmt = sqlDb.prepare(`
+        INSERT INTO users (id, email, name, role, avatar, blockchainId, contact, school, gender, residentialAddress, isProfileComplete, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      insertStmt.bind([
+        adminId,
+        'admin@gmail.com',
+        'Primary Admin',
+        'ADMIN',
+        'https://api.dicebear.com/7.x/avataaars/svg?seed=admin',
+        'sol-genesis-block-3-admin',
+        '777-888-9999',
+        'ESYLAB Headquarters',
+        'Prefer not to say',
+        '789 Pine Rd, Capital City',
+        1,
+        now,
+        now,
+      ]);
+      insertStmt.step();
+      insertStmt.free();
+
+      // Insert admin credentials
+      insertStmt = sqlDb.prepare(`
+        INSERT INTO auth_credentials (userId, passwordHash, passwordResetRequired, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      insertStmt.bind([adminId, passwordHash, 1, now, now]);
+      insertStmt.step();
+      insertStmt.free();
+
+      // Insert sample curriculum
+      insertStmt = sqlDb.prepare(`
+        INSERT INTO curriculum_resources (id, title, subject, gradeLevel, description, category, authorRole, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      insertStmt.bind([
+        'curr-1',
+        'Mathematics Core Syllabus 2025',
+        'Mathematics',
+        'Grade 10',
+        'Official 2025 syllabus for Algebra and Geometry fundamentals. Includes learning objectives and required textbooks.',
+        'DOCUMENT',
+        'ADMIN',
+        now,
+        now,
+      ]);
+      insertStmt.step();
+      insertStmt.free();
+
+      console.log('[Database] Seeded initial data');
+    } catch (err) {
+      console.error('[Database] Seeding error:', err);
+    }
+  },
+
+  // ─── User Operations ───────────────────────────────────────────────────────
+  findUserByEmail(email: string): User | null {
+    const stmt = sqlDb.prepare('SELECT * FROM users WHERE email = ?');
+    stmt.bind([email]);
+
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      stmt.free();
+      return this.rowToUser(row as any);
+    }
+
+    stmt.free();
+    return null;
+  },
+
+  findUserById(id: string): User | null {
+    const stmt = sqlDb.prepare('SELECT * FROM users WHERE id = ?');
+    stmt.bind([id]);
+
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      stmt.free();
+      return this.rowToUser(row as any);
+    }
+
+    stmt.free();
+    return null;
+  },
+
+  getAllUsers(): User[] {
+    const stmt = sqlDb.prepare('SELECT * FROM users ORDER BY createdAt DESC');
+    const users: User[] = [];
+
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      users.push(this.rowToUser(row as any));
+    }
+
+    stmt.free();
+    return users;
+  },
+
+  getUsersByRole(role: UserRole): User[] {
+    const stmt = sqlDb.prepare('SELECT * FROM users WHERE role = ? ORDER BY createdAt DESC');
+    stmt.bind([role]);
+
+    const users: User[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      users.push(this.rowToUser(row as any));
+    }
+
+    stmt.free();
+    return users;
+  },
+
+  updateUserProfile(userId: string, updates: Partial<User>): User | null {
+    const user = this.findUserById(userId);
+    if (!user) return null;
+
+    const now = new Date().toISOString();
+    const validKeys = ['name', 'avatar', 'contact', 'school', 'gender', 'residentialAddress', 'teachingGrades', 'teachingClasses', 'teachingSubjects', 'grade', 'className', 'enrolledSubjects', 'isProfileComplete'];
+
+    for (const [key, value] of Object.entries(updates)) {
+      if (!validKeys.includes(key)) continue;
+
+      let updateStmt: any;
+      if (Array.isArray(value)) {
+        updateStmt = sqlDb.prepare(`UPDATE users SET ${key} = ?, updatedAt = ? WHERE id = ?`);
+        updateStmt.bind([JSON.stringify(value), now, userId]);
+      } else {
+        updateStmt = sqlDb.prepare(`UPDATE users SET ${key} = ?, updatedAt = ? WHERE id = ?`);
+        updateStmt.bind([value, now, userId]);
+      }
+      updateStmt.step();
+      updateStmt.free();
+    }
+
+    this.save();
+    return this.findUserById(userId);
+  },
+
+  async registerUser(user: Omit<User, 'id'>, password: string): Promise<User> {
+    const existingUser = this.findUserByEmail(user.email);
+    if (existingUser) {
+      throw new Error('Email already exists');
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      const adminCount = this.getUsersByRole(UserRole.ADMIN).length;
+      if (adminCount >= 2) {
+        throw new Error('Maximum of 2 administrator accounts allowed');
+      }
+    }
+
+    const userId = this.generateId();
+    const now = new Date().toISOString();
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const insertStmt = sqlDb.prepare(`
+      INSERT INTO users (id, email, name, role, avatar, isProfileComplete, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertStmt.bind([
+      userId,
+      user.email,
+      user.name,
+      user.role,
+      user.avatar || '',
+      user.role === UserRole.ADMIN ? 1 : 0,
+      now,
+      now,
+    ]);
+    insertStmt.step();
+    insertStmt.free();
+
+    const credStmt = sqlDb.prepare(`
+      INSERT INTO auth_credentials (userId, passwordHash, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?)
+    `);
+    credStmt.bind([userId, passwordHash, now, now]);
+    credStmt.step();
+    credStmt.free();
+
+    this.save();
+    return this.findUserById(userId)!;
+  },
+
+  deleteUser(userId: string): void {
+    const stmt = sqlDb.prepare('DELETE FROM users WHERE id = ?');
+    stmt.bind([userId]);
+    stmt.step();
+    stmt.free();
+    this.save();
+  },
+
+  // ─── Authentication ────────────────────────────────────────────────────────
+  async authenticateUser(email: string, password: string): Promise<{ user: User; needsPasswordReset: boolean } | null> {
+    const user = this.findUserByEmail(email);
+    if (!user) return null;
+
+    const stmt = sqlDb.prepare('SELECT * FROM auth_credentials WHERE userId = ?');
+    stmt.bind([user.id]);
+
+    let cred = null;
+    if (stmt.step()) {
+      cred = stmt.getAsObject();
+    }
+    stmt.free();
+
+    if (!cred) return null;
+
+    const passwordMatch = await bcrypt.compare(password, (cred as any).passwordHash);
+    if (!passwordMatch) return null;
+
+    // Update lastLogin
+    const updateStmt = sqlDb.prepare('UPDATE auth_credentials SET lastLogin = ? WHERE userId = ?');
+    updateStmt.bind([new Date().toISOString(), user.id]);
+    updateStmt.step();
+    updateStmt.free();
+    this.save();
+
+    return { user, needsPasswordReset: !!(cred as any).passwordResetRequired };
+  },
+
+  async updatePassword(userId: string, newPassword: string): Promise<void> {
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const now = new Date().toISOString();
+
+    const stmt = sqlDb.prepare(`
+      UPDATE auth_credentials SET passwordHash = ?, passwordResetRequired = 0, updatedAt = ? WHERE userId = ?
+    `);
+    stmt.bind([passwordHash, now, userId]);
+    stmt.step();
+    stmt.free();
+    this.save();
+  },
+
+  getCredentialByUserId(userId: string): AuthCredential | null {
+    const stmt = sqlDb.prepare('SELECT * FROM auth_credentials WHERE userId = ?');
+    stmt.bind([userId]);
+
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      stmt.free();
+      return { ...row, lastLogin: (row as any).lastLogin || null } as AuthCredential;
+    }
+
+    stmt.free();
+    return null;
+  },
+
+  // ─── Curriculum ────────────────────────────────────────────────────────────
+  getAllCurriculum(): CurriculumResource[] {
+    const stmt = sqlDb.prepare('SELECT * FROM curriculum_resources ORDER BY createdAt DESC');
+    const resources: CurriculumResource[] = [];
+
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      resources.push(this.rowToCurriculum(row as any));
+    }
+
+    stmt.free();
+    return resources;
+  },
+
+  addCurriculum(resource: Omit<CurriculumResource, 'id' | 'createdAt'>): CurriculumResource {
+    const id = this.generateId();
+    const now = new Date().toISOString();
+
+    const stmt = sqlDb.prepare(`
+      INSERT INTO curriculum_resources (id, title, subject, gradeLevel, description, category, authorRole, uploadedById, uploadedByName, fileName, fileType, fileData, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.bind([
+      id,
+      resource.title,
+      resource.subject,
+      resource.gradeLevel,
+      resource.description || '',
+      resource.category,
+      resource.authorRole,
+      resource.uploadedById || null,
+      resource.uploadedByName || null,
+      resource.fileName || null,
+      resource.fileType || null,
+      resource.fileData || null,
+      now,
+      now,
+    ]);
+    stmt.step();
+    stmt.free();
+    this.save();
+
+    return this.findCurriculumById(id)!;
+  },
+
+  findCurriculumById(id: string): CurriculumResource | null {
+    const stmt = sqlDb.prepare('SELECT * FROM curriculum_resources WHERE id = ?');
+    stmt.bind([id]);
+
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      stmt.free();
+      return this.rowToCurriculum(row as any);
+    }
+
+    stmt.free();
+    return null;
+  },
+
+  // ─── Messages ──────────────────────────────────────────────────────────────
+  sendMessage(message: Omit<Message, 'id' | 'read' | 'createdAt'>): Message {
+    const id = this.generateId();
+    const now = new Date().toISOString();
+
+    const stmt = sqlDb.prepare(`
+      INSERT INTO messages (id, senderId, senderName, recipientId, recipientName, subject, content, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.bind([
+      id,
+      message.senderId,
+      message.senderName,
+      message.recipientId || null,
+      message.recipientName || null,
+      message.subject || '',
+      message.content,
+      now,
+    ]);
+    stmt.step();
+    stmt.free();
+    this.save();
+
+    return this.findMessageById(id)!;
+  },
+
+  findMessageById(id: string): Message | null {
+    const stmt = sqlDb.prepare('SELECT * FROM messages WHERE id = ?');
+    stmt.bind([id]);
+
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      stmt.free();
+      return this.rowToMessage(row as any);
+    }
+
+    stmt.free();
+    return null;
+  },
+
+  getUserMessages(userId: string): Message[] {
+    const stmt = sqlDb.prepare(`
+      SELECT * FROM messages WHERE senderId = ? OR recipientId = ? ORDER BY createdAt DESC
+    `);
+    stmt.bind([userId, userId]);
+
+    const messages: Message[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      messages.push(this.rowToMessage(row as any));
+    }
+
+    stmt.free();
+    return messages;
+  },
+
+  // ─── Grades ────────────────────────────────────────────────────────────────
+  recordGrade(grade: Omit<GradeRecord, 'id' | 'createdAt'>): GradeRecord {
+    const id = this.generateId();
+    const now = new Date().toISOString();
+
+    const stmt = sqlDb.prepare(`
+      INSERT INTO grades (id, studentId, teacherId, subject, grade, feedback, recordedAt, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.bind([
+      id,
+      grade.studentId,
+      grade.teacherId,
+      grade.subject,
+      grade.grade,
+      grade.feedback || '',
+      grade.recordedAt,
+      now,
+    ]);
+    stmt.step();
+    stmt.free();
+    this.save();
+
+    return this.findGradeById(id)!;
+  },
+
+  findGradeById(id: string): GradeRecord | null {
+    const stmt = sqlDb.prepare('SELECT * FROM grades WHERE id = ?');
+    stmt.bind([id]);
+
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      stmt.free();
+      return this.rowToGrade(row as any);
+    }
+
+    stmt.free();
+    return null;
+  },
+
+  getStudentGrades(studentId: string): GradeRecord[] {
+    const stmt = sqlDb.prepare('SELECT * FROM grades WHERE studentId = ? ORDER BY recordedAt DESC');
+    stmt.bind([studentId]);
+
+    const grades: GradeRecord[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      grades.push(this.rowToGrade(row as any));
+    }
+
+    stmt.free();
+    return grades;
+  },
+
+  // ─── Vault Documents ───────────────────────────────────────────────────────
+  addVaultDocument(doc: Omit<VaultDocument, 'id' | 'createdAt'>): VaultDocument {
+    const id = this.generateId();
+    const now = new Date().toISOString();
+
+    const stmt = sqlDb.prepare(`
+      INSERT INTO vault_documents (id, title, type, status, teacherId, teacherName, fileName, fileType, fileData, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.bind([
+      id,
+      doc.title,
+      doc.type,
+      doc.status,
+      doc.teacherId,
+      doc.teacherName,
+      doc.fileName || null,
+      doc.fileType || null,
+      doc.fileData || null,
+      now,
+      now,
+    ]);
+    stmt.step();
+    stmt.free();
+    this.save();
+
+    return this.findVaultDocById(id)!;
+  },
+
+  findVaultDocById(id: string): VaultDocument | null {
+    const stmt = sqlDb.prepare('SELECT * FROM vault_documents WHERE id = ?');
+    stmt.bind([id]);
+
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      stmt.free();
+      return this.rowToVaultDocument(row as any);
+    }
+
+    stmt.free();
+    return null;
+  },
+
+  getAllVaultDocuments(): VaultDocument[] {
+    const stmt = sqlDb.prepare('SELECT * FROM vault_documents ORDER BY createdAt DESC');
+    const docs: VaultDocument[] = [];
+
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      docs.push(this.rowToVaultDocument(row as any));
+    }
+
+    stmt.free();
+    return docs;
+  },
+
+  // ─── Utilities ────────────────────────────────────────────────────────────
+  generateId(): string {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  },
+
+  // ─── Row Mapping ───────────────────────────────────────────────────────────
+  rowToUser(row: any): User {
+    return {
+      id: row.id,
+      email: row.email,
+      name: row.name,
+      role: row.role as UserRole,
+      avatar: row.avatar,
+      blockchainId: row.blockchainId,
+      contact: row.contact,
+      school: row.school,
+      gender: row.gender,
+      residentialAddress: row.residentialAddress,
+      teachingGrades: row.teachingGrades ? JSON.parse(row.teachingGrades) : undefined,
+      teachingClasses: row.teachingClasses ? JSON.parse(row.teachingClasses) : undefined,
+      teachingSubjects: row.teachingSubjects ? JSON.parse(row.teachingSubjects) : undefined,
+      grade: row.grade,
+      className: row.className,
+      enrolledSubjects: row.enrolledSubjects ? JSON.parse(row.enrolledSubjects) : undefined,
+      isProfileComplete: Boolean(row.isProfileComplete),
+    };
+  },
+
+  rowToCurriculum(row: any): CurriculumResource {
+    return {
+      id: row.id,
+      title: row.title,
+      subject: row.subject,
+      gradeLevel: row.gradeLevel,
+      description: row.description,
+      category: row.category as ResourceCategory,
+      authorRole: row.authorRole as UserRole,
+      uploadedById: row.uploadedById,
+      uploadedByName: row.uploadedByName,
+      createdAt: row.createdAt,
+      fileName: row.fileName,
+      fileType: row.fileType,
+      fileData: row.fileData,
+    };
+  },
+
+  rowToMessage(row: any): Message {
+    return {
+      id: row.id,
+      senderId: row.senderId,
+      senderName: row.senderName,
+      recipientId: row.recipientId,
+      recipientName: row.recipientName,
+      subject: row.subject,
+      content: row.content,
+      read: Boolean(row.read),
+      createdAt: row.createdAt,
+    };
+  },
+
+  rowToGrade(row: any): GradeRecord {
+    return {
+      id: row.id,
+      studentId: row.studentId,
+      teacherId: row.teacherId,
+      subject: row.subject,
+      grade: row.grade,
+      feedback: row.feedback,
+      recordedAt: row.recordedAt,
+      createdAt: row.createdAt,
+    };
+  },
+
+  rowToVaultDocument(row: any): VaultDocument {
+    return {
+      id: row.id,
+      title: row.title,
+      type: row.type,
+      status: row.status as DocumentStatus,
+      teacherId: row.teacherId,
+      teacherName: row.teacherName,
+      createdAt: row.createdAt,
+      fileName: row.fileName,
+      fileType: row.fileType,
+      fileData: row.fileData,
+    };
+  },
+
+  // ─── Database Cleanup ──────────────────────────────────────────────────────
+  close(): void {
+    // sql.js doesn't need explicit closing, but save final state
+    this.save();
+  },
+};

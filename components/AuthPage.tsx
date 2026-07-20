@@ -100,7 +100,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
     try {
       const user = db.findUserByEmail(resetEmail);
       if (user) {
-        db.updatePassword(user.id, newPassword);
+        await db.updatePassword(user.id, newPassword);
         setSuccessMessage(`Password for ${resetEmail} has been reset successfully! You can now log in with your new credentials.`);
         setForgotPasswordStep('none');
         setResetEmail('');
@@ -130,40 +130,42 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
     try {
       /**
-       * LOGIN → First try secure local DB, fallback to backend API
+       * LOGIN → Authenticate via server (JWT-based)
        */
       if (isLogin) {
-        // This handles local password resets and newly registered users correctly
         const trimmedEmail = email.trim();
-        const localResult = db.authenticateUser(trimmedEmail, password);
         
-        if (localResult) {
-          localStorage.setItem(
-            "user",
-            JSON.stringify(localResult.user)
-          );
+        try {
+          // Try server-side authentication first (with JWT)
+          const result = await login(trimmedEmail, password);
 
-          onLoginSuccess({
-            user: localResult.user,
-            needsPasswordReset: localResult.needsPasswordReset
-          });
-          return;
-        }
+          if (result.success && result.user) {
+            onLoginSuccess({
+              user: result.user,
+              needsPasswordReset: result.needsPasswordReset || false
+            });
+            return;
+          }
+        } catch (serverError: any) {
+          // If server auth fails, try local fallback
+          console.log("[Auth] Server auth failed, trying local fallback...", serverError.message);
+          const localResult = await db.authenticateUser(trimmedEmail, password);
+          
+          if (localResult) {
+            // Store token for local user (for compatibility)
+            // In a real app, you'd have the server handle this
+            localStorage.setItem(
+              "user",
+              JSON.stringify(localResult.user)
+            );
 
-        // Fallback to backend API
-        const result = await login(email, password);
-
-        if (result.success) {
-          localStorage.setItem(
-            "user",
-            JSON.stringify(result.user)
-          );
-
-          onLoginSuccess({
-            user: result.user,
-            needsPasswordReset: false
-          });
-        } else {
+            onLoginSuccess({
+              user: localResult.user,
+              needsPasswordReset: localResult.needsPasswordReset
+            });
+            return;
+          }
+          
           setError("Invalid email or password.");
         }
       }

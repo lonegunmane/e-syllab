@@ -1,9 +1,13 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Resend } from "resend";
 import { PublicKey, Keypair, Transaction, TransactionInstruction } from "@solana/web3.js";
+import jwt from "jsonwebtoken";
+import { db } from "./services/database.js";
+import { serverDb } from "./services/serverDatabase.js";
+import { UserRole } from "./types.js";
 import {
   buildAttendanceTransaction,
   confirmTransaction,
@@ -58,10 +62,78 @@ const getResend = () => {
   return resend;
 };
 
+// ─── JWT Configuration ────────────────────────────────────────────────────────
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_EXPIRY = '24h';
+
+// In-memory token blacklist for logout (in production, use Redis or a database)
+const tokenBlacklist = new Set<string>();
+
+// Interface for JWT payload
+interface JwtPayload {
+  userId: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  iat?: number;
+  exp?: number;
+}
+
+// Extended Express Request to include user info
+declare global {
+  namespace Express {
+    interface Request {
+      user?: JwtPayload;
+    }
+  }
+}
+
+// ─── Authentication Middleware ────────────────────────────────────────────────
+function authenticateToken(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({ success: false, error: 'Access token required' });
+  }
+
+  // Check if token is blacklisted
+  if (tokenBlacklist.has(token)) {
+    return res.status(401).json({ success: false, error: 'Token has been revoked' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    req.user = decoded;
+    next();
+  } catch (err: any) {
+    return res.status(403).json({ success: false, error: 'Invalid or expired token' });
+  }
+}
+
+// ─── Role-Based Access Control Middleware ─────────────────────────────────────
+function authorizeRole(...allowedRoles: UserRole[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Insufficient permissions for this action' });
+    }
+
+    next();
+  };
+}
+
+
 // ─── Server ───────────────────────────────────────────────────────────────────
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Initialize database
+  await serverDb.init();
 
   app.use(express.json());
 
@@ -78,7 +150,7 @@ async function startServer() {
   // ════════════════════════════════════════════
 
   // GET /api/blockchain/status
-  app.get("/api/blockchain/status", async (_req, res) => {
+  app.get("/api/blockchain/status", authenticateToken, async (_req, res) => {
     try {
       const status = await getNetworkStatus();
       res.json({ success: true, network: "devnet", ...status, queueSize: syncQueue.size });
@@ -90,7 +162,7 @@ async function startServer() {
   // GET /api/blockchain/blockhash
   // Frontend fetches blockhash through here to avoid CORS / ECONNREFUSED
   // errors when the browser tries to call Solana RPC directly.
-  app.get("/api/blockchain/blockhash", async (_req, res) => {
+  app.get("/api/blockchain/blockhash", authenticateToken, async (_req, res) => {
     try {
       const connection = getConnection();
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
@@ -102,7 +174,7 @@ async function startServer() {
   });
 
   // GET /api/blockchain/balance?pubkey=...
-  app.get("/api/blockchain/balance", async (req, res) => {
+  app.get("/api/blockchain/balance", authenticateToken, async (req, res) => {
     const { pubkey } = req.query;
     if (!pubkey || typeof pubkey !== "string") {
       return res.status(400).json({ success: false, error: "Missing pubkey" });
@@ -116,12 +188,12 @@ async function startServer() {
     }
   });
 
-  // POST /api/blockchain/attendance/prepare
+  // POST /api/blockchain/attendance/prepare - TEACHER/ADMIN only
   // Computes the offlineHash + memoPayload for the client to build a tx with.
   // The client builds the Transaction with a fresh blockhash via
   // /api/blockchain/blockhash — we no longer do it server-side to avoid
   // stale blockhash errors when the RPC call is slow.
-  app.post("/api/blockchain/attendance/prepare", async (req, res) => {
+  app.post("/api/blockchain/attendance/prepare", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), async (req, res) => {
     const { staffId, staffName, date, time, className, status, schoolId, signerPublicKey, syncedFromOffline = false, localTimestamp } = req.body;
 
     if (!staffId || !date || !status || !schoolId || !signerPublicKey) {
@@ -160,9 +232,9 @@ async function startServer() {
     }
   });
 
-  // POST /api/blockchain/attendance/confirm
+  // POST /api/blockchain/attendance/confirm - TEACHER/ADMIN only
   // Called after Phantom signs and submits the tx
-  app.post("/api/blockchain/attendance/confirm", async (req, res) => {
+  app.post("/api/blockchain/attendance/confirm", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), async (req, res) => {
     const { signature, offlineHash } = req.body;
     if (!signature || !offlineHash) {
       return res.status(400).json({ success: false, error: "Missing signature or offlineHash" });
@@ -177,9 +249,9 @@ async function startServer() {
     }
   });
 
-  // POST /api/blockchain/attendance/queue
+  // POST /api/blockchain/attendance/queue - TEACHER/ADMIN only
   // Saves offline attendance record to sync queue
-  app.post("/api/blockchain/attendance/queue", async (req, res) => {
+  app.post("/api/blockchain/attendance/queue", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), async (req, res) => {
     const { staffId, staffName, date, time, className, status, schoolId, localTimestamp } = req.body;
     if (!staffId || !date || !status || !schoolId) {
       return res.status(400).json({ success: false, error: "Missing required fields" });
@@ -201,15 +273,15 @@ async function startServer() {
     }
   });
 
-  // GET /api/blockchain/attendance/queue
-  app.get("/api/blockchain/attendance/queue", (_req, res) => {
+  // GET /api/blockchain/attendance/queue - All authenticated users
+  app.get("/api/blockchain/attendance/queue", authenticateToken, (_req, res) => {
     const items = Array.from(syncQueue.values());
     res.json({ success: true, count: items.length, items });
   });
 
-  // DELETE /api/blockchain/attendance/queue/:queueId
-  app.delete("/api/blockchain/attendance/queue/:queueId", (req, res) => {
-    const { queueId } = req.params;
+  // DELETE /api/blockchain/attendance/queue/:queueId - TEACHER/ADMIN only
+  app.delete("/api/blockchain/attendance/queue/:queueId", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), (req, res) => {
+    const queueId = Array.isArray(req.params.queueId) ? req.params.queueId[0] : req.params.queueId;
     if (syncQueue.has(queueId)) {
       syncQueue.delete(queueId);
       res.json({ success: true, message: "Removed from queue" });
@@ -218,8 +290,8 @@ async function startServer() {
     }
   });
 
-  // POST /api/blockchain/attendance/sync-all
-  app.post("/api/blockchain/attendance/sync-all", async (_req, res) => {
+  // POST /api/blockchain/attendance/sync-all - ADMIN only
+  app.post("/api/blockchain/attendance/sync-all", authenticateToken, authorizeRole(UserRole.ADMIN), async (_req, res) => {
     const schoolKeypair = getSchoolKeypair();
     if (!schoolKeypair) {
       return res.status(503).json({
@@ -301,7 +373,7 @@ async function startServer() {
   });
 
   // POST /api/blockchain/attendance/verify-hash
-  app.post("/api/blockchain/attendance/verify-hash", async (req, res) => {
+  app.post("/api/blockchain/attendance/verify-hash", authenticateToken, async (req, res) => {
     const { staffId, date, status, hashToVerify } = req.body;
     if (!staffId || !date || !status || !hashToVerify) {
       return res.status(400).json({ success: false, error: "Missing fields" });
@@ -341,8 +413,156 @@ async function startServer() {
     }
   });
 
-  app.post("/api/login", (_req, res) => res.status(401).json({ success: false, message: "Invalid credentials" }));
-  app.get("/api/profile", (_req, res) => res.json({ success: true, message: "Profile loaded" }));
+  // ════════════════════════════════════════════
+  //  AUTHENTICATION ROUTES
+  // ════════════════════════════════════════════
+
+  // POST /api/login - Authenticate user and return JWT
+  app.post("/api/login", async (req, res) => {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: "Email and password required" });
+    }
+
+    try {
+      const authResult = await serverDb.authenticateUser(email, password);
+      
+      if (!authResult) {
+        return res.status(401).json({ success: false, error: "Invalid credentials" });
+      }
+
+      const { user, needsPasswordReset } = authResult;
+
+      // Generate JWT token
+      const token = jwt.sign(
+        {
+          userId: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        } as JwtPayload,
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRY }
+      );
+
+      res.json({
+        success: true,
+        user,
+        needsPasswordReset,
+        token,
+        message: "Login successful",
+      });
+    } catch (err: any) {
+      console.error("[Auth] Login error:", err);
+      res.status(500).json({ success: false, error: "Authentication failed" });
+    }
+  });
+
+  // POST /api/logout - Revoke JWT token
+  app.post("/api/logout", authenticateToken, (req, res) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (token) {
+      tokenBlacklist.add(token);
+    }
+
+    res.json({ success: true, message: "Logout successful" });
+  });
+
+  // GET /api/profile - Get current user profile (requires authentication)
+  app.get("/api/profile", authenticateToken, (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    const user = serverDb.findUserById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    res.json({ success: true, user });
+  });
+
+  // PUT /api/profile - Update user profile (requires authentication)
+  app.put("/api/profile", authenticateToken, (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    const { name, avatar, contact, school, gender, residentialAddress, teachingGrades, teachingClasses, teachingSubjects, grade, className, enrolledSubjects, isProfileComplete } = req.body;
+
+    const updates = {
+      ...(name && { name }),
+      ...(avatar && { avatar }),
+      ...(contact && { contact }),
+      ...(school && { school }),
+      ...(gender && { gender }),
+      ...(residentialAddress && { residentialAddress }),
+      ...(teachingGrades && { teachingGrades }),
+      ...(teachingClasses && { teachingClasses }),
+      ...(teachingSubjects && { teachingSubjects }),
+      ...(grade && { grade }),
+      ...(className && { className }),
+      ...(enrolledSubjects && { enrolledSubjects }),
+      ...(isProfileComplete !== undefined && { isProfileComplete }),
+    };
+
+    const updatedUser = serverDb.updateUserProfile(req.user.userId, updates);
+    
+    if (!updatedUser) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    res.json({ success: true, user: updatedUser, message: "Profile updated successfully" });
+  });
+
+  // POST /api/reset-password - Update password (requires authentication)
+  app.post("/api/reset-password", authenticateToken, async (req, res) => {
+    const { newPassword } = req.body;
+
+    if (!req.user || !newPassword) {
+      return res.status(400).json({ success: false, error: "Password required" });
+    }
+
+    if (newPassword.length < 4) {
+      return res.status(400).json({ success: false, error: "Password must be at least 4 characters" });
+    }
+
+    try {
+      await serverDb.updatePassword(req.user.userId, newPassword);
+
+      res.json({ success: true, message: "Password updated successfully" });
+    } catch (err: any) {
+      console.error("[Auth] Password reset error:", err);
+      res.status(500).json({ success: false, error: "Failed to update password" });
+    }
+  });
+
+  // ════════════════════════════════════════════
+  //  ADMIN ONLY ROUTES
+  // ════════════════════════════════════════════
+
+  // GET /api/admin/users - List all users (admin only)
+  app.get("/api/admin/users", authenticateToken, authorizeRole(UserRole.ADMIN), async (_req, res) => {
+    const users = serverDb.getAllUsers();
+    res.json({ success: true, users });
+  });
+
+  // DELETE /api/admin/users/:userId - Delete user (admin only)
+  app.delete("/api/admin/users/:userId", authenticateToken, authorizeRole(UserRole.ADMIN), (req, res) => {
+    const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, error: "User ID required" });
+    }
+
+    serverDb.deleteUser(userId);
+
+    res.json({ success: true, message: "User deleted successfully" });
+  });
+
 
   // ── Vite middleware ─────────────────────────────────────────────────────────
   if (process.env.NODE_ENV !== "production") {

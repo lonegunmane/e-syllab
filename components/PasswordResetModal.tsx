@@ -16,7 +16,7 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({ user, on
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newPassword.length < 6) {
             setError("Password must be at least 6 characters long.");
@@ -30,7 +30,7 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({ user, on
         setError(null);
         
         try {
-            db.updatePassword(user.id, newPassword);
+            await db.updatePassword(user.id, newPassword);
             // Simulate a short delay for user feedback
             setTimeout(() => {
                 onResetSuccess();

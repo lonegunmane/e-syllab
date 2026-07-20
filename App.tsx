@@ -12,6 +12,7 @@ import { db } from './services/database';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { TeacherSetupModal } from './components/TeacherSetupModal';
 import { StudentSetupModal } from './components/StudentSetupModal';
+import { getToken, clearToken, getProfile } from './services/api';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -21,18 +22,49 @@ const App: React.FC = () => {
 
   useEffect(() => {
     db.init();
-    const savedUser = localStorage.getItem('esylab_session');
-    if (savedUser) {
-      const user = JSON.parse(savedUser);
-      const creds = db.getCredentialByUserId(user.id);
-      if (creds?.passwordResetRequired) {
-        setCurrentUser(user);
-        setShowPasswordReset(true);
-      } else {
-        setCurrentUser(user);
+    
+    // Check if we have a valid JWT token
+    const token = getToken();
+    if (token) {
+      // Verify token validity by fetching profile from server
+      getProfile()
+        .then((result) => {
+          if (result.success && result.user) {
+            setCurrentUser(result.user);
+            // Check if password reset is required
+            const creds = db.getCredentialByUserId(result.user.id);
+            if (creds?.passwordResetRequired) {
+              setShowPasswordReset(true);
+            }
+          } else {
+            clearToken();
+          }
+          setInitializing(false);
+        })
+        .catch((err) => {
+          console.error("[App] Failed to verify session:", err.message);
+          clearToken();
+          setInitializing(false);
+        });
+    } else {
+      // Check for legacy session (for backward compatibility)
+      const savedUser = localStorage.getItem('esylab_session');
+      if (savedUser) {
+        try {
+          const user = JSON.parse(savedUser);
+          const creds = db.getCredentialByUserId(user.id);
+          if (creds?.passwordResetRequired) {
+            setCurrentUser(user);
+            setShowPasswordReset(true);
+          } else {
+            setCurrentUser(user);
+          }
+        } catch (err) {
+          console.error("[App] Failed to parse legacy session:", err);
+        }
       }
+      setInitializing(false);
     }
-    setInitializing(false);
   }, []);
 
   const handleLoginSuccess = (loginData: { user: User, needsPasswordReset: boolean }) => {
@@ -40,6 +72,7 @@ const App: React.FC = () => {
     if (loginData.needsPasswordReset) {
       setShowPasswordReset(true);
     } else {
+      // Store the user in legacy session storage for backward compatibility
       localStorage.setItem('esylab_session', JSON.stringify(loginData.user));
     }
   };
@@ -55,11 +88,29 @@ const App: React.FC = () => {
     setShowPasswordReset(false);
   }
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setShowPasswordReset(false);
-    setActiveTab('overview');
-    localStorage.removeItem('esylab_session');
+  const handleLogout = async () => {
+    try {
+      // Call the server logout endpoint to revoke the token
+      const response = await fetch('/api/logout', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${getToken()}`
+        }
+      });
+      
+      if (response.ok) {
+        console.log("[App] Server-side logout successful");
+      }
+    } catch (err) {
+      console.error("[App] Server logout failed:", err);
+    } finally {
+      // Clear tokens and session
+      clearToken();
+      localStorage.removeItem('esylab_session');
+      setCurrentUser(null);
+      setShowPasswordReset(false);
+      setActiveTab('overview');
+    }
   };
   
   const handleUserUpdate = (updatedUser: User) => {
