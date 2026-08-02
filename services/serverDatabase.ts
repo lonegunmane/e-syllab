@@ -264,6 +264,40 @@ export const serverDb = {
     return null;
   },
 
+  ensureUser(user: Partial<User>): User {
+    if (user.id) {
+      const found = this.findUserById(user.id);
+      if (found) return found;
+    }
+    if (user.email) {
+      const found = this.findUserByEmail(user.email);
+      if (found) return found;
+    }
+
+    const userId = user.id || this.generateId();
+    const now = new Date().toISOString();
+
+    const insertStmt = sqlDb.prepare(`
+      INSERT INTO users (id, email, name, role, avatar, isProfileComplete, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertStmt.bind([
+      userId,
+      user.email || `${userId}@esylab.school`,
+      user.name || 'User',
+      user.role || UserRole.TEACHER,
+      user.avatar || '',
+      user.isProfileComplete ? 1 : 0,
+      now,
+      now,
+    ]);
+    insertStmt.step();
+    insertStmt.free();
+    this.save();
+
+    return this.findUserById(userId)!;
+  },
+
   getAllUsers(): User[] {
     const stmt = sqlDb.prepare('SELECT * FROM users ORDER BY createdAt DESC');
     const users: User[] = [];

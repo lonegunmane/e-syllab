@@ -1,16 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   CheckCircle, XCircle, Clock, Loader2,
-  ExternalLink, AlertTriangle, RefreshCw,
+  ExternalLink, RefreshCw,
   UserCheck, BookOpen, CalendarCheck, Wifi, WifiOff,
-  ChevronDown, Info,
+  ChevronDown,
 } from 'lucide-react';
-import {
-  PublicKey,
-  Transaction,
-  TransactionInstruction,
-} from '@solana/web3.js';
 import { User } from '../types';
+import { authFetch, recordAttendanceOnline, syncAllAttendance } from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,18 +29,8 @@ interface AttendanceRecord {
   explorerUrl?: string;
 }
 
-interface PhantomProvider {
-  isPhantom: boolean;
-  publicKey: PublicKey | null;
-  isConnected: boolean;
-  connect: () => Promise<{ publicKey: PublicKey }>;
-  disconnect: () => Promise<void>;
-  signAndSendTransaction: (tx: Transaction) => Promise<{ signature: string }>;
-}
-
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 const RECORDS_KEY = 'esyllab_attendance_records';
 
 const STATUS_CONFIG: Record<AttendanceStatus, {
@@ -58,23 +44,11 @@ const STATUS_CONFIG: Record<AttendanceStatus, {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getPhantom(): PhantomProvider | null {
-  if (typeof window === 'undefined') return null;
-  const p = (window as any)?.solana;
-  return p?.isPhantom ? (p as PhantomProvider) : null;
-}
 function loadRecords(): AttendanceRecord[] {
   try { return JSON.parse(localStorage.getItem(RECORDS_KEY) || '[]'); } catch { return []; }
 }
 function saveRecords(r: AttendanceRecord[]) {
   localStorage.setItem(RECORDS_KEY, JSON.stringify(r));
-}
-async function fetchBlockhash() {
-  const res = await fetch('/api/blockchain/blockhash');
-  if (!res.ok) throw new Error(`Blockhash endpoint returned ${res.status}`);
-  const d = await res.json();
-  if (!d.success) throw new Error(d.error || 'Could not fetch blockhash.');
-  return { blockhash: d.blockhash, lastValidBlockHeight: d.lastValidBlockHeight };
 }
 function friendlyDate(iso: string) {
   try {
@@ -88,19 +62,11 @@ function friendlyError(err: any): string {
     JSON.stringify(err) || '';
   console.error('[Attendance] Error:', err);
 
-  if (err?.code === 4001 || msg.toLowerCase().includes('user rejected') || msg.toLowerCase().includes('cancelled'))
-    return 'You cancelled the approval. Tap "Save Attendance" and approve the pop-up to record.';
-  if (msg.includes('Blockhash not found') || msg.includes('block height exceeded'))
-    return 'The request timed out. Please try again immediately after tapping "Save Attendance".';
-  if (msg.toLowerCase().includes('testnet') || msg.toLowerCase().includes('cluster'))
-    return 'Your signing app is connected to the wrong network. Open Phantom → Settings → Developer Settings → turn off Testnet Mode → switch to Devnet.';
   if (msg.includes('faucet') || msg.toLowerCase().includes('lamport') || msg.toLowerCase().includes('insufficient'))
     return 'The school signing account needs to be funded. Please contact your IT administrator.';
   if (msg.toLowerCase().includes('fetch') || msg.toLowerCase().includes('network') || msg.includes('ECONNREFUSED'))
     return 'Cannot reach the server. Check your internet connection and try again.';
-  if (msg.toLowerCase().includes('phantom') || msg.toLowerCase().includes('wallet'))
-    return 'Phantom is not connected. Click "Connect Phantom" first, then save attendance.';
-  return 'Something went wrong. Please try again or contact your IT support if it keeps failing.';
+  return msg || 'Something went wrong. Please try again or contact your IT support if it keeps failing.';
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -114,8 +80,6 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
     : [];
 
   const [records, setRecords]           = useState<AttendanceRecord[]>(loadRecords);
-  const [phantomKey, setPhantomKey]     = useState<string | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
 
   // Class is a dropdown of the teacher's assigned classes — not a free-text field
@@ -126,32 +90,15 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
   const [txError, setTxError]           = useState('');
   const [lastRecord, setLastRecord]     = useState<AttendanceRecord | null>(null);
   const [showHistory, setShowHistory]   = useState(false);
-  const [showHowItWorks, setShowHowItWorks] = useState(false);
 
   // Sync status banner — shows while offline records are being submitted
   const [syncStatus, setSyncStatus]     = useState<'idle' | 'syncing' | 'done'>('idle');
   const [syncMessage, setSyncMessage]   = useState('');
 
-  // ── Mount: detect Phantom, check server, try initial sync ─────────────────
+  // ── Mount: check server, try initial sync ────────────────────────────────
   useEffect(() => {
-    const phantom = getPhantom();
-    if (phantom?.isConnected && phantom.publicKey) {
-      setPhantomKey(phantom.publicKey.toBase58());
-    }
     checkServer();
-    // Attempt to sync any pending offline records immediately on load
     syncOfflineQueue();
-
-    if (phantom) {
-      const onConnect    = (pk: PublicKey) => setPhantomKey(pk.toBase58());
-      const onDisconnect = () => setPhantomKey(null);
-      (phantom as any).on?.('connect', onConnect);
-      (phantom as any).on?.('disconnect', onDisconnect);
-      return () => {
-        (phantom as any).off?.('connect', onConnect);
-        (phantom as any).off?.('disconnect', onDisconnect);
-      };
-    }
   }, []);
 
   useEffect(() => { saveRecords(records); }, [records]);
@@ -177,120 +124,30 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
   // ── Server health check ────────────────────────────────────────────────────
   const checkServer = useCallback(async () => {
     try {
-      const res = await fetch('/api/blockchain/status');
+      const res = await authFetch('/api/blockchain/status');
       const d   = await res.json();
       setServerOnline(d.connected);
     } catch { setServerOnline(false); }
   }, []);
 
-  // ── Auto-sync offline queue via Phantom (browser-side) ────────────────────
-  //
-  // WHY CLIENT-SIDE: The server cannot reach Solana's RPC on this network
-  // (ECONNREFUSED). But Phantom running in the browser CAN — it uses its
-  // own RPC connection. So when the user has Phantom connected and internet
-  // returns, we pull each queued record and submit it through Phantom directly,
-  // exactly the same path as a normal online save.
-  //
+  // ── Auto-sync offline queue via server keypair ─────────────────────────────
   const syncOfflineQueue = useCallback(async () => {
-    const phantom = getPhantom();
-
-    // Only sync if Phantom is connected — we need it to sign
-    if (!phantom?.publicKey) return;
-
     try {
-      const queueRes  = await fetch('/api/blockchain/attendance/queue');
+      const queueRes = await authFetch('/api/blockchain/attendance/queue');
       if (!queueRes.ok) return;
       const queueData = await queueRes.json();
       if (!queueData.success || queueData.count === 0) return;
 
       setSyncStatus('syncing');
-      setSyncMessage(`Saving ${queueData.count} offline record${queueData.count > 1 ? 's' : ''}…`);
+      setSyncMessage(`Syncing ${queueData.count} offline record${queueData.count > 1 ? 's' : ''} to blockchain…`);
 
-      const items: any[] = queueData.items || [];
-      let synced = 0;
-      const syncedRecords: any[] = [];
-
-      for (const item of items) {
-        try {
-          // Step 1: Get hash + memo payload from server
-          const prepRes = await fetch('/api/blockchain/attendance/prepare', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              staffId:           item.staffId,
-              staffName:         item.staffName,
-              date:              item.date,
-              time:              item.time || '',
-              className:         item.className || '',
-              status:            item.status,
-              schoolId:          item.schoolId,
-              signerPublicKey:   phantom.publicKey!.toBase58(),
-              syncedFromOffline: true,
-              localTimestamp:    item.localTimestamp,
-            }),
-          });
-          const prepData = await prepRes.json();
-          if (!prepData.success) throw new Error(prepData.error);
-
-          // Step 2: Build transaction with fresh blockhash
-          const feePayer = new PublicKey(phantom.publicKey!.toBase58());
-          const { blockhash, lastValidBlockHeight } = await fetchBlockhash();
-          const memoData = new TextEncoder().encode(prepData.memoPayload);
-
-          const ix = new TransactionInstruction({
-            keys:      [{ pubkey: feePayer, isSigner: true, isWritable: false }],
-            programId: MEMO_PROGRAM_ID,
-            data:      memoData,
-          });
-          const tx = new Transaction({ feePayer, blockhash, lastValidBlockHeight });
-          tx.add(ix);
-
-          // Step 3: Phantom signs and broadcasts (no popup — auto-signed
-          // because this is an app-initiated request, not user-triggered)
-          const { signature } = await phantom.signAndSendTransaction(tx);
-
-          // Step 4: Confirm via backend
-          const confirmRes  = await fetch('/api/blockchain/attendance/confirm', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ signature, offlineHash: prepData.offlineHash }),
-          });
-          const confirmData = await confirmRes.json();
-          if (!confirmData.success) throw new Error(confirmData.error);
-
-          // Step 5: Remove from server queue
-          await fetch(`/api/blockchain/attendance/queue/${item.id}`, { method: 'DELETE' });
-
-          synced++;
-          syncedRecords.push({
-            queueId:    item.id,
-            staffId:    item.staffId,
-            date:       item.date,
-            signature,
-            slot:       confirmData.receipt.slot,
-            explorerUrl: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
-          });
-          console.log(`[Sync] ✓ ${item.staffId} | ${item.date} | ${item.status} → ${signature.slice(0, 20)}...`);
-
-        } catch (itemErr: any) {
-          console.warn(`[Sync] ✗ ${item.staffId} | ${item.date} →`, itemErr.message);
-          // Skip this item, try the next one
-        }
-      }
-
-      if (synced > 0) {
-        // Update local records to show Verified
-        setRecords(prev => prev.map(r => {
-          const match = syncedRecords.find(
-            s => s.staffId === r.staffId && s.date === r.date && !r.confirmedOnChain
-          );
-          return match
-            ? { ...r, confirmedOnChain: true, signature: match.signature, slot: match.slot, explorerUrl: match.explorerUrl }
-            : r;
-        }));
-        setSyncMessage(`${synced} record${synced > 1 ? 's' : ''} secured ✓`);
+      const syncRes = await syncAllAttendance();
+      if (syncRes.success && syncRes.synced > 0) {
+        setSyncMessage(`${syncRes.synced} record${syncRes.synced > 1 ? 's' : ''} secured ✓`);
         setSyncStatus('done');
         setTimeout(() => setSyncStatus('idle'), 5000);
+
+        setRecords(prev => prev.map(r => ({ ...r, confirmedOnChain: true })));
       } else {
         setSyncStatus('idle');
       }
@@ -299,111 +156,43 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
     }
   }, []);
 
-  // ── Connect Phantom ────────────────────────────────────────────────────────
-  const connectPhantom = async () => {
-    const phantom = getPhantom();
-    if (!phantom) {
-      alert('Phantom is not installed.\n\nInstall the Phantom browser extension from phantom.app, then refresh the page.');
-      return;
-    }
-    setIsConnecting(true);
-    try {
-      const r = await phantom.connect();
-      setPhantomKey(r.publicKey.toBase58());
-    } catch {
-      alert('Connection was cancelled. Please try again and click "Connect" in the Phantom pop-up.');
-    } finally { setIsConnecting(false); }
-  };
-
-  // ── Save Attendance (online — Phantom signs) ───────────────────────────────
+  // ── Save Attendance (online — server signs) ─────────────────────────────────
   const handleSave = async () => {
-    const phantom = getPhantom();
-    if (!phantom || !phantomKey) { connectPhantom(); return; }
-
     setTxState('working');
     setTxError('');
     setLastRecord(null);
 
     try {
-      // Capture exact date + time at the moment the teacher taps Save.
-      // Neither is editable — prevents backdating for accuracy and transparency.
       const now          = new Date();
-      const recordedDate = now.toISOString().slice(0, 10);          // YYYY-MM-DD
-      const recordedTime = now.toTimeString().slice(0, 5);          // HH:MM
+      const recordedDate = now.toISOString().slice(0, 10);
+      const recordedTime = now.toTimeString().slice(0, 5);
 
-      // Pre-flight: confirm Phantom is on Devnet
-      const phantomNetwork = (phantom as any)?.network;
-      if (phantomNetwork && phantomNetwork !== 'devnet' && phantomNetwork !== 'mainnet-beta') {
-        throw new Error('testnet — wrong cluster');
-      }
-
-      // Step 1: Backend computes hash + memo payload
-      const prepRes  = await fetch('/api/blockchain/attendance/prepare', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          staffId:           user.id,
-          staffName:         user.name,
-          date:              recordedDate,
-          time:              recordedTime,
-          className,
-          status,
-          schoolId:          'ZMB-KAPASA-001',
-          signerPublicKey:   phantomKey,
-          syncedFromOffline: false,
-          localTimestamp:    now.toISOString(),
-        }),
+      const data = await recordAttendanceOnline({
+        staffId:        user.id,
+        staffName:      user.name,
+        date:           recordedDate,
+        time:           recordedTime,
+        className,
+        status,
+        schoolId:       'ZMB-KAPASA-001',
+        localTimestamp: now.toISOString(),
       });
-      if (!prepRes.ok) throw new Error(`Server error ${prepRes.status}`);
-      const prepData = await prepRes.json();
-      if (!prepData.success) throw new Error(prepData.error || 'Server could not prepare the record.');
-
-      // Step 2: Fetch fresh blockhash through backend proxy (avoids CORS)
-      const { blockhash, lastValidBlockHeight } = await fetchBlockhash();
-
-      // Step 3: Build transaction client-side.
-      // Using new PublicKey() fixes "this.feePayer.toJSON is not a function".
-      const feePayer = new PublicKey(phantomKey);
-
-      // TextEncoder is native in every browser — fixes "Buffer is not defined".
-      const memoData = new TextEncoder().encode(prepData.memoPayload);
-
-      const ix = new TransactionInstruction({
-        keys:      [{ pubkey: feePayer, isSigner: true, isWritable: false }],
-        programId: MEMO_PROGRAM_ID,
-        data:      memoData,
-      });
-
-      const tx = new Transaction({ feePayer, blockhash, lastValidBlockHeight });
-      tx.add(ix);
-
-      // Step 4: Phantom signs and broadcasts — approval pop-up appears here
-      const { signature } = await phantom.signAndSendTransaction(tx);
-
-      // Step 5: Backend confirms on-chain
-      const confirmRes  = await fetch('/api/blockchain/attendance/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signature, offlineHash: prepData.offlineHash }),
-      });
-      const confirmData = await confirmRes.json();
-      if (!confirmData.success) throw new Error(confirmData.error || 'Confirmation timed out.');
 
       const rec: AttendanceRecord = {
-        id:                signature,
+        id:                data.signature || `rec-${Date.now()}`,
         staffId:           user.id,
         staffName:         user.name,
         date:              recordedDate,
         time:              recordedTime,
         className,
         status,
-        offlineHash:       prepData.offlineHash,
-        signature,
-        slot:              confirmData.receipt.slot,
+        offlineHash:       data.offlineHash || '',
+        signature:         data.signature,
+        slot:              data.slot,
         syncedFromOffline: false,
-        confirmedOnChain:  true,
+        confirmedOnChain:  data.confirmedOnChain ?? true,
         timestamp:         now.toISOString(),
-        explorerUrl:       `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
+        explorerUrl:       data.explorerUrl,
       };
 
       setRecords(prev => [rec, ...prev]);
@@ -424,9 +213,8 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
       const recordedDate = now.toISOString().slice(0, 10);
       const recordedTime = now.toTimeString().slice(0, 5);
 
-      const res = await fetch('/api/blockchain/attendance/queue', {
+      const res = await authFetch('/api/blockchain/attendance/queue', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           staffId:        user.id,
           staffName:      user.name,
@@ -458,7 +246,7 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
       setLastRecord(rec);
       setTxState('done');
 
-      // Immediately attempt to sync — in case server is actually reachable
+      // Immediately attempt to sync
       syncOfflineQueue();
 
     } catch (err: any) {
@@ -467,8 +255,7 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
     }
   };
 
-  const busy            = txState === 'working';
-  const walletConnected = !!phantomKey;
+  const busy = txState === 'working';
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -524,76 +311,21 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
         </div>
       )}
 
-      {/* Wallet / signing account card */}
-      {!walletConnected ? (
-        <div className="glass-card p-5 rounded-2xl border border-amber-500/20 bg-amber-950/10">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <p className="font-bold text-amber-300 text-sm">Connect your signing account</p>
-              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                To save attendance securely you need Phantom — a free app that lets you
-                approve each record with one tap. Without it, records save to your device only.
-              </p>
-              <div className="flex gap-3 mt-4">
-                <button
-                  onClick={connectPhantom}
-                  disabled={isConnecting}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm font-bold rounded-xl hover:bg-primary-700 active:scale-95 transition-all shadow-lg shadow-primary-900/40 disabled:opacity-50"
-                >
-                  {isConnecting
-                    ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : <UserCheck className="w-4 h-4" />
-                  }
-                  {isConnecting ? 'Connecting…' : 'Connect Phantom'}
-                </button>
-                <button
-                  onClick={() => setShowHowItWorks(v => !v)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/10 text-slate-400 text-xs font-medium rounded-xl hover:text-white transition-colors"
-                >
-                  <Info className="w-3.5 h-3.5" /> What is Phantom?
-                </button>
-              </div>
-              {showHowItWorks && (
-                <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10 text-xs text-slate-300 leading-relaxed space-y-2">
-                  <p>
-                    <strong className="text-white">Phantom</strong> is a free browser extension —
-                    think of it like a digital stamp for your identity. Every time you save
-                    attendance, it confirms that <em>you</em> personally recorded it, making
-                    the record impossible to forge or alter.
-                  </p>
-                  <p>
-                    It takes less than 2 minutes to install and you only need to set it up once.
-                  </p>
-                  <a
-                    href="https://phantom.app"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-primary-400 hover:underline font-bold"
-                  >
-                    Install Phantom (free) <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              )}
-            </div>
+      {/* Recorded by teacher info card */}
+      <div className="glass-card px-5 py-3 rounded-2xl flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-emerald-950/40 border border-emerald-500/20 flex items-center justify-center">
+            <UserCheck className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">Recorded by</p>
+            <p className="text-sm font-bold text-white">{user.name}</p>
           </div>
         </div>
-      ) : (
-        <div className="glass-card px-5 py-3 rounded-2xl flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-emerald-950/40 border border-emerald-500/20 flex items-center justify-center">
-              <UserCheck className="w-4 h-4 text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-xs text-slate-500">Signing as</p>
-              <p className="text-sm font-bold text-white">{user.name}</p>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full">
-            Ready
-          </span>
-        </div>
-      )}
+        <span className="px-2 py-0.5 bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full">
+          School Keypair Active
+        </span>
+      </div>
 
       {/* Attendance form */}
       <div className="glass-card p-6 rounded-2xl space-y-5">

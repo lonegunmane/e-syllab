@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { User, UserRole, CurriculumResource, ResourceCategory, VaultDocument, DocumentStatus } from '../types';
 import { db } from '../services/database';
+import { createUserByAdmin } from '../services/api';
 import { ProfileSection } from '../components/ProfileSection';
 
 const staffActivity = [
@@ -783,10 +784,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
     setIsCreatingStaff(true);
     setStaffMsg(null);
     try {
-        await db.registerUser({
+        await createUserByAdmin({
             name: staffName, email: staffEmail, role: staffRole,
             avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(staffName)}`
         }, staffPassword);
+
+        // Sync with local db if available for fallback/counts
+        try {
+          await db.registerUser({
+              name: staffName, email: staffEmail, role: staffRole,
+              avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(staffName)}`
+          }, staffPassword);
+        } catch {
+          // Ignore if local registration fails or already exists
+        }
+
         setStaffMsg({type: 'success', text: `${staffRole === UserRole.ADMIN ? 'Administrator' : 'Faculty'} credentials successfully provisioned.`});
         setStaffName(''); setStaffEmail(''); setStaffPassword('');
         refreshCounts();

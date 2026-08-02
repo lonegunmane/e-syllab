@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { db } from '../services/database';
-import { login } from '../services/api';
+import { login, register } from '../services/api';
 
 interface AuthPageProps {
   onLoginSuccess: (data: {
@@ -171,7 +171,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
       }
 
       /**
-       * REGISTER → Still uses local database for now
+       * REGISTER → Uses server database endpoint
        */
       else {
         const newUserPayload = {
@@ -181,7 +181,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
           avatar: `https://picsum.photos/seed/${name.replace(/\s/g, '')}/100/100`
         };
 
-        await db.registerUser(newUserPayload, password);
+        await register(newUserPayload, password);
+
+        // Also sync local db if available for fallback
+        try {
+          await db.registerUser(newUserPayload, password);
+        } catch {
+          // Ignore if local db already exists or fails
+        }
 
         setSuccessMessage(
           'Account created! You can now sign in.'

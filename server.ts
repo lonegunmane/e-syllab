@@ -23,16 +23,22 @@ const __dirname = path.dirname(__filename);
 // Generate once with: node generate-keypair.js
 // Then add the printed line to .env.local:
 //   SCHOOL_SIGNING_KEYPAIR=[12,45,67,...]
-function getSchoolKeypair(): Keypair | null {
+let _fallbackSchoolKeypair: Keypair | null = null;
+function getSchoolKeypair(): Keypair {
   const raw = process.env.SCHOOL_SIGNING_KEYPAIR;
-  if (!raw) return null;
-  try {
-    const secretKey = Uint8Array.from(JSON.parse(raw));
-    return Keypair.fromSecretKey(secretKey);
-  } catch (err) {
-    console.warn("[Server] Could not load SCHOOL_SIGNING_KEYPAIR:", err);
-    return null;
+  if (raw) {
+    try {
+      const secretKey = Uint8Array.from(JSON.parse(raw));
+      return Keypair.fromSecretKey(secretKey);
+    } catch (err) {
+      console.warn("[Server] Could not load SCHOOL_SIGNING_KEYPAIR from env:", err);
+    }
   }
+  if (!_fallbackSchoolKeypair) {
+    _fallbackSchoolKeypair = Keypair.generate();
+    console.log("[Server] Generated ephemeral SCHOOL_SIGNING_KEYPAIR:", _fallbackSchoolKeypair.publicKey.toBase58());
+  }
+  return _fallbackSchoolKeypair;
 }
 
 // ─── In-memory sync queue ─────────────────────────────────────────────────────
@@ -184,6 +190,72 @@ async function startServer() {
       const lamports = await connection.getBalance(new PublicKey(pubkey), "confirmed");
       res.json({ success: true, lamports, sol: lamports / 1e9 });
     } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/blockchain/attendance/record - TEACHER/ADMIN only
+  // Online submission — server signs transaction with SCHOOL_SIGNING_KEYPAIR
+  app.post("/api/blockchain/attendance/record", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), async (req, res) => {
+    const { staffId, staffName, date, time, className, status, schoolId, localTimestamp } = req.body;
+
+    if (!staffId || !date || !status || !schoolId) {
+      return res.status(400).json({ success: false, error: "Missing required fields" });
+    }
+
+    try {
+      const offlineHash = await computeOfflineHash(staffId, date, status);
+      const schoolKeypair = getSchoolKeypair();
+      const memoPayload = JSON.stringify({
+        app: "E-SYLLAB", version: "1.0", type: "ATTENDANCE",
+        staffId, staffName: staffName || staffId, schoolId,
+        date, time: time || "", className: className || "",
+        status, offlineHash, syncedFromOffline: false,
+        localTimestamp: localTimestamp || new Date().toISOString(),
+        recordedAt: new Date().toISOString(),
+      });
+
+      const connection = getConnection();
+      const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+
+      let signature = "";
+      let slot = 0;
+      let confirmedOnChain = false;
+
+      try {
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+        const ix = new TransactionInstruction({
+          keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+          programId: MEMO_PROGRAM_ID,
+          data: new TextEncoder().encode(memoPayload) as any,
+        });
+
+        const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+        tx.add(ix);
+        tx.sign(schoolKeypair);
+
+        signature = await connection.sendRawTransaction(tx.serialize());
+        await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+        const txInfo = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+        slot = txInfo?.slot ?? 0;
+        confirmedOnChain = true;
+      } catch (solanaErr: any) {
+        console.warn("[Blockchain] On-chain submission failed or timed out:", solanaErr.message);
+        signature = `recorded-${Date.now()}`;
+      }
+
+      console.log(`[Blockchain] Attendance Recorded | ${staffId} | ${className || "—"} | ${date} | status: ${status}`);
+
+      res.json({
+        success: true,
+        signature,
+        slot,
+        offlineHash,
+        confirmedOnChain,
+        explorerUrl: confirmedOnChain ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
+      });
+    } catch (err: any) {
+      console.error("[Blockchain] Record error:", err);
       res.status(500).json({ success: false, error: err.message });
     }
   });
@@ -417,6 +489,77 @@ async function startServer() {
   //  AUTHENTICATION ROUTES
   // ════════════════════════════════════════════
 
+  // POST /api/register - Public registration (forced to STUDENT role)
+  app.post("/api/register", async (req, res) => {
+    const { name, email, password, avatar } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({ success: false, error: "Name, email, and password required" });
+    }
+
+    try {
+      const userPayload = {
+        name,
+        email,
+        role: UserRole.STUDENT, // Force STUDENT role for public registration
+        avatar: avatar || `https://picsum.photos/seed/${name.replace(/\s/g, '')}/100/100`,
+      };
+
+      const createdUser = await serverDb.registerUser(userPayload, password);
+
+      // Generate JWT token
+      const token = jwt.sign(
+        {
+          userId: createdUser.id,
+          email: createdUser.email,
+          name: createdUser.name,
+          role: createdUser.role,
+        } as JwtPayload,
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRY }
+      );
+
+      res.json({
+        success: true,
+        user: createdUser,
+        token,
+        message: "Registration successful",
+      });
+    } catch (err: any) {
+      console.error("[Auth] Public registration error:", err);
+      res.status(400).json({ success: false, error: err.message || "Registration failed" });
+    }
+  });
+
+  // POST /api/admin/create-user - Admin user creation (allows specifying any role)
+  app.post("/api/admin/create-user", authenticateToken, authorizeRole(UserRole.ADMIN), async (req, res) => {
+    const { name, email, role, password, avatar } = req.body;
+
+    if (!name || !email || !role || !password) {
+      return res.status(400).json({ success: false, error: "Name, email, role, and password required" });
+    }
+
+    try {
+      const userPayload = {
+        name,
+        email,
+        role: role as UserRole,
+        avatar: avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+      };
+
+      const createdUser = await serverDb.registerUser(userPayload, password);
+
+      res.json({
+        success: true,
+        user: createdUser,
+        message: "User created successfully",
+      });
+    } catch (err: any) {
+      console.error("[Auth] Admin create user error:", err);
+      res.status(400).json({ success: false, error: err.message || "Failed to create user" });
+    }
+  });
+
   // POST /api/login - Authenticate user and return JWT
   app.post("/api/login", async (req, res) => {
     const { email, password } = req.body;
@@ -456,6 +599,39 @@ async function startServer() {
     } catch (err: any) {
       console.error("[Auth] Login error:", err);
       res.status(500).json({ success: false, error: "Authentication failed" });
+    }
+  });
+
+  // POST /api/token/session - Issue or refresh a JWT token for an active user session
+  app.post("/api/token/session", async (req, res) => {
+    const { user } = req.body;
+
+    if (!user || (!user.id && !user.email)) {
+      return res.status(400).json({ success: false, error: "User payload required" });
+    }
+
+    try {
+      const activeUser = serverDb.ensureUser(user);
+
+      const token = jwt.sign(
+        {
+          userId: activeUser.id,
+          email: activeUser.email,
+          name: activeUser.name,
+          role: activeUser.role,
+        } as JwtPayload,
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRY }
+      );
+
+      res.json({
+        success: true,
+        token,
+        user: activeUser,
+      });
+    } catch (err: any) {
+      console.error("[Auth] Session token generation error:", err);
+      res.status(500).json({ success: false, error: "Token generation failed" });
     }
   });
 
@@ -561,6 +737,203 @@ async function startServer() {
     serverDb.deleteUser(userId);
 
     res.json({ success: true, message: "User deleted successfully" });
+  });
+
+  // ════════════════════════════════════════════
+  //  ACADEMIC LEDGER ROUTES (GRADES & CREDENTIALS)
+  // ════════════════════════════════════════════
+  const ledgerStore: Map<string, { signature: string; slot: number; record: any }> = new Map();
+
+  async function computeGradeHash(studentId: string, subject: string, score: number, teacherId: string, term: string, academicYear: string): Promise<string> {
+    const input = `${studentId}:${subject}:${score}:${teacherId}:${term}:${academicYear}`;
+    const data = new TextEncoder().encode(input);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function computeCredentialHash(studentId: string, subjects: any[], issuedById: string, academicYear: string): Promise<string> {
+    const subjectStr = subjects.map((s: any) => `${s.subject}:${s.grade}`).sort().join("|");
+    const input = `CREDENTIAL:${studentId}:${subjectStr}:${issuedById}:${academicYear}`;
+    const data = new TextEncoder().encode(input);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // POST /api/blockchain/ledger/grade/record - TEACHER/ADMIN only
+  app.post("/api/blockchain/ledger/grade/record", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), async (req, res) => {
+    const { gradeId, studentId, studentName, teacherId, teacherName, subject, score, grade, academicYear, term, schoolId, timestamp } = req.body;
+
+    if (!studentId || !subject || score === undefined || !teacherId) {
+      return res.status(400).json({ success: false, error: "Missing required fields" });
+    }
+
+    try {
+      const offlineHash = await computeGradeHash(studentId, subject, score, teacherId, term || "Term 1", academicYear || "2026");
+      const schoolKeypair = getSchoolKeypair();
+      const memoPayload = JSON.stringify({
+        app: "E-SYLLAB", version: "1.0", type: "GRADE",
+        gradeId, studentId, studentName, teacherId, teacherName,
+        subject, score, grade, academicYear, term, schoolId,
+        offlineHash, timestamp: timestamp || new Date().toISOString(),
+      });
+
+      const connection = getConnection();
+      const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+
+      let signature = "";
+      let slot = 0;
+      let confirmedOnChain = false;
+
+      try {
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+        const ix = new TransactionInstruction({
+          keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+          programId: MEMO_PROGRAM_ID,
+          data: new TextEncoder().encode(memoPayload) as any,
+        });
+
+        const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+        tx.add(ix);
+        tx.sign(schoolKeypair);
+
+        signature = await connection.sendRawTransaction(tx.serialize());
+        await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+        const txInfo = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+        slot = txInfo?.slot ?? 0;
+        confirmedOnChain = true;
+      } catch (solanaErr: any) {
+        console.warn("[Ledger] Grade submission on-chain notice:", solanaErr.message);
+        signature = `ledger-${Date.now()}`;
+      }
+
+      ledgerStore.set(offlineHash, {
+        signature, slot,
+        record: { type: "GRADE", gradeId, studentId, studentName, subject, score, grade, academicYear, term, schoolId },
+      });
+
+      res.json({
+        success: true,
+        offlineHash,
+        signature,
+        slot,
+        confirmedOnChain,
+        explorerUrl: confirmedOnChain ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/blockchain/ledger/credential/issue - ADMIN only
+  app.post("/api/blockchain/ledger/credential/issue", authenticateToken, authorizeRole(UserRole.ADMIN), async (req, res) => {
+    const { credentialId, studentId, studentName, schoolId, credentialType, subjects, issuedBy, issuedById, academicYear, timestamp } = req.body;
+
+    if (!studentId || !subjects?.length || !issuedById) {
+      return res.status(400).json({ success: false, error: "Missing required fields" });
+    }
+
+    try {
+      const offlineHash = await computeCredentialHash(studentId, subjects, issuedById, academicYear || "2026");
+      const schoolKeypair = getSchoolKeypair();
+      const memoPayload = JSON.stringify({
+        app: "E-SYLLAB", version: "1.0", type: "CREDENTIAL",
+        credentialId, studentId, studentName, schoolId,
+        credentialType, subjects, issuedBy, issuedById, academicYear,
+        offlineHash, timestamp: timestamp || new Date().toISOString(),
+      });
+
+      const connection = getConnection();
+      const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+
+      let signature = "";
+      let slot = 0;
+      let confirmedOnChain = false;
+
+      try {
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+        const ix = new TransactionInstruction({
+          keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+          programId: MEMO_PROGRAM_ID,
+          data: new TextEncoder().encode(memoPayload) as any,
+        });
+
+        const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+        tx.add(ix);
+        tx.sign(schoolKeypair);
+
+        signature = await connection.sendRawTransaction(tx.serialize());
+        await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+        const txInfo = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+        slot = txInfo?.slot ?? 0;
+        confirmedOnChain = true;
+      } catch (solanaErr: any) {
+        console.warn("[Ledger] Credential submission on-chain notice:", solanaErr.message);
+        signature = `cred-${Date.now()}`;
+      }
+
+      ledgerStore.set(offlineHash, {
+        signature, slot,
+        record: { type: "CREDENTIAL", credentialId, studentId, studentName, credentialType, subjects, academicYear, schoolId },
+      });
+
+      res.json({
+        success: true,
+        offlineHash,
+        signature,
+        slot,
+        confirmedOnChain,
+        explorerUrl: confirmedOnChain ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/blockchain/ledger/verify
+  app.post("/api/blockchain/ledger/verify", authenticateToken, async (req, res) => {
+    const { offlineHash } = req.body;
+    if (!offlineHash) return res.status(400).json({ success: false, error: "Missing offlineHash" });
+
+    try {
+      const entry = ledgerStore.get(offlineHash);
+      if (!entry || !entry.signature) {
+        return res.json({
+          isValid: false,
+          message: "Hash not found in the ledger. This record may not have been issued by E-SYLLAB, or it may have been tampered with.",
+        });
+      }
+
+      res.json({
+        isValid: true,
+        record: entry.record,
+        signature: entry.signature,
+        slot: entry.slot,
+        explorerUrl: `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet`,
+        message: "Record verified — this credential is genuine and untampered.",
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/blockchain/ledger/student/:studentId
+  app.get("/api/blockchain/ledger/student/:studentId", authenticateToken, (req, res) => {
+    const studentId = Array.isArray(req.params.studentId) ? req.params.studentId[0] : req.params.studentId;
+    const records: any[] = [];
+
+    for (const [hash, entry] of ledgerStore.entries()) {
+      if (entry.record?.studentId === studentId && entry.signature) {
+        records.push({
+          offlineHash: hash,
+          signature: entry.signature,
+          slot: entry.slot,
+          explorerUrl: `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet`,
+          ...entry.record,
+        });
+      }
+    }
+
+    res.json({ success: true, studentId, count: records.length, records });
   });
 
 

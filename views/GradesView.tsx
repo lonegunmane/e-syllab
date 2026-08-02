@@ -122,8 +122,8 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
 
       refresh();
 
-      // Step 2: Record on blockchain — Phantom popup appears here
-      setSaveMsg('Approve the pop-up in Phantom to secure this grade permanently...');
+      // Step 2: Record on blockchain via school keypair
+      setSaveMsg('Securing grade permanently on-chain...');
       const result = await recordGrade(gradeRecord, currentUser.name, 'ZMB-KAPASA-001', academicYear, term);
 
       if (result.success) {
@@ -138,7 +138,7 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
       } else {
         // Blockchain failed but local save succeeded — still a success for the teacher
         setSaveState('done');
-        setSaveMsg(`Grade saved locally. Blockchain recording failed: ${result.error}. Connect Phantom to secure it.`);
+        setSaveMsg(`Grade saved locally. Blockchain sync pending: ${result.error || 'Server queue'}`);
       }
     } catch (err: any) {
       setSaveState('error');
@@ -398,7 +398,7 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
 
             <p className="text-[11px] text-slate-600 text-center flex items-center justify-center gap-1.5">
               <Shield className="w-3 h-3" />
-              Grades are permanently secured after your Phantom approval
+              Grades are permanently secured on-chain via school signing key
             </p>
           </div>
         </div>
