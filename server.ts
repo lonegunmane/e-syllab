@@ -16,8 +16,9 @@ import {
   getConnection,
 } from "./services/blockchain.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = typeof __dirname !== "undefined"
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
 
 // ─── School signing keypair (used to auto-sync offline records) ──────────────
 // Generate once with: node generate-keypair.js

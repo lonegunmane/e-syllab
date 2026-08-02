@@ -5,8 +5,9 @@ import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential } from '../types';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = typeof __dirname !== "undefined"
+  ? __dirname
+  : path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = path.join(__dirname, '..', 'data', 'esylab.db');
 
