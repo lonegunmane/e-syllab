@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
 import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential } from '../types';
 
-const __dirname = typeof __dirname !== "undefined"
+var __dirname = typeof __dirname !== "undefined"
   ? __dirname
   : path.dirname(fileURLToPath(import.meta.url));
 

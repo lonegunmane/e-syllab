@@ -16,7 +16,7 @@ import {
   getConnection,
 } from "./services/blockchain.js";
 
-const __dirname = typeof __dirname !== "undefined"
+var __dirname = typeof __dirname !== "undefined"
   ? __dirname
   : path.dirname(fileURLToPath(import.meta.url));
 
