@@ -6,7 +6,7 @@ services:
     plan: free
     branch: main
     rootDir: google-drive-main
-    buildCommand: npm install
+    buildCommand: npm install && npm run build
     startCommand: npm run start
     healthCheckPath: /api/blockchain/status
     envVars:
