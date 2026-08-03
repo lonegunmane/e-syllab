@@ -10,6 +10,7 @@ import { User, UserRole, CurriculumResource, ResourceCategory, VaultDocument, Do
 import { db } from '../services/database';
 import { ProfileSection } from '../components/ProfileSection';
 import { BlockchainAttendance } from '../components/BlockchainAttendance';
+import { TimetableView } from '../components/TimetableView';
 
 interface TeacherDashboardProps {
   user: User;
@@ -567,6 +568,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onUpda
       )}
 
       {activeTab === 'announcements' && <CurriculumManager user={user} filterCategory={ResourceCategory.ANNOUNCEMENT} />}
+      {activeTab === 'timetable' && <TimetableView currentUser={user} />}
       {activeTab === 'assignments' && <CurriculumManager user={user} filterCategory={ResourceCategory.DOCUMENT} />}
       {activeTab === 'students' && <DetailedStudentList />}
       {activeTab === 'attendance' && <BlockchainAttendance user={user} />}

@@ -3,7 +3,7 @@ import {
   LayoutDashboard, BookOpen, FileText, Settings,
   LogOut, Bell, Menu, X, Users, CheckSquare,
   TrendingUp, Camera, Pencil, Loader2, CheckCircle,
-  XCircle, MessageSquare, ShieldCheck, Save,
+  XCircle, MessageSquare, ShieldCheck, Save, Calendar,
 } from 'lucide-react';
 import { UserRole, User } from '../types';
 import { db } from '../services/database';
@@ -50,6 +50,7 @@ export const Layout: React.FC<LayoutProps> = ({
       case UserRole.STUDENT:
         return [
           { id: 'overview',       icon: LayoutDashboard, label: 'Home'         },
+          { id: 'timetable',      icon: Calendar,        label: 'Timetable'    },
           { id: 'announcements',  icon: BookOpen,        label: 'Notices'      },
           { id: 'assignments',    icon: CheckSquare,     label: 'Work'         },
           { id: 'grades',         icon: TrendingUp,      label: 'Results'      },
@@ -58,6 +59,7 @@ export const Layout: React.FC<LayoutProps> = ({
       case UserRole.TEACHER:
         return [
           { id: 'overview',       icon: LayoutDashboard, label: 'Home'         },
+          { id: 'timetable',      icon: Calendar,        label: 'Timetable'    },
           { id: 'announcements',  icon: BookOpen,        label: 'Notices'      },
           { id: 'assignments',    icon: CheckSquare,     label: 'Assignments'  },
           { id: 'attendance',     icon: ShieldCheck,     label: 'Attendance'   },
@@ -69,6 +71,7 @@ export const Layout: React.FC<LayoutProps> = ({
       case UserRole.ADMIN:
         return [
           { id: 'overview',       icon: LayoutDashboard, label: 'Home'                                                       },
+          { id: 'timetable',      icon: Calendar,        label: 'Timetable'                                                  },
           { id: 'announcements',  icon: BookOpen,        label: 'Notices'                                                    },
           { id: 'vault',          icon: ShieldCheck,     label: 'Approvals',  badge: pendingVaultCount > 0 ? pendingVaultCount : undefined },
           { id: 'communicate',    icon: MessageSquare,   label: 'Messages'                                                   },
@@ -80,6 +83,7 @@ export const Layout: React.FC<LayoutProps> = ({
         return [{ id: 'overview', icon: LayoutDashboard, label: 'Home' }];
     }
   };
+
 
   const navItems = getNavItems() as any[];
 

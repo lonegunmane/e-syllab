@@ -13,6 +13,8 @@ import { User, UserRole, CurriculumResource, ResourceCategory, VaultDocument, Do
 import { db } from '../services/database';
 import { createUserByAdmin } from '../services/api';
 import { ProfileSection } from '../components/ProfileSection';
+import { TimetableView } from '../components/TimetableView';
+import { StaffPerformanceDashboard } from '../components/StaffPerformanceDashboard';
 
 const staffActivity = [
   { name: 'Jan', activity: 400 },
@@ -981,8 +983,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
       )}
 
       {activeTab === 'announcements' && <CurriculumManager user={user} filterCategory={ResourceCategory.ANNOUNCEMENT} onUpdate={refreshCounts} />}
+      {activeTab === 'timetable' && <TimetableView currentUser={user} />}
       {activeTab === 'assignments' && <CurriculumManager user={user} filterCategory={ResourceCategory.DOCUMENT} onUpdate={refreshCounts} />}
-      {activeTab === 'staff' && <UserManager role={UserRole.TEACHER} title="Faculty Control" onDelete={refreshCounts} />}
+      {activeTab === 'staff' && (
+        <div className="space-y-8">
+          <StaffPerformanceDashboard />
+          <UserManager role={UserRole.TEACHER} title="Faculty Account Management" onDelete={refreshCounts} />
+        </div>
+      )}
       {activeTab === 'students' && <UserManager role={UserRole.STUDENT} title="Student Directory" onDelete={refreshCounts} />}
       {activeTab === 'profile' && <ProfileSection user={user} onUpdateUser={onUpdateUser} />}
       {activeTab === 'vault' && <VaultApprovals />}

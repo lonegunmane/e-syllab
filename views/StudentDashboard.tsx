@@ -11,6 +11,7 @@ import {
 import { User, CurriculumResource, ResourceCategory, UserRole } from '../types';
 import { db } from '../services/database';
 import { ProfileSection } from '../components/ProfileSection';
+import { TimetableView } from '../components/TimetableView';
 
 const mockPerformanceData = [
   { name: 'Mon', score: 65 },
@@ -402,6 +403,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onUpda
       )}
 
       {activeTab === 'announcements' && <CurriculumViewer userGrade={user.grade} />}
+      {activeTab === 'timetable' && <TimetableView currentUser={user} />}
       {activeTab === 'assignments' && <AssignmentsView userGrade={user.grade} />}
       {activeTab === 'profile' && <ProfileSection user={user} onUpdateUser={onUpdateUser} />}
     </div>

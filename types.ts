@@ -127,3 +127,16 @@ export interface GradeRecord {
   comment: string;
   timestamp: string;
 }
+
+export interface TimetableEntry {
+  id: string;
+  className: string;
+  dayOfWeek: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | string;
+  period: string; // e.g. "Period 1 (08:00 - 08:45)"
+  subject: string;
+  teacherId?: string;
+  teacherName?: string;
+  room?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}

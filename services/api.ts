@@ -441,3 +441,77 @@ export async function verifyAttendanceHash(data: Record<string, any>) {
 
   return response.json();
 }
+
+// ─── Timetable API Methods ──────────────────────────────────────────────────
+export async function getTimetables(className?: string) {
+  const url = className
+    ? `${API_BASE_URL}/timetables?className=${encodeURIComponent(className)}`
+    : `${API_BASE_URL}/timetables`;
+  
+  const response = await authFetch(url);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch timetables");
+  }
+  return response.json();
+}
+
+export async function createTimetable(timetableData: {
+  className: string;
+  dayOfWeek: string;
+  period: string;
+  subject: string;
+  teacherId?: string;
+  room?: string;
+}) {
+  const response = await authFetch(`${API_BASE_URL}/timetables`, {
+    method: "POST",
+    body: JSON.stringify(timetableData),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to create timetable entry");
+  }
+  return response.json();
+}
+
+export async function updateTimetable(id: string, updates: Partial<{
+  className: string;
+  dayOfWeek: string;
+  period: string;
+  subject: string;
+  teacherId?: string;
+  room?: string;
+}>) {
+  const response = await authFetch(`${API_BASE_URL}/timetables/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(updates),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to update timetable entry");
+  }
+  return response.json();
+}
+
+export async function deleteTimetable(id: string) {
+  const response = await authFetch(`${API_BASE_URL}/timetables/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to delete timetable entry");
+  }
+  return response.json();
+}
+
+export async function getStaffPerformance() {
+  const response = await authFetch(`${API_BASE_URL}/admin/staff-performance`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch staff performance metrics");
+  }
+  return response.json();
+}
+
+

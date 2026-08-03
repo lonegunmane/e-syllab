@@ -6,6 +6,7 @@ import { TeacherDashboard } from './views/TeacherDashboard';
 import { AdminDashboard } from './views/AdminDashboard';
 import { MessagingView } from './views/MessagingView';
 import { GradesView } from './views/GradesView';
+import { TimetableView } from './components/TimetableView';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AuthPage } from './components/AuthPage';
 import { db } from './services/database';
@@ -155,6 +156,10 @@ const App: React.FC = () => {
 
     if (activeTab === 'grades') {
       return <GradesView currentUser={currentUser} />;
+    }
+
+    if (activeTab === 'timetable') {
+      return <TimetableView currentUser={currentUser} />;
     }
 
     switch (currentUser.role) {

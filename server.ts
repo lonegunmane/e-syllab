@@ -16,9 +16,8 @@ import {
   getConnection,
 } from "./services/blockchain.js";
 
-var __dirname = typeof __dirname !== "undefined"
-  ? __dirname
-  : path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ─── School signing keypair (used to auto-sync offline records) ──────────────
 // Generate once with: node generate-keypair.js
@@ -246,6 +245,12 @@ async function startServer() {
       }
 
       console.log(`[Blockchain] Attendance Recorded | ${staffId} | ${className || "—"} | ${date} | status: ${status}`);
+
+      try {
+        serverDb.recordAttendance({ staffId, staffName, date, time, className, status, schoolId });
+      } catch (dbErr) {
+        console.warn("[Blockchain] Saved to chain but DB record error:", dbErr);
+      }
 
       res.json({
         success: true,
@@ -935,6 +940,163 @@ async function startServer() {
     }
 
     res.json({ success: true, studentId, count: records.length, records });
+  });
+
+  // ─── Staff Performance Route ──────────────────────────────────────────────
+  // GET /api/admin/staff-performance (ADMIN only)
+  app.get("/api/admin/staff-performance", authenticateToken, authorizeRole(UserRole.ADMIN), (_req, res) => {
+    try {
+      const teachers = serverDb.getStaffPerformanceMetrics();
+      res.json({ success: true, count: teachers.length, teachers });
+    } catch (err: any) {
+      console.error("[Staff Performance] GET error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to fetch staff performance metrics" });
+    }
+  });
+
+  // ─── Timetable Management Routes ──────────────────────────────────────────
+  function checkTimetableConflict(
+    className: string,
+    dayOfWeek: string,
+    period: string,
+    teacherId?: string,
+    room?: string,
+    excludeId?: string
+  ): { conflict: boolean; error?: string } {
+    const pNorm = (period || "").toLowerCase();
+    if (pNorm.includes("break") || pNorm.includes("lunch") || pNorm.includes("10:00") || pNorm.includes("13:00")) {
+      return { conflict: true, error: "Cannot schedule classes during fixed Break (10:00–10:30) or Lunch (13:00–14:00) slots." };
+    }
+
+    const allEntries = serverDb.getAllTimetables();
+
+    for (const existing of allEntries) {
+      if (excludeId && existing.id === excludeId) continue;
+
+      const sameDay = existing.dayOfWeek.trim().toLowerCase() === dayOfWeek.trim().toLowerCase();
+      const samePeriod = existing.period.trim().toLowerCase() === period.trim().toLowerCase();
+
+      if (sameDay && samePeriod) {
+        // Rule 1: Teacher conflict
+        if (teacherId && existing.teacherId && existing.teacherId === teacherId) {
+          const teacherName = existing.teacherName || "The assigned teacher";
+          return {
+            conflict: true,
+            error: `Teacher Conflict: ${teacherName} is already scheduled in ${existing.className} (${existing.subject}) on ${dayOfWeek} during ${period}.`,
+          };
+        }
+
+        // Rule 2: Class conflict
+        if (existing.className.trim().toLowerCase() === className.trim().toLowerCase()) {
+          return {
+            conflict: true,
+            error: `Class Conflict: ${className} already has ${existing.subject} scheduled on ${dayOfWeek} during ${period}.`,
+          };
+        }
+
+        // Rule 3: Room conflict
+        if (room && room.trim() && existing.room && existing.room.trim().toLowerCase() === room.trim().toLowerCase()) {
+          return {
+            conflict: true,
+            error: `Room Conflict: Room "${room}" is already booked for ${existing.className} (${existing.subject}) on ${dayOfWeek} during ${period}.`,
+          };
+        }
+      }
+    }
+
+    return { conflict: false };
+  }
+
+  // GET /api/timetables (any authenticated user)
+  app.get("/api/timetables", authenticateToken, (req, res) => {
+    try {
+      const className = req.query.className as string;
+      let timetables;
+      if (className) {
+        timetables = serverDb.getTimetablesByClass(className);
+      } else {
+        timetables = serverDb.getAllTimetables();
+      }
+      res.json({ success: true, count: timetables.length, timetables });
+    } catch (err: any) {
+      console.error("[Timetables] GET error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to fetch timetables" });
+    }
+  });
+
+  // POST /api/timetables (ADMIN only)
+  app.post("/api/timetables", authenticateToken, authorizeRole(UserRole.ADMIN), (req, res) => {
+    const { className, dayOfWeek, period, subject, teacherId, room } = req.body;
+
+    if (!className || !dayOfWeek || !period || !subject) {
+      return res.status(400).json({ success: false, error: "Missing required fields: className, dayOfWeek, period, subject" });
+    }
+
+    const check = checkTimetableConflict(className, dayOfWeek, period, teacherId, room);
+    if (check.conflict) {
+      return res.status(409).json({ success: false, error: check.error });
+    }
+
+    try {
+      const entry = serverDb.createTimetableEntry({
+        className,
+        dayOfWeek,
+        period,
+        subject,
+        teacherId,
+        room,
+      });
+      res.json({ success: true, timetable: entry, message: "Timetable entry created successfully" });
+    } catch (err: any) {
+      console.error("[Timetables] POST error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to create timetable entry" });
+    }
+  });
+
+  // PUT /api/timetables/:id (ADMIN only)
+  app.put("/api/timetables/:id", authenticateToken, authorizeRole(UserRole.ADMIN), (req, res) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const updates = req.body;
+
+    const existing = serverDb.getAllTimetables().find(t => t.id === id);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: "Timetable entry not found" });
+    }
+
+    const className = updates.className || existing.className;
+    const dayOfWeek = updates.dayOfWeek || existing.dayOfWeek;
+    const period = updates.period || existing.period;
+    const teacherId = updates.teacherId !== undefined ? updates.teacherId : existing.teacherId;
+    const room = updates.room !== undefined ? updates.room : existing.room;
+
+    const check = checkTimetableConflict(className, dayOfWeek, period, teacherId, room, id);
+    if (check.conflict) {
+      return res.status(409).json({ success: false, error: check.error });
+    }
+
+    try {
+      const updated = serverDb.updateTimetableEntry(id, updates);
+      if (!updated) {
+        return res.status(404).json({ success: false, error: "Timetable entry not found" });
+      }
+      res.json({ success: true, timetable: updated, message: "Timetable entry updated successfully" });
+    } catch (err: any) {
+      console.error("[Timetables] PUT error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to update timetable entry" });
+    }
+  });
+
+  // DELETE /api/timetables/:id (ADMIN only)
+  app.delete("/api/timetables/:id", authenticateToken, authorizeRole(UserRole.ADMIN), (req, res) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    try {
+      const success = serverDb.deleteTimetableEntry(id);
+      res.json({ success: true, message: "Timetable entry deleted successfully" });
+    } catch (err: any) {
+      console.error("[Timetables] DELETE error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to delete timetable entry" });
+    }
   });
 
 

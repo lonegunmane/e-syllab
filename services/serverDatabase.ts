@@ -3,11 +3,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
-import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential } from '../types';
+import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential, TimetableEntry } from '../types';
 
-var __dirname = typeof __dirname !== "undefined"
-  ? __dirname
-  : path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const dbPath = path.join(__dirname, '..', 'data', 'esylab.db');
 
@@ -42,6 +41,7 @@ export const serverDb = {
 
     this.createTables();
     this.seedInitialData();
+    this.seedTimetables();
     this.save();
   },
 
@@ -161,6 +161,36 @@ export const serverDb = {
         FOREIGN KEY (teacherId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+
+    // Timetables table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS timetables (
+        id TEXT PRIMARY KEY,
+        className TEXT NOT NULL,
+        dayOfWeek TEXT NOT NULL,
+        period TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        teacherId TEXT,
+        room TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      )
+    `);
+
+    // Attendance records table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS attendance_records (
+        id TEXT PRIMARY KEY,
+        staffId TEXT NOT NULL,
+        staffName TEXT,
+        date TEXT NOT NULL,
+        time TEXT,
+        className TEXT,
+        status TEXT NOT NULL,
+        schoolId TEXT,
+        createdAt TEXT NOT NULL
+      )
+    `);
   },
 
   seedInitialData(): void {
@@ -233,6 +263,16 @@ export const serverDb = {
       console.log('[Database] Seeded initial data');
     } catch (err) {
       console.error('[Database] Seeding error:', err);
+    }
+  },
+
+  seedTimetables(): void {
+    try {
+      // The timetable must start completely empty for every class
+      sqlDb.run('DELETE FROM timetables');
+      this.save();
+    } catch (err) {
+      console.error('[Database] Timetable clearing error:', err);
     }
   },
 
@@ -687,6 +727,107 @@ export const serverDb = {
     return docs;
   },
 
+  // ─── Timetable Operations ──────────────────────────────────────────────────
+  getAllTimetables(): TimetableEntry[] {
+    const stmt = sqlDb.prepare('SELECT * FROM timetables ORDER BY className, dayOfWeek, period');
+    const items: TimetableEntry[] = [];
+    while (stmt.step()) {
+      items.push(this.rowToTimetable(stmt.getAsObject()));
+    }
+    stmt.free();
+    return items;
+  },
+
+  getTimetablesByClass(className: string): TimetableEntry[] {
+    const stmt = sqlDb.prepare('SELECT * FROM timetables WHERE className = ? ORDER BY dayOfWeek, period');
+    stmt.bind([className]);
+    const items: TimetableEntry[] = [];
+    while (stmt.step()) {
+      items.push(this.rowToTimetable(stmt.getAsObject()));
+    }
+    stmt.free();
+    return items;
+  },
+
+  getTimetableById(id: string): TimetableEntry | null {
+    const stmt = sqlDb.prepare('SELECT * FROM timetables WHERE id = ?');
+    stmt.bind([id]);
+    let found: TimetableEntry | null = null;
+    if (stmt.step()) {
+      found = this.rowToTimetable(stmt.getAsObject());
+    }
+    stmt.free();
+    return found;
+  },
+
+  createTimetableEntry(entry: {
+    id?: string;
+    className: string;
+    dayOfWeek: string;
+    period: string;
+    subject: string;
+    teacherId?: string;
+    room?: string;
+  }): TimetableEntry {
+    const id = entry.id || this.generateId();
+    const now = new Date().toISOString();
+
+    const stmt = sqlDb.prepare(`
+      INSERT INTO timetables (id, className, dayOfWeek, period, subject, teacherId, room, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.bind([
+      id,
+      entry.className,
+      entry.dayOfWeek,
+      entry.period,
+      entry.subject,
+      entry.teacherId || '',
+      entry.room || '',
+      now,
+      now,
+    ]);
+    stmt.step();
+    stmt.free();
+    this.save();
+
+    return this.getTimetableById(id)!;
+  },
+
+  updateTimetableEntry(id: string, updates: Partial<TimetableEntry>): TimetableEntry | null {
+    const existing = this.getTimetableById(id);
+    if (!existing) return null;
+
+    const now = new Date().toISOString();
+    const className = updates.className !== undefined ? updates.className : existing.className;
+    const dayOfWeek = updates.dayOfWeek !== undefined ? updates.dayOfWeek : existing.dayOfWeek;
+    const period = updates.period !== undefined ? updates.period : existing.period;
+    const subject = updates.subject !== undefined ? updates.subject : existing.subject;
+    const teacherId = updates.teacherId !== undefined ? updates.teacherId : (existing.teacherId || '');
+    const room = updates.room !== undefined ? updates.room : (existing.room || '');
+
+    const stmt = sqlDb.prepare(`
+      UPDATE timetables
+      SET className = ?, dayOfWeek = ?, period = ?, subject = ?, teacherId = ?, room = ?, updatedAt = ?
+      WHERE id = ?
+    `);
+    stmt.bind([className, dayOfWeek, period, subject, teacherId, room, now, id]);
+    stmt.step();
+    stmt.free();
+    this.save();
+
+    return this.getTimetableById(id);
+  },
+
+  deleteTimetableEntry(id: string): boolean {
+    const stmt = sqlDb.prepare('DELETE FROM timetables WHERE id = ?');
+    stmt.bind([id]);
+    stmt.step();
+    stmt.free();
+    this.save();
+    return true;
+  },
+
   // ─── Utilities ────────────────────────────────────────────────────────────
   generateId(): string {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -776,6 +917,136 @@ export const serverDb = {
       fileType: row.fileType,
       fileData: row.fileData,
     };
+  },
+
+  rowToTimetable(row: any): TimetableEntry {
+    let teacherName: string | undefined = undefined;
+    if (row.teacherId) {
+      const teacher = this.findUserById(row.teacherId);
+      if (teacher) teacherName = teacher.name;
+    }
+
+    return {
+      id: row.id,
+      className: row.className,
+      dayOfWeek: row.dayOfWeek,
+      period: row.period,
+      subject: row.subject,
+      teacherId: row.teacherId || undefined,
+      teacherName,
+      room: row.room || undefined,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  },
+
+  // ─── Staff Performance & Attendance DB Helpers ─────────────────────────────
+  recordAttendance(record: { staffId: string; staffName?: string; date: string; time?: string; className?: string; status: string; schoolId?: string }): void {
+    const id = this.generateId();
+    const now = new Date().toISOString();
+    try {
+      const stmt = sqlDb.prepare(`
+        INSERT INTO attendance_records (id, staffId, staffName, date, time, className, status, schoolId, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      stmt.bind([
+        id,
+        record.staffId,
+        record.staffName || null,
+        record.date,
+        record.time || null,
+        record.className || null,
+        record.status,
+        record.schoolId || null,
+        now,
+      ]);
+      stmt.step();
+      stmt.free();
+      this.save();
+    } catch (err) {
+      console.error('[Database] Attendance insert error:', err);
+    }
+  },
+
+  getStaffPerformanceMetrics(): Array<{
+    id: string;
+    name: string;
+    email: string;
+    avatar?: string;
+    attendanceCount30Days: number;
+    gradesCount30Days: number;
+    vaultDocsSubmitted: number;
+    vaultDocsApproved: number;
+    weeklyWorkload: number;
+  }> {
+    const teachers = this.getUsersByRole(UserRole.TEACHER);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    return teachers.map(teacher => {
+      // 1. Attendance marked in last 30 days
+      let attendanceCount30Days = 0;
+      try {
+        const stmt = sqlDb.prepare('SELECT COUNT(*) as count FROM attendance_records WHERE staffId = ? AND createdAt >= ?');
+        stmt.bind([teacher.id, thirtyDaysAgo]);
+        if (stmt.step()) {
+          attendanceCount30Days = (stmt.getAsObject() as any).count || 0;
+        }
+        stmt.free();
+      } catch {}
+
+      // 2. Grades submitted in last 30 days
+      let gradesCount30Days = 0;
+      try {
+        const stmt = sqlDb.prepare('SELECT COUNT(*) as count FROM grades WHERE teacherId = ? AND createdAt >= ?');
+        stmt.bind([teacher.id, thirtyDaysAgo]);
+        if (stmt.step()) {
+          gradesCount30Days = (stmt.getAsObject() as any).count || 0;
+        }
+        stmt.free();
+      } catch {}
+
+      // 3. Vault docs submitted & approved
+      let vaultDocsSubmitted = 0;
+      let vaultDocsApproved = 0;
+      try {
+        const stmtSubmitted = sqlDb.prepare('SELECT COUNT(*) as count FROM vault_documents WHERE teacherId = ?');
+        stmtSubmitted.bind([teacher.id]);
+        if (stmtSubmitted.step()) {
+          vaultDocsSubmitted = (stmtSubmitted.getAsObject() as any).count || 0;
+        }
+        stmtSubmitted.free();
+
+        const stmtApproved = sqlDb.prepare("SELECT COUNT(*) as count FROM vault_documents WHERE teacherId = ? AND status = 'APPROVED'");
+        stmtApproved.bind([teacher.id]);
+        if (stmtApproved.step()) {
+          vaultDocsApproved = (stmtApproved.getAsObject() as any).count || 0;
+        }
+        stmtApproved.free();
+      } catch {}
+
+      // 4. Weekly workload (timetable periods assigned)
+      let weeklyWorkload = 0;
+      try {
+        const stmtWorkload = sqlDb.prepare('SELECT COUNT(*) as count FROM timetables WHERE teacherId = ?');
+        stmtWorkload.bind([teacher.id]);
+        if (stmtWorkload.step()) {
+          weeklyWorkload = (stmtWorkload.getAsObject() as any).count || 0;
+        }
+        stmtWorkload.free();
+      } catch {}
+
+      return {
+        id: teacher.id,
+        name: teacher.name,
+        email: teacher.email,
+        avatar: teacher.avatar,
+        attendanceCount30Days,
+        gradesCount30Days,
+        vaultDocsSubmitted,
+        vaultDocsApproved,
+        weeklyWorkload,
+      };
+    });
   },
 
   // ─── Database Cleanup ──────────────────────────────────────────────────────
