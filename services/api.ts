@@ -583,4 +583,44 @@ export async function verifyLedgerRecord(offlineHash: string) {
   return response.json();
 }
 
+// ─── Notification API Methods ──────────────────────────────────────────────
+export async function getSystemNotifications() {
+  const response = await authFetch(`${API_BASE_URL}/notifications`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch notifications");
+  }
+  return response.json();
+}
+
+export async function markSystemNotificationRead(id: string) {
+  const response = await authFetch(`${API_BASE_URL}/notifications/${encodeURIComponent(id)}/read`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to mark notification as read");
+  }
+  return response.json();
+}
+
+export async function createSystemNotification(data: {
+  recipientId?: string;
+  className?: string;
+  type: 'deadline' | 'meeting' | 'misconduct' | 'general' | string;
+  title: string;
+  message: string;
+  relatedId?: string;
+}) {
+  const response = await authFetch(`${API_BASE_URL}/notifications`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to create notification");
+  }
+  return response.json();
+}
+
 

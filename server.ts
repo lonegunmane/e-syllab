@@ -1337,6 +1337,287 @@ async function startServer() {
     }
   });
 
+  // ─── Assessment & Reporting API Routes ───────────────────────────────────
+
+  // POST /api/assessments (Teacher, Admin) - Create new assessment
+  app.post("/api/assessments", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), (req, res) => {
+    const { title, subject, className, maxScore } = req.body;
+    if (!title || !subject || !className || maxScore === undefined) {
+      return res.status(400).json({ success: false, error: "Missing required fields: title, subject, className, maxScore" });
+    }
+    const maxScoreNum = Number(maxScore);
+    if (isNaN(maxScoreNum) || maxScoreNum <= 0) {
+      return res.status(400).json({ success: false, error: "maxScore must be a positive number" });
+    }
+    try {
+      const assessment = serverDb.createAssessment({
+        title,
+        subject,
+        className,
+        teacherId: req.user!.userId,
+        maxScore: maxScoreNum,
+      });
+
+      // Auto-generate deadline notifications for students in that class
+      try {
+        const students = serverDb.getUsersByRole(UserRole.STUDENT);
+        const targetStudents = (className === 'All Classes' || className === 'All Grades')
+          ? students
+          : students.filter(s => s.className === className || s.grade === className);
+
+        const targetIds = targetStudents.map(s => s.id);
+        if (targetIds.length > 0) {
+          serverDb.createBulkNotifications(
+            targetIds,
+            'deadline',
+            `New Assessment Deadline: ${title}`,
+            `An assessment for ${subject} (${className}) worth ${maxScoreNum} marks has been scheduled.`,
+            assessment.id
+          );
+        }
+      } catch (notifErr) {
+        console.warn('[Server] Error creating assessment deadline notifications:', notifErr);
+      }
+
+      res.json({ success: true, assessment });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/assessments (any authenticated user) - List assessments
+  app.get("/api/assessments", authenticateToken, (req, res) => {
+    try {
+      const assessments = serverDb.getAllAssessments();
+      res.json({ success: true, assessments });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/assessments/student/my-scores (Student) - Get own assessment scores with blockchain info
+  app.get("/api/assessments/student/my-scores", authenticateToken, (req, res) => {
+    try {
+      const studentId = req.user!.userId;
+      const rawScores = serverDb.getStudentAssessmentScores(studentId);
+      const scores = rawScores.map(item => {
+        let ledgerEntry: any = null;
+        for (const [hash, entry] of ledgerStore.entries()) {
+          if (entry.record?.type === "ASSESSMENT_SCORE" && entry.record?.scoreId === item.id) {
+            ledgerEntry = { hash, ...entry };
+            break;
+          }
+        }
+        return {
+          ...item,
+          offlineHash: ledgerEntry?.hash || `hash-asg-${item.id}`,
+          signature: ledgerEntry?.signature || `sig-asg-${item.id}`,
+          explorerUrl: ledgerEntry?.signature ? `https://explorer.solana.com/tx/${ledgerEntry.signature}?cluster=devnet` : undefined,
+        };
+      });
+      res.json({ success: true, scores });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/assessments/:id/scores (Teacher, Admin) - Submit scores for students & anchor on-chain
+  app.post("/api/assessments/:id/scores", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), async (req, res) => {
+    const assessmentId = String(req.params.id);
+    const { scores } = req.body;
+
+    if (!Array.isArray(scores)) {
+      return res.status(400).json({ success: false, error: "scores must be an array" });
+    }
+
+    const assessment = serverDb.findAssessmentById(assessmentId);
+    if (!assessment) {
+      return res.status(404).json({ success: false, error: "Assessment not found" });
+    }
+
+    try {
+      const savedScores = serverDb.saveAssessmentScores(assessmentId, scores);
+      const schoolKeypair = getSchoolKeypair();
+      const connection = getConnection();
+      const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+
+      const anchoredScores = [];
+      for (const scoreRecord of savedScores) {
+        const studentUser = serverDb.findUserById(scoreRecord.studentId);
+        const studentName = studentUser ? studentUser.name : 'Student';
+
+        const offlineHash = await computeGradeHash(
+          scoreRecord.studentId,
+          assessment.subject,
+          scoreRecord.score,
+          req.user!.userId,
+          assessment.title,
+          "2026"
+        );
+
+        const memoPayload = JSON.stringify({
+          app: "E-SYLLAB",
+          type: "ASSESSMENT_SCORE",
+          assessmentId,
+          scoreId: scoreRecord.id,
+          studentId: scoreRecord.studentId,
+          studentName,
+          title: assessment.title,
+          subject: assessment.subject,
+          score: scoreRecord.score,
+          maxScore: assessment.maxScore,
+          offlineHash,
+          timestamp: scoreRecord.createdAt,
+        });
+
+        let signature = "";
+        let slot = 0;
+        let confirmedOnChain = false;
+
+        try {
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+          const ix = new TransactionInstruction({
+            keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+            programId: MEMO_PROGRAM_ID,
+            data: new TextEncoder().encode(memoPayload) as any,
+          });
+
+          const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+          tx.add(ix);
+          tx.sign(schoolKeypair);
+
+          signature = await connection.sendRawTransaction(tx.serialize());
+          await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+          const txInfo = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+          slot = txInfo?.slot ?? 0;
+          confirmedOnChain = true;
+        } catch (solanaErr: any) {
+          console.warn("[Ledger] Assessment score submission on-chain notice:", solanaErr.message);
+          signature = `ledger-asg-${Date.now()}-${scoreRecord.id}`;
+        }
+
+        ledgerStore.set(offlineHash, {
+          signature,
+          slot,
+          record: {
+            type: "ASSESSMENT_SCORE",
+            assessmentId,
+            scoreId: scoreRecord.id,
+            studentId: scoreRecord.studentId,
+            studentName,
+            title: assessment.title,
+            subject: assessment.subject,
+            score: scoreRecord.score,
+            maxScore: assessment.maxScore,
+            timestamp: scoreRecord.createdAt,
+          },
+        });
+
+        anchoredScores.push({
+          ...scoreRecord,
+          studentName,
+          offlineHash,
+          signature,
+          slot,
+          confirmedOnChain,
+          explorerUrl: confirmedOnChain ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
+        });
+      }
+
+      const report = serverDb.getAssessmentReport(assessmentId);
+
+      res.json({
+        success: true,
+        scores: anchoredScores,
+        report,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/assessments/:id/report (Teacher, Admin) - Return report & scores for an assessment
+  app.get("/api/assessments/:id/report", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), (req, res) => {
+    const assessmentId = String(req.params.id);
+    try {
+      const assessment = serverDb.findAssessmentById(assessmentId);
+      if (!assessment) {
+        return res.status(404).json({ success: false, error: "Assessment not found" });
+      }
+      const report = serverDb.getAssessmentReport(assessmentId);
+      const scores = serverDb.getAssessmentScores(assessmentId);
+      res.json({
+        success: true,
+        assessment,
+        report,
+        scores,
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // ─── System Notifications & Alerts API Routes ──────────────────────────────
+
+  // GET /api/notifications - Get logged-in user's notifications
+  app.get("/api/notifications", authenticateToken, (req, res) => {
+    try {
+      const notifications = serverDb.getUserNotifications(req.user!.userId);
+      res.json({ success: true, notifications });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/notifications/:id/read - Mark notification as read
+  app.post("/api/notifications/:id/read", authenticateToken, (req, res) => {
+    const notificationId = String(req.params.id);
+    try {
+      serverDb.markNotificationAsRead(notificationId, req.user!.userId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/notifications - Create notification manually (Teacher, Admin)
+  app.post("/api/notifications", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), (req, res) => {
+    const { recipientId, className, type, title, message, relatedId } = req.body;
+    if (!type || !title || !message) {
+      return res.status(400).json({ success: false, error: "Missing required fields: type, title, message" });
+    }
+
+    const validTypes = ['deadline', 'meeting', 'misconduct', 'general'];
+    const notifType = validTypes.includes(type) ? type : 'general';
+
+    try {
+      let createdCount = 0;
+      if (recipientId) {
+        serverDb.createNotification(recipientId, notifType, title, message, relatedId);
+        createdCount = 1;
+      } else if (className) {
+        const users = serverDb.getAllUsers().filter(u => u.className === className || u.grade === className || className === 'All Classes' || className === 'All Grades');
+        const userIds = users.map(u => u.id);
+        if (userIds.length > 0) {
+          serverDb.createBulkNotifications(userIds, notifType, title, message, relatedId);
+          createdCount = userIds.length;
+        }
+      } else {
+        const students = serverDb.getUsersByRole(UserRole.STUDENT);
+        const userIds = students.map(s => s.id);
+        if (userIds.length > 0) {
+          serverDb.createBulkNotifications(userIds, notifType, title, message, relatedId);
+          createdCount = userIds.length;
+        }
+      }
+
+      res.json({ success: true, count: createdCount });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+
   // GET /api/blockchain/ledger/student/:studentId
   app.get("/api/blockchain/ledger/student/:studentId", authenticateToken, (req, res) => {
     const studentId = Array.isArray(req.params.studentId) ? req.params.studentId[0] : req.params.studentId;

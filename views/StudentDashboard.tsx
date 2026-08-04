@@ -8,10 +8,12 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, 
   Tooltip, ResponsiveContainer, AreaChart, Area 
 } from 'recharts';
-import { User, CurriculumResource, ResourceCategory, UserRole, GradeRecord } from '../types';
+import { User, CurriculumResource, ResourceCategory, UserRole, GradeRecord, Assignment } from '../types';
 import { db } from '../services/database';
+import { notificationService } from '../services/notificationService';
 import { ProfileSection } from '../components/ProfileSection';
 import { TimetableView } from '../components/TimetableView';
+import { AssessmentView } from '../components/AssessmentView';
 
 interface StudentDashboardProps {
   user: User;
@@ -153,30 +155,109 @@ const CurriculumViewer: React.FC<{ userGrade?: string }> = ({ userGrade }) => {
 };
 
 const AssignmentsView: React.FC<{ userGrade?: string }> = ({ userGrade }) => {
-    const [assignments, setAssignments] = useState<CurriculumResource[]>([]);
-    
+    const [timedAssignments, setTimedAssignments] = useState<Assignment[]>([]);
+    const [curriculumDocs, setCurriculumDocs] = useState<CurriculumResource[]>([]);
+    const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+
     useEffect(() => {
+        const grade = userGrade || 'Grade 10';
+        setTimedAssignments(db.getAssignments(grade));
+
         const all = db.getAllCurriculum();
-        // Specifically filter for DOCUMENTS as requested
-        setAssignments(all.filter(m => 
+        setCurriculumDocs(all.filter(m => 
             (m.category === ResourceCategory.DOCUMENT) && 
             (m.gradeLevel === 'All Grades' || m.gradeLevel === userGrade || !userGrade)
         ));
     }, [userGrade]);
 
+    const handleReminderTrigger = (asg: Assignment) => {
+        notificationService.addNotification({
+          userId: '',
+          title: `⏰ Custom Reminder Set: ${asg.title}`,
+          body: `Reminder added for ${asg.subject} assignment due on ${new Date(asg.dueDate).toLocaleString()}.`,
+          type: 'ASSIGNMENT_DUE',
+          relatedId: asg.id,
+          dueDate: asg.dueDate,
+          priority: 'high'
+        });
+        alert(`Push alert reminder set for "${asg.title}"!`);
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-            <div>
-                <h2 className="text-xl font-bold text-white uppercase tracking-tight">Active Assignments & Tasks</h2>
-                <p className="text-slate-400 text-sm">Review your pending academic submissions and platform announcements.</p>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-xl font-bold text-white uppercase tracking-tight">Active Assignments & Deadline Alerts</h2>
+                    <p className="text-slate-400 text-sm">Review your pending academic submissions and local push notifications.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-xs text-emerald-400 font-bold uppercase tracking-widest bg-emerald-950/40 px-3 py-1 rounded-full border border-emerald-500/20">
+                        {timedAssignments.length} Timed Tasks
+                    </span>
+                </div>
             </div>
 
+            {/* Timed Assignments with Push Notification Alerts */}
+            {timedAssignments.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {timedAssignments.map(asg => {
+                        const due = new Date(asg.dueDate);
+                        const isOverdue = due.getTime() < Date.now();
+                        const hoursLeft = Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60));
+
+                        return (
+                            <div key={asg.id} className={`glass-card p-5 rounded-2xl border transition-all flex flex-col justify-between ${
+                                isOverdue 
+                                  ? 'border-rose-500/40 bg-rose-950/10' 
+                                  : hoursLeft <= 6 
+                                  ? 'border-amber-500/40 bg-amber-950/10' 
+                                  : 'border-white/10 hover:border-primary-500/40'
+                            }`}>
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase border ${
+                                            isOverdue ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' :
+                                            hoursLeft <= 6 ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' :
+                                            'bg-primary-500/20 text-primary-300 border-primary-500/30'
+                                        }`}>
+                                            {isOverdue ? 'OVERDUE' : hoursLeft <= 24 ? `Due in ${hoursLeft}h` : due.toLocaleDateString()}
+                                        </span>
+                                        <span className="text-xs text-slate-400 font-semibold">{asg.subject}</span>
+                                    </div>
+
+                                    <div>
+                                        <h3 className="font-bold text-white text-base leading-snug">{asg.title}</h3>
+                                        <p className="text-xs text-slate-400 mt-1 line-clamp-2">{asg.description}</p>
+                                    </div>
+                                </div>
+
+                                <div className="pt-4 mt-4 border-t border-white/5 flex items-center justify-between text-xs">
+                                    <span className="text-slate-500 font-medium">By {asg.createdByName || 'Instructor'}</span>
+                                    <button
+                                        onClick={() => handleReminderTrigger(asg)}
+                                        className="px-3 py-1 bg-primary-600/20 hover:bg-primary-600 text-primary-300 hover:text-white rounded-lg border border-primary-500/30 font-bold transition-all text-[11px] flex items-center gap-1 cursor-pointer"
+                                    >
+                                        <Bell className="w-3 h-3" /> Set Alert
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Curriculum Documents & Reference Materials */}
             <div className="glass-card rounded-2xl overflow-hidden">
+                <div className="p-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                    <h3 className="font-bold text-slate-200 text-sm uppercase tracking-wider">Curriculum Reference Documents</h3>
+                    <span className="text-xs text-slate-500">{curriculumDocs.length} Documents</span>
+                </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
                         <thead className="bg-white/5 text-slate-500 font-bold uppercase text-[10px] tracking-widest">
                             <tr>
-                                <th className="px-6 py-4">Task / Assignment</th>
+                                <th className="px-6 py-4">Task / Document</th>
                                 <th className="px-6 py-4">Category</th>
                                 <th className="px-6 py-4">Subject</th>
                                 <th className="px-6 py-4">Status</th>
@@ -184,7 +265,7 @@ const AssignmentsView: React.FC<{ userGrade?: string }> = ({ userGrade }) => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {assignments.map((item) => (
+                            {curriculumDocs.map((item) => (
                                 <tr key={item.id} className="hover:bg-white/5 group transition-colors">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
@@ -213,7 +294,7 @@ const AssignmentsView: React.FC<{ userGrade?: string }> = ({ userGrade }) => {
                                     </td>
                                 </tr>
                             ))}
-                            {assignments.length === 0 && (
+                            {curriculumDocs.length === 0 && timedAssignments.length === 0 && (
                                 <tr>
                                     <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">No active assignments found for your grade.</td>
                                 </tr>
@@ -427,6 +508,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onUpda
       {activeTab === 'announcements' && <CurriculumViewer userGrade={user.grade} />}
       {activeTab === 'timetable' && <TimetableView currentUser={user} />}
       {activeTab === 'assignments' && <AssignmentsView userGrade={user.grade} />}
+      {activeTab === 'assessments' && <AssessmentView currentUser={user} />}
       {activeTab === 'profile' && <ProfileSection user={user} onUpdateUser={onUpdateUser} />}
     </div>
   );

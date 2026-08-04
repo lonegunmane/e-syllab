@@ -1,4 +1,4 @@
-import { User, UserRole, CurriculumResource, Message, GradeRecord, ResourceCategory, VaultDocument, DocumentStatus } from '../types';
+import { User, UserRole, CurriculumResource, Message, GradeRecord, ResourceCategory, VaultDocument, DocumentStatus, Assignment } from '../types';
 import { blockchainService } from './blockchain';
 import bcrypt from 'bcryptjs';
 
@@ -23,7 +23,8 @@ export const db = {
     CURRICULUM: 'esylab_db_curriculum',
     MESSAGES: 'esylab_db_messages',
     GRADES: 'esylab_db_grades',
-    VAULT: 'esylab_db_vault'
+    VAULT: 'esylab_db_vault',
+    ASSIGNMENTS: 'esylab_db_assignments'
   },
 
   // Helper to generate IDs
@@ -76,12 +77,97 @@ export const db = {
         }
       ];
 
+      const now = new Date();
+      const in5Hours = new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString();
+      const in20Hours = new Date(now.getTime() + 20 * 60 * 60 * 1000).toISOString();
+      const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString();
+
+      const initialAssignments: Assignment[] = [
+        {
+          id: 'asgn-1',
+          title: 'Physics Lab Report - Pendulum Oscillation',
+          subject: 'Science Physics',
+          gradeLevel: 'Grade 10',
+          description: 'Submit calculated experimental values for gravitational acceleration (g) and attach error analysis spreadsheet.',
+          dueDate: in5Hours,
+          priority: 'urgent',
+          createdByName: 'Dr. Sarah Wilson',
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'asgn-2',
+          title: 'Quadratic Equations Problem Set',
+          subject: 'Mathematics',
+          gradeLevel: 'Grade 10',
+          description: 'Complete exercises 1-15 on Page 142. Solve using the quadratic formula and factoring techniques.',
+          dueDate: in20Hours,
+          priority: 'high',
+          createdByName: 'Mr. James Blake',
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'asgn-3',
+          title: 'Cellular Respiration Diagram & Summary',
+          subject: 'Biology',
+          gradeLevel: 'All Grades',
+          description: 'Draw and label the Krebs cycle and electron transport chain. Write a 300-word overview of ATP yield.',
+          dueDate: in3Days,
+          priority: 'medium',
+          createdByName: 'Prof. Alice Green',
+          createdAt: new Date().toISOString()
+        }
+      ];
+
       this.saveTable(this.tables.USERS, initialUsers);
       this.saveTable(this.tables.CREDENTIALS, initialCreds);
       this.saveTable(this.tables.CURRICULUM, initialCurriculum);
       this.saveTable(this.tables.MESSAGES, []);
       this.saveTable(this.tables.GRADES, []);
       this.saveTable(this.tables.VAULT, []);
+      this.saveTable(this.tables.ASSIGNMENTS, initialAssignments);
+    } else if (!localStorage.getItem(this.tables.ASSIGNMENTS)) {
+      // Seed default assignments if missing
+      const now = new Date();
+      const in5Hours = new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString();
+      const in20Hours = new Date(now.getTime() + 20 * 60 * 60 * 1000).toISOString();
+      const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString();
+
+      const initialAssignments: Assignment[] = [
+        {
+          id: 'asgn-1',
+          title: 'Physics Lab Report - Pendulum Oscillation',
+          subject: 'Science Physics',
+          gradeLevel: 'Grade 10',
+          description: 'Submit calculated experimental values for gravitational acceleration (g) and attach error analysis spreadsheet.',
+          dueDate: in5Hours,
+          priority: 'urgent',
+          createdByName: 'Dr. Sarah Wilson',
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'asgn-2',
+          title: 'Quadratic Equations Problem Set',
+          subject: 'Mathematics',
+          gradeLevel: 'Grade 10',
+          description: 'Complete exercises 1-15 on Page 142. Solve using quadratic formula and factoring techniques.',
+          dueDate: in20Hours,
+          priority: 'high',
+          createdByName: 'Mr. James Blake',
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'asgn-3',
+          title: 'Cellular Respiration Diagram & Summary',
+          subject: 'Biology',
+          gradeLevel: 'All Grades',
+          description: 'Draw and label the Krebs cycle and electron transport chain. Write a 300-word overview of ATP yield.',
+          dueDate: in3Days,
+          priority: 'medium',
+          createdByName: 'Prof. Alice Green',
+          createdAt: new Date().toISOString()
+        }
+      ];
+      this.saveTable(this.tables.ASSIGNMENTS, initialAssignments);
     }
   },
 
@@ -338,6 +424,34 @@ export const db = {
     grades.push(newGrade);
     this.saveTable(this.tables.GRADES, grades);
     return newGrade;
+  },
+
+  // Assignment & Deadline Methods
+  getAssignments(gradeLevel?: string): Assignment[] {
+    const list = this.getTable(this.tables.ASSIGNMENTS) as Assignment[];
+    if (gradeLevel && gradeLevel !== 'All Grades') {
+      return list.filter(a => a.gradeLevel === 'All Grades' || a.gradeLevel === gradeLevel)
+        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+    }
+    return list.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+  },
+
+  addAssignment(assignment: Omit<Assignment, 'id' | 'createdAt'>): Assignment {
+    const items = this.getTable(this.tables.ASSIGNMENTS) as Assignment[];
+    const newItem: Assignment = {
+      ...assignment,
+      id: this.generateId(),
+      createdAt: new Date().toISOString()
+    };
+    items.push(newItem);
+    this.saveTable(this.tables.ASSIGNMENTS, items);
+    return newItem;
+  },
+
+  deleteAssignment(id: string): void {
+    const items = this.getTable(this.tables.ASSIGNMENTS) as Assignment[];
+    const newItems = items.filter(a => a.id !== id);
+    this.saveTable(this.tables.ASSIGNMENTS, newItems);
   },
 
   // Vault Methods

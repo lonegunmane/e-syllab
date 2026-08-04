@@ -67,11 +67,31 @@ export interface Lesson {
 
 export interface Assignment {
   id: string;
-  lessonId: string;
   title: string;
-  dueDate: string;
-  status: 'pending' | 'submitted' | 'graded';
+  subject: string;
+  gradeLevel: string;
+  description: string;
+  dueDate: string; // ISO string e.g. "2026-08-05T18:00:00.000Z"
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  createdById?: string;
+  createdByName?: string;
+  createdAt: string;
+  status?: 'pending' | 'submitted' | 'graded';
+  lessonId?: string;
   grade?: number;
+}
+
+export interface LocalNotification {
+  id: string;
+  userId?: string;
+  title: string;
+  body: string;
+  type: 'ASSIGNMENT_DUE' | 'ASSIGNMENT_NEW' | 'OVERDUE_ALERT' | 'SYSTEM_ALERT';
+  relatedId?: string;
+  dueDate?: string;
+  timestamp: string;
+  read: boolean;
+  priority?: 'normal' | 'high' | 'urgent';
 }
 
 export interface ApprovalRequest {
@@ -156,3 +176,39 @@ export interface TimetableEntry {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export interface Assessment {
+  id: string;
+  title: string;
+  subject: string;
+  className: string;
+  teacherId: string;
+  maxScore: number;
+  createdAt: string;
+}
+
+export interface AssessmentScore {
+  id: string;
+  assessmentId: string;
+  studentId: string;
+  score: number;
+  feedback?: string;
+  createdAt: string;
+  studentName?: string;
+  offlineHash?: string;
+  signature?: string;
+  explorerUrl?: string;
+  assessment?: Assessment;
+}
+
+export interface SystemNotification {
+  id: string;
+  userId: string;
+  type: 'deadline' | 'meeting' | 'misconduct' | 'general';
+  title: string;
+  message: string;
+  relatedId?: string;
+  read: boolean;
+  createdAt: string;
+}
+

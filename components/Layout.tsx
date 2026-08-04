@@ -1,12 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard, BookOpen, FileText, Settings,
   LogOut, Bell, Menu, X, Users, CheckSquare,
   TrendingUp, Camera, Pencil, Loader2, CheckCircle,
   XCircle, MessageSquare, ShieldCheck, Save, Calendar, Database,
+  BarChart2,
 } from 'lucide-react';
 import { UserRole, User } from '../types';
 import { db } from '../services/database';
+import { notificationService } from '../services/notificationService';
+import { NotificationCenter } from './NotificationCenter';
+import { getSystemNotifications } from '../services/api';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -35,7 +39,43 @@ export const Layout: React.FC<LayoutProps> = ({
   const [avatarUploadLoading, setAvatarUploadLoading] = useState(false);
   const [avatarUploadMessage, setAvatarUploadMessage] = useState<{type:'success'|'error';text:string}|null>(null);
 
-  const unreadCount = db.getUnreadCurriculumCount(user);
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
+  const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
+  const [unreadServerNotifsCount, setUnreadServerNotifsCount] = useState(0);
+
+  const unreadCurriculumCount = db.getUnreadCurriculumCount(user);
+
+  const updateNotifCount = () => {
+    notificationService.checkUpcomingDeadlines(user);
+    const notifs = notificationService.getNotifications(user.id);
+    setUnreadNotifsCount(notifs.filter(n => !n.read).length);
+
+    getSystemNotifications()
+      .then(res => {
+        if (res.success && Array.isArray(res.notifications)) {
+          const unreadCount = res.notifications.filter((n: any) => !n.read).length;
+          setUnreadServerNotifsCount(unreadCount);
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    updateNotifCount();
+    const timer = setInterval(() => {
+      updateNotifCount();
+    }, 15000); // Check deadlines every 15s
+
+    const handleUpdate = () => updateNotifCount();
+    window.addEventListener('esylab_notification_update', handleUpdate);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('esylab_notification_update', handleUpdate);
+    };
+  }, [user]);
+
+  const totalUnreadCount = unreadCurriculumCount + unreadNotifsCount + unreadServerNotifsCount;
 
   React.useEffect(() => {
     if (activeTab === 'announcements') {
@@ -53,6 +93,7 @@ export const Layout: React.FC<LayoutProps> = ({
           { id: 'timetable',      icon: Calendar,        label: 'Timetable'    },
           { id: 'announcements',  icon: BookOpen,        label: 'Notices'      },
           { id: 'assignments',    icon: CheckSquare,     label: 'Work'         },
+          { id: 'assessments',    icon: BarChart2,       label: 'Assessments'  },
           { id: 'grades',         icon: TrendingUp,      label: 'Results'      },
           { id: 'profile',        icon: Settings,        label: 'Settings'     },
         ];
@@ -62,6 +103,7 @@ export const Layout: React.FC<LayoutProps> = ({
           { id: 'timetable',      icon: Calendar,        label: 'Timetable'    },
           { id: 'announcements',  icon: BookOpen,        label: 'Notices'      },
           { id: 'assignments',    icon: CheckSquare,     label: 'Assignments'  },
+          { id: 'assessments',    icon: BarChart2,       label: 'Assessments'  },
           { id: 'attendance',     icon: ShieldCheck,     label: 'Attendance'   },
           { id: 'communicate',    icon: MessageSquare,   label: 'Messages'     },
           { id: 'students',       icon: Users,           label: 'Students'     },
@@ -76,6 +118,7 @@ export const Layout: React.FC<LayoutProps> = ({
           { id: 'announcements',  icon: BookOpen,        label: 'Notices'                                                    },
           { id: 'vault',          icon: ShieldCheck,     label: 'Approvals',  badge: pendingVaultCount > 0 ? pendingVaultCount : undefined },
           { id: 'communicate',    icon: MessageSquare,   label: 'Messages'                                                   },
+          { id: 'assessments',    icon: BarChart2,       label: 'Assessments'                                                },
           { id: 'grades',         icon: TrendingUp,      label: 'Grades'                                                     },
           { id: 'staff',          icon: Users,           label: 'Staff'                                                      },
           { id: 'profile',        icon: Settings,        label: 'Settings'                                                   },
@@ -210,14 +253,15 @@ export const Layout: React.FC<LayoutProps> = ({
           <div className="flex items-center gap-3 ml-auto">
             {/* Notifications */}
             <button
-              onClick={() => onTabChange('announcements')}
-              className="p-2 text-slate-500 hover:text-primary-400 relative transition-colors"
+              onClick={() => setIsNotificationCenterOpen(true)}
+              className="p-2 text-slate-400 hover:text-primary-400 relative transition-colors cursor-pointer rounded-lg hover:bg-white/5"
+              title="Open Push Notifications & Deadline Center"
             >
               <Bell className="w-5 h-5" />
-              {unreadCount > 0 && (
+              {totalUnreadCount > 0 && (
                 <>
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-600 rounded-full border-2 border-[#1a1635] flex items-center justify-center text-[10px] font-bold text-white z-10">
-                    {unreadCount}
+                  <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 bg-rose-600 rounded-full border-2 border-[#1a1635] flex items-center justify-center text-[10px] font-bold text-white z-10">
+                    {totalUnreadCount}
                   </span>
                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-600 rounded-full animate-ping opacity-25" />
                 </>
@@ -334,6 +378,14 @@ export const Layout: React.FC<LayoutProps> = ({
           )}
         </div>
       </nav>
+
+      {/* Local Push Notification & Deadline Alert Drawer */}
+      <NotificationCenter
+        user={user}
+        isOpen={isNotificationCenterOpen}
+        onClose={() => setIsNotificationCenterOpen(false)}
+        onNavigateTab={onTabChange}
+      />
 
     </div>
   );

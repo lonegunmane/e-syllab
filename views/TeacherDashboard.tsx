@@ -11,6 +11,8 @@ import { db } from '../services/database';
 import { ProfileSection } from '../components/ProfileSection';
 import { BlockchainAttendance } from '../components/BlockchainAttendance';
 import { TimetableView } from '../components/TimetableView';
+import { AssessmentView } from '../components/AssessmentView';
+import { NotificationSendForm } from '../components/NotificationSendForm';
 
 interface TeacherDashboardProps {
   user: User;
@@ -567,9 +569,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onUpda
         </div>
       )}
 
-      {activeTab === 'announcements' && <CurriculumManager user={user} filterCategory={ResourceCategory.ANNOUNCEMENT} />}
+      {activeTab === 'announcements' && (
+        <div className="space-y-8">
+          <NotificationSendForm currentUser={user} />
+          <CurriculumManager user={user} filterCategory={ResourceCategory.ANNOUNCEMENT} />
+        </div>
+      )}
       {activeTab === 'timetable' && <TimetableView currentUser={user} />}
       {activeTab === 'assignments' && <CurriculumManager user={user} filterCategory={ResourceCategory.DOCUMENT} />}
+      {activeTab === 'assessments' && <AssessmentView currentUser={user} />}
       {activeTab === 'students' && <DetailedStudentList />}
       {activeTab === 'attendance' && <BlockchainAttendance user={user} />}
       {activeTab === 'profile' && <ProfileSection user={user} onUpdateUser={onUpdateUser} />}

@@ -3,7 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import bcrypt from 'bcryptjs';
-import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential, TimetableEntry } from '../types';
+import { encryptField, decryptField } from './encryption';
+import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential, TimetableEntry, Assessment, AssessmentScore, SystemNotification } from '../types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -191,6 +192,49 @@ export const serverDb = {
         createdAt TEXT NOT NULL
       )
     `);
+
+    // Assessments table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS assessments (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        className TEXT NOT NULL,
+        teacherId TEXT NOT NULL,
+        maxScore REAL NOT NULL,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (teacherId) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Assessment scores table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS assessment_scores (
+        id TEXT PRIMARY KEY,
+        assessmentId TEXT NOT NULL,
+        studentId TEXT NOT NULL,
+        score REAL NOT NULL,
+        feedback TEXT,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (assessmentId) REFERENCES assessments(id) ON DELETE CASCADE,
+        FOREIGN KEY (studentId) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Notifications table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        relatedId TEXT,
+        read INTEGER DEFAULT 0,
+        createdAt TEXT NOT NULL,
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
   },
 
   seedInitialData(): void {
@@ -217,14 +261,14 @@ export const serverDb = {
       insertStmt.bind([
         adminId,
         'admin@gmail.com',
-        'Primary Admin',
+        encryptField('Primary Admin'),
         'ADMIN',
         'https://api.dicebear.com/7.x/avataaars/svg?seed=admin',
         'sol-genesis-block-3-admin',
-        '777-888-9999',
+        encryptField('777-888-9999'),
         'ESYLAB Headquarters',
-        'Prefer not to say',
-        '789 Pine Rd, Capital City',
+        encryptField('Prefer not to say'),
+        encryptField('789 Pine Rd, Capital City'),
         1,
         now,
         now,
@@ -318,16 +362,23 @@ export const serverDb = {
     const userId = user.id || this.generateId();
     const now = new Date().toISOString();
 
+    const contact = user.contact ? encryptField(user.contact) : null;
+    const gender = user.gender ? encryptField(user.gender) : null;
+    const residentialAddress = user.residentialAddress ? encryptField(user.residentialAddress) : null;
+
     const insertStmt = sqlDb.prepare(`
-      INSERT INTO users (id, email, name, role, avatar, isProfileComplete, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, email, name, role, avatar, contact, gender, residentialAddress, isProfileComplete, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     insertStmt.bind([
       userId,
       user.email || `${userId}@esylab.school`,
-      user.name || 'User',
+      encryptField(user.name || 'User'),
       user.role || UserRole.TEACHER,
       user.avatar || '',
+      contact,
+      gender,
+      residentialAddress,
       user.isProfileComplete ? 1 : 0,
       now,
       now,
@@ -372,9 +423,14 @@ export const serverDb = {
 
     const now = new Date().toISOString();
     const validKeys = ['name', 'avatar', 'contact', 'school', 'gender', 'residentialAddress', 'teachingGrades', 'teachingClasses', 'teachingSubjects', 'grade', 'className', 'enrolledSubjects', 'isProfileComplete'];
+    const encryptedKeys = ['name', 'contact', 'residentialAddress', 'gender'];
 
-    for (const [key, value] of Object.entries(updates)) {
+    for (let [key, value] of Object.entries(updates)) {
       if (!validKeys.includes(key)) continue;
+
+      if (value !== undefined && value !== null && encryptedKeys.includes(key) && typeof value === 'string') {
+        value = encryptField(value);
+      }
 
       let updateStmt: any;
       if (Array.isArray(value)) {
@@ -409,16 +465,23 @@ export const serverDb = {
     const now = new Date().toISOString();
     const passwordHash = await bcrypt.hash(password, 10);
 
+    const contact = user.contact ? encryptField(user.contact) : null;
+    const gender = user.gender ? encryptField(user.gender) : null;
+    const residentialAddress = user.residentialAddress ? encryptField(user.residentialAddress) : null;
+
     const insertStmt = sqlDb.prepare(`
-      INSERT INTO users (id, email, name, role, avatar, isProfileComplete, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, email, name, role, avatar, contact, gender, residentialAddress, isProfileComplete, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     insertStmt.bind([
       userId,
       user.email,
-      user.name,
+      encryptField(user.name),
       user.role,
       user.avatar || '',
+      contact,
+      gender,
+      residentialAddress,
       user.role === UserRole.ADMIN ? 1 : 0,
       now,
       now,
@@ -841,14 +904,14 @@ export const serverDb = {
     return {
       id: row.id,
       email: row.email,
-      name: row.name,
+      name: decryptField(row.name || ''),
       role: row.role as UserRole,
       avatar: row.avatar,
       blockchainId: row.blockchainId,
-      contact: row.contact,
+      contact: row.contact ? decryptField(row.contact) : undefined,
       school: row.school,
-      gender: row.gender,
-      residentialAddress: row.residentialAddress,
+      gender: row.gender ? (decryptField(row.gender) as any) : undefined,
+      residentialAddress: row.residentialAddress ? decryptField(row.residentialAddress) : undefined,
       teachingGrades: row.teachingGrades ? JSON.parse(row.teachingGrades) : undefined,
       teachingClasses: row.teachingClasses ? JSON.parse(row.teachingClasses) : undefined,
       teachingSubjects: row.teachingSubjects ? JSON.parse(row.teachingSubjects) : undefined,
@@ -1047,6 +1110,277 @@ export const serverDb = {
         weeklyWorkload,
       };
     });
+  },
+
+  // ─── Assessments & Assessment Scores ─────────────────────────────────────
+  createAssessment(data: { title: string; subject: string; className: string; teacherId: string; maxScore: number }): Assessment {
+    const id = this.generateId();
+    const now = new Date().toISOString();
+
+    const stmt = sqlDb.prepare(`
+      INSERT INTO assessments (id, title, subject, className, teacherId, maxScore, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.bind([
+      id,
+      data.title,
+      data.subject,
+      data.className,
+      data.teacherId,
+      data.maxScore,
+      now,
+    ]);
+    stmt.step();
+    stmt.free();
+    this.save();
+
+    return this.findAssessmentById(id)!;
+  },
+
+  findAssessmentById(id: string): Assessment | null {
+    const stmt = sqlDb.prepare('SELECT * FROM assessments WHERE id = ?');
+    stmt.bind([id]);
+
+    if (stmt.step()) {
+      const row = stmt.getAsObject();
+      stmt.free();
+      return {
+        id: row.id as string,
+        title: row.title as string,
+        subject: row.subject as string,
+        className: row.className as string,
+        teacherId: row.teacherId as string,
+        maxScore: Number(row.maxScore),
+        createdAt: row.createdAt as string,
+      };
+    }
+
+    stmt.free();
+    return null;
+  },
+
+  getAllAssessments(): Assessment[] {
+    const stmt = sqlDb.prepare('SELECT * FROM assessments ORDER BY createdAt DESC');
+    const items: Assessment[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      items.push({
+        id: row.id as string,
+        title: row.title as string,
+        subject: row.subject as string,
+        className: row.className as string,
+        teacherId: row.teacherId as string,
+        maxScore: Number(row.maxScore),
+        createdAt: row.createdAt as string,
+      });
+    }
+    stmt.free();
+    return items;
+  },
+
+  saveAssessmentScores(assessmentId: string, scores: Array<{ studentId: string; score: number; feedback?: string }>): AssessmentScore[] {
+    const now = new Date().toISOString();
+    const results: AssessmentScore[] = [];
+
+    for (const item of scores) {
+      const checkStmt = sqlDb.prepare('SELECT id FROM assessment_scores WHERE assessmentId = ? AND studentId = ?');
+      checkStmt.bind([assessmentId, item.studentId]);
+      let scoreId: string | null = null;
+      if (checkStmt.step()) {
+        scoreId = checkStmt.getAsObject().id as string;
+      }
+      checkStmt.free();
+
+      if (scoreId) {
+        const updateStmt = sqlDb.prepare(`
+          UPDATE assessment_scores SET score = ?, feedback = ?, createdAt = ? WHERE id = ?
+        `);
+        updateStmt.bind([item.score, item.feedback || '', now, scoreId]);
+        updateStmt.step();
+        updateStmt.free();
+      } else {
+        scoreId = this.generateId();
+        const insertStmt = sqlDb.prepare(`
+          INSERT INTO assessment_scores (id, assessmentId, studentId, score, feedback, createdAt)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+        insertStmt.bind([scoreId, assessmentId, item.studentId, item.score, item.feedback || '', now]);
+        insertStmt.step();
+        insertStmt.free();
+      }
+
+      results.push({
+        id: scoreId,
+        assessmentId,
+        studentId: item.studentId,
+        score: item.score,
+        feedback: item.feedback || '',
+        createdAt: now,
+      });
+    }
+
+    this.save();
+    return results;
+  },
+
+  getAssessmentScores(assessmentId: string): (AssessmentScore & { studentName?: string })[] {
+    const stmt = sqlDb.prepare(`
+      SELECT s.*, u.name as studentName 
+      FROM assessment_scores s
+      LEFT JOIN users u ON s.studentId = u.id
+      WHERE s.assessmentId = ?
+      ORDER BY s.createdAt DESC
+    `);
+    stmt.bind([assessmentId]);
+
+    const items: (AssessmentScore & { studentName?: string })[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      items.push({
+        id: row.id as string,
+        assessmentId: row.assessmentId as string,
+        studentId: row.studentId as string,
+        score: Number(row.score),
+        feedback: row.feedback as string,
+        createdAt: row.createdAt as string,
+        studentName: row.studentName ? decryptField(row.studentName as string) : 'Student',
+      });
+    }
+    stmt.free();
+    return items;
+  },
+
+  getStudentAssessmentScores(studentId: string): (AssessmentScore & { assessment?: Assessment })[] {
+    const stmt = sqlDb.prepare(`
+      SELECT s.*, a.title, a.subject, a.className, a.teacherId, a.maxScore, a.createdAt as assessmentCreatedAt
+      FROM assessment_scores s
+      JOIN assessments a ON s.assessmentId = a.id
+      WHERE s.studentId = ?
+      ORDER BY s.createdAt DESC
+    `);
+    stmt.bind([studentId]);
+
+    const items: (AssessmentScore & { assessment?: Assessment })[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      items.push({
+        id: row.id as string,
+        assessmentId: row.assessmentId as string,
+        studentId: row.studentId as string,
+        score: Number(row.score),
+        feedback: row.feedback as string,
+        createdAt: row.createdAt as string,
+        assessment: {
+          id: row.assessmentId as string,
+          title: row.title as string,
+          subject: row.subject as string,
+          className: row.className as string,
+          teacherId: row.teacherId as string,
+          maxScore: Number(row.maxScore),
+          createdAt: row.assessmentCreatedAt as string,
+        },
+      });
+    }
+    stmt.free();
+    return items;
+  },
+
+  getAssessmentReport(assessmentId: string) {
+    const assessment = this.findAssessmentById(assessmentId);
+    if (!assessment) return null;
+
+    const scores = this.getAssessmentScores(assessmentId);
+    if (scores.length === 0) {
+      return {
+        average: 0,
+        highest: 0,
+        lowest: 0,
+        passRate: 0,
+        totalStudents: 0,
+        maxScore: assessment.maxScore,
+      };
+    }
+
+    const totalStudents = scores.length;
+    const scoreValues = scores.map(s => s.score);
+    const sum = scoreValues.reduce((a, b) => a + b, 0);
+    const average = Number((sum / totalStudents).toFixed(1));
+    const highest = Math.max(...scoreValues);
+    const lowest = Math.min(...scoreValues);
+    const passThreshold = assessment.maxScore * 0.5;
+    const passingCount = scores.filter(s => s.score >= passThreshold).length;
+    const passRate = Number(((passingCount / totalStudents) * 100).toFixed(1));
+
+    return {
+      average,
+      highest,
+      lowest,
+      passRate,
+      totalStudents,
+      maxScore: assessment.maxScore,
+    };
+  },
+
+  // ─── Notifications ──────────────────────────────────────────────────────────
+  createNotification(userId: string, type: string, title: string, message: string, relatedId?: string): SystemNotification {
+    const id = this.generateId();
+    const createdAt = new Date().toISOString();
+    const stmt = sqlDb.prepare(`
+      INSERT INTO notifications (id, userId, type, title, message, relatedId, read, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+    `);
+    stmt.bind([id, userId, type, title, message, relatedId || null, createdAt]);
+    stmt.step();
+    stmt.free();
+    this.save();
+    return {
+      id,
+      userId,
+      type: type as any,
+      title,
+      message,
+      relatedId,
+      read: false,
+      createdAt,
+    };
+  },
+
+  createBulkNotifications(userIds: string[], type: string, title: string, message: string, relatedId?: string): SystemNotification[] {
+    const notifications: SystemNotification[] = [];
+    for (const userId of userIds) {
+      notifications.push(this.createNotification(userId, type, title, message, relatedId));
+    }
+    return notifications;
+  },
+
+  getUserNotifications(userId: string): SystemNotification[] {
+    const stmt = sqlDb.prepare('SELECT * FROM notifications WHERE userId = ? ORDER BY createdAt DESC');
+    stmt.bind([userId]);
+    const items: SystemNotification[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      items.push({
+        id: row.id as string,
+        userId: row.userId as string,
+        type: row.type as any,
+        title: row.title as string,
+        message: row.message as string,
+        relatedId: (row.relatedId as string) || undefined,
+        read: Boolean(row.read),
+        createdAt: row.createdAt as string,
+      });
+    }
+    stmt.free();
+    return items;
+  },
+
+  markNotificationAsRead(id: string, userId: string): boolean {
+    const stmt = sqlDb.prepare('UPDATE notifications SET read = 1 WHERE id = ? AND userId = ?');
+    stmt.bind([id, userId]);
+    stmt.step();
+    stmt.free();
+    this.save();
+    return true;
   },
 
   // ─── Database Cleanup ──────────────────────────────────────────────────────

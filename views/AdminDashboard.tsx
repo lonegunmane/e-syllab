@@ -16,6 +16,8 @@ import { ProfileSection } from '../components/ProfileSection';
 import { TimetableView } from '../components/TimetableView';
 import { StaffPerformanceDashboard } from '../components/StaffPerformanceDashboard';
 import { TransactionExplorer } from '../components/TransactionExplorer';
+import { AssessmentView } from '../components/AssessmentView';
+import { NotificationSendForm } from '../components/NotificationSendForm';
 
 const staffActivity = [
   { name: 'Jan', activity: 400 },
@@ -1564,9 +1566,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
         </div>
       )}
 
-      {activeTab === 'announcements' && <CurriculumManager user={user} filterCategory={ResourceCategory.ANNOUNCEMENT} onUpdate={refreshCounts} />}
+      {activeTab === 'announcements' && (
+        <div className="space-y-8">
+          <NotificationSendForm currentUser={user} />
+          <CurriculumManager user={user} filterCategory={ResourceCategory.ANNOUNCEMENT} onUpdate={refreshCounts} />
+        </div>
+      )}
       {activeTab === 'timetable' && <TimetableView currentUser={user} />}
       {activeTab === 'assignments' && <CurriculumManager user={user} filterCategory={ResourceCategory.DOCUMENT} onUpdate={refreshCounts} />}
+      {activeTab === 'assessments' && <AssessmentView currentUser={user} />}
       {activeTab === 'staff' && (
         <div className="space-y-8">
           <StaffPerformanceDashboard />
