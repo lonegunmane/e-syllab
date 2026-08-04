@@ -1,7 +1,6 @@
 import express, { Request, Response, NextFunction } from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { fileURLToPath } from "url";
 import { Resend } from "resend";
 import { PublicKey, Keypair, Transaction, TransactionInstruction } from "@solana/web3.js";
 import jwt from "jsonwebtoken";
@@ -16,8 +15,6 @@ import {
   getConnection,
 } from "./services/blockchain.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // ─── School signing keypair (used to auto-sync offline records) ──────────────
 // Generate once with: node generate-keypair.js
