@@ -1803,6 +1803,10 @@ async function startServer() {
     app.get("*all", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
 
+app.get("/health", (_req, res) => {
+  res.status(200).json({ ok: true });
+});
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`\n🚀 E-SYLLAB Server → http://localhost:${PORT}`);
     console.log(`⛓  Blockchain API  → http://localhost:${PORT}/api/blockchain`);
