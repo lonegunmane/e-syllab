@@ -7,3 +7,4 @@ school-keypair.json
 solana-release-x86_64-pc-windows-msvc/
 migrated_prompt_history/
 .vercel/
+data/
