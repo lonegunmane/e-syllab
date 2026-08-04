@@ -145,7 +145,7 @@ function authorizeRole(...allowedRoles: UserRole[]) {
 // ─── Server ───────────────────────────────────────────────────────────────────
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+ const PORT = Number(process.env.PORT) || 3000;
 
   // Initialize database
   await serverDb.init();
@@ -1801,7 +1801,7 @@ async function startServer() {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(__dirname, "dist");
+  const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*all", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
