@@ -33,6 +33,7 @@ export interface User {
   isProfileComplete?: boolean;
   // Student specific fields
   grade?: string;
+  gradeLevel?: string;
   className?: string;
   enrolledSubjects?: string[];
   lastViewedCurriculumAt?: string;
@@ -101,13 +102,25 @@ export interface VaultDocument {
   hash?: string;
 }
 
+export interface AuthCredential {
+  userId: string;
+  email: string;
+  passwordHash: string;
+  passwordResetRequired?: boolean;
+  lastLogin?: string | null;
+}
+
 export interface Message {
   id: string;
   senderId: string;
   senderName: string;
   recipientId: string; // 'ALL_ADMINS' or specific ID
+  recipientName?: string;
+  subject?: string;
   content: string;
-  timestamp: string;
+  timestamp?: string;
+  createdAt?: string;
+  read?: boolean;
   file?: {
     name: string;
     type: string;
@@ -119,13 +132,16 @@ export interface Message {
 export interface GradeRecord {
   id: string;
   studentId: string;
-  studentName: string;
+  studentName?: string;
   teacherId: string;
   subject: string;
-  score: number;
+  score?: number;
   grade: string;
-  comment: string;
-  timestamp: string;
+  comment?: string;
+  feedback?: string;
+  recordedAt?: string;
+  createdAt?: string;
+  timestamp?: string;
 }
 
 export interface TimetableEntry {

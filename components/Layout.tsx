@@ -3,7 +3,7 @@ import {
   LayoutDashboard, BookOpen, FileText, Settings,
   LogOut, Bell, Menu, X, Users, CheckSquare,
   TrendingUp, Camera, Pencil, Loader2, CheckCircle,
-  XCircle, MessageSquare, ShieldCheck, Save, Calendar,
+  XCircle, MessageSquare, ShieldCheck, Save, Calendar, Database,
 } from 'lucide-react';
 import { UserRole, User } from '../types';
 import { db } from '../services/database';
@@ -71,6 +71,7 @@ export const Layout: React.FC<LayoutProps> = ({
       case UserRole.ADMIN:
         return [
           { id: 'overview',       icon: LayoutDashboard, label: 'Home'                                                       },
+          { id: 'explorer',       icon: Database,        label: 'Transaction History'                                        },
           { id: 'timetable',      icon: Calendar,        label: 'Timetable'                                                  },
           { id: 'announcements',  icon: BookOpen,        label: 'Notices'                                                    },
           { id: 'vault',          icon: ShieldCheck,     label: 'Approvals',  badge: pendingVaultCount > 0 ? pendingVaultCount : undefined },

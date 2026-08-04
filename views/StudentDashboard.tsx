@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Book, Clock, CheckCircle, Download, ExternalLink, MessageSquare,
   User as UserIcon, Mail, Phone, School, Home, Save, Pencil,
@@ -8,26 +8,10 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, 
   Tooltip, ResponsiveContainer, AreaChart, Area 
 } from 'recharts';
-import { User, CurriculumResource, ResourceCategory, UserRole } from '../types';
+import { User, CurriculumResource, ResourceCategory, UserRole, GradeRecord } from '../types';
 import { db } from '../services/database';
 import { ProfileSection } from '../components/ProfileSection';
 import { TimetableView } from '../components/TimetableView';
-
-const mockPerformanceData = [
-  { name: 'Mon', score: 65 },
-  { name: 'Tue', score: 72 },
-  { name: 'Wed', score: 68 },
-  { name: 'Thu', score: 85 },
-  { name: 'Fri', score: 82 },
-  { name: 'Sat', score: 90 },
-  { name: 'Sun', score: 88 },
-];
-
-const lessons = [
-  { id: '1', title: 'Calculus Fundamentals', subject: 'Mathematics', progress: 75, instructor: 'Dr. Sarah Wilson' },
-  { id: '2', title: 'Molecular Biology', subject: 'Science', progress: 40, instructor: 'Mr. James Blake' },
-  { id: '3', title: 'Modern History: WW2', subject: 'History', progress: 100, instructor: 'Prof. Alice Green' },
-];
 
 interface StudentDashboardProps {
   user: User;
@@ -258,13 +242,18 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onUpda
   const [assignmentCount, setAssignmentCount] = useState(0);
   const [selectedRankSubject, setSelectedRankSubject] = useState<string>('Overall');
   const [rankInfo, setRankInfo] = useState<{ pos: number; total: number } | null>(null);
+  const [studentGrades, setStudentGrades] = useState<GradeRecord[]>([]);
+  const [recentCurriculum, setRecentCurriculum] = useState<CurriculumResource[]>([]);
 
   useEffect(() => {
-    const all = db.getAllCurriculum();
-    const count = all.filter(m => 
-      (m.category === ResourceCategory.DOCUMENT) && 
-      (m.gradeLevel === 'All Grades' || m.gradeLevel === user.grade || !user.grade)
-    ).length;
+    const grades = db.getGradesByStudent(user.id);
+    setStudentGrades(grades);
+
+    const allCurr = db.getAllCurriculum();
+    const studentCurr = allCurr.filter(c => c.gradeLevel === 'All Grades' || c.gradeLevel === user.grade || !user.grade);
+    setRecentCurriculum(studentCurr);
+
+    const count = studentCurr.filter(m => m.category === ResourceCategory.DOCUMENT).length;
     setAssignmentCount(count);
 
     // Calculate Academic Rank
@@ -302,6 +291,24 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onUpda
     calculateRank();
   }, [user.id, user.grade, user.className, selectedRankSubject]);
 
+  const avgGradeLetter = useMemo(() => {
+    if (studentGrades.length === 0) return '--';
+    const avg = studentGrades.reduce((sum, g) => sum + g.score, 0) / studentGrades.length;
+    if (avg >= 90) return 'A+';
+    if (avg >= 80) return 'A';
+    if (avg >= 70) return 'B';
+    if (avg >= 60) return 'C';
+    if (avg >= 50) return 'D';
+    return 'F';
+  }, [studentGrades]);
+
+  const performanceChartData = useMemo(() => {
+    return studentGrades.map(g => ({
+      name: g.subject.slice(0, 10),
+      score: g.score
+    }));
+  }, [studentGrades]);
+
   return (
     <div className="max-w-7xl mx-auto space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -322,7 +329,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onUpda
                   {user.grade} {user.className || 'Class'} Position
                 </p>
                 <p className="text-xl font-bold text-white transition-colors group-hover:text-primary-400">
-                  {rankInfo ? `${rankInfo.pos} / ${rankInfo.total}` : '--'}
+                  {rankInfo && rankInfo.pos > 0 ? `${rankInfo.pos} / ${rankInfo.total}` : '--'}
                 </p>
               </div>
             </div>
@@ -342,13 +349,13 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onUpda
                 </select>
               </div>
               <div>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Study Hours</p>
-                <p className="text-xl font-bold text-white transition-colors group-hover:text-primary-400">42.5h</p>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Grades Recorded</p>
+                <p className="text-xl font-bold text-white transition-colors group-hover:text-primary-400">{studentGrades.length}</p>
               </div>
             </div>
 
             {[
-              { label: 'Avg Grade', value: 'A-', icon: Book, color: 'text-amber-400', bg: 'bg-amber-950/40' },
+              { label: 'Avg Grade', value: avgGradeLetter, icon: Book, color: 'text-amber-400', bg: 'bg-amber-950/40' },
             ].map((stat, i) => (
               <div key={i} className="glass-card p-6 rounded-2xl flex items-center gap-4 group hover:border-primary-500/30 transition-all cursor-default">
                 <div className={`p-3 rounded-xl ${stat.bg} ${stat.color} border border-white/5 shadow-inner transition-transform group-hover:scale-110`}><stat.icon className="w-6 h-6" /></div>
@@ -371,31 +378,46 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onUpda
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 glass-card p-6 rounded-2xl h-[400px]">
                 <h2 className="font-bold text-white mb-6 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-primary-400" /> Academic Progress</h2>
-                <ResponsiveContainer width="100%" height="80%">
-                  <AreaChart data={mockPerformanceData}>
-                    <defs><linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7c3aed" stopOpacity={0.3}/><stop offset="95%" stopColor="#7c3aed" stopOpacity={0}/></linearGradient></defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ffffff05" />
-                    <XAxis dataKey="name" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1a1635', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }}
-                      itemStyle={{ color: '#a78bfa' }}
-                    />
-                    <Area type="monotone" dataKey="score" stroke="#7c3aed" strokeWidth={3} fillOpacity={1} fill="url(#colorScore)" dot={{ fill: '#7c3aed', strokeWidth: 2, r: 4, stroke: '#1a1635' }} activeDot={{ r: 6, strokeWidth: 0 }} />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {performanceChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="80%">
+                    <AreaChart data={performanceChartData}>
+                      <defs><linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7c3aed" stopOpacity={0.3}/><stop offset="95%" stopColor="#7c3aed" stopOpacity={0}/></linearGradient></defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ffffff05" />
+                      <XAxis dataKey="name" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+                      <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} domain={[0, 100]} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#1a1635', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', color: '#fff' }}
+                        itemStyle={{ color: '#a78bfa' }}
+                      />
+                      <Area type="monotone" dataKey="score" stroke="#7c3aed" strokeWidth={3} fillOpacity={1} fill="url(#colorScore)" dot={{ fill: '#7c3aed', strokeWidth: 2, r: 4, stroke: '#1a1635' }} activeDot={{ r: 6, strokeWidth: 0 }} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[280px] flex flex-col items-center justify-center text-slate-500 text-xs italic gap-2">
+                    <TrendingUp className="w-8 h-8 opacity-20" />
+                    <p>No academic scores recorded yet.</p>
+                  </div>
+                )}
             </div>
             <div className="glass-card p-6 rounded-2xl">
               <h2 className="font-bold text-white mb-6 flex items-center gap-2"><BookOpen className="w-4 h-4 text-primary-400" /> Recent Courses</h2>
-              <div className="space-y-6">
-                {lessons.map((lesson) => (
-                  <div key={lesson.id} className="group cursor-default">
-                    <div className="flex justify-between mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 group-hover:text-primary-300 transition-colors"><span>{lesson.title}</span><span>{lesson.progress}%</span></div>
-                    <div className="w-full bg-white/5 h-2 rounded-full overflow-hidden border border-white/5 shadow-inner">
-                        <div className="h-full bg-gradient-to-r from-primary-600 to-primary-400 transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(124,58,237,0.3)]" style={{ width: `${lesson.progress}%` }} />
+              <div className="space-y-4">
+                {recentCurriculum.length > 0 ? (
+                  recentCurriculum.slice(0, 5).map((curr) => (
+                    <div key={curr.id} className="p-3 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 transition-colors">
+                      <p className="text-xs font-bold text-white truncate">{curr.title}</p>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 mt-1">
+                        <span>{curr.subject}</span>
+                        <span className="text-primary-400 font-bold uppercase">{curr.category}</span>
+                      </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="py-12 flex flex-col items-center justify-center text-slate-500 text-xs italic gap-2">
+                    <BookOpen className="w-8 h-8 opacity-20" />
+                    <p>No course modules assigned yet.</p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>

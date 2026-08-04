@@ -20,6 +20,7 @@ import {
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js';
+import { Buffer } from 'buffer';
 import type { AttendanceStatus } from './blockchain';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -241,7 +242,7 @@ async function submitOnline(input: AttendanceInput): Promise<BlockchainResult> {
   const memoInstruction = new TransactionInstruction({
     keys:      [{ pubkey: feePayer, isSigner: true, isWritable: false }],
     programId: MEMO_PROGRAM_ID,
-    data:      new TextEncoder().encode(prepData.memoPayload),
+    data:      Buffer.from(prepData.memoPayload),
   });
 
   const tx = new Transaction({ feePayer, blockhash, lastValidBlockHeight });

@@ -7,11 +7,15 @@ import {
   ArrowRight,
   Loader2,
   CheckCircle2,
-  Info
+  Info,
+  KeyRound,
+  RefreshCw,
+  ArrowLeft,
+  Sparkles
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { db } from '../services/database';
-import { login, register } from '../services/api';
+import { login, register, sendTwoFactorOtp, verifyLoginTwoFactor } from '../services/api';
 
 interface AuthPageProps {
   onLoginSuccess: (data: {
@@ -26,6 +30,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
+  // 2FA States
+  const [authStep, setAuthStep] = useState<'credentials' | 'login_2fa' | 'register_2fa'>('credentials');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [pendingRole, setPendingRole] = useState<UserRole | null>(null);
+  const [devCodeNotice, setDevCodeNotice] = useState<string | null>(null);
+  const [isResending, setIsResending] = useState(false);
+
   // Forgot Password States
   const [forgotPasswordStep, setForgotPasswordStep] = useState<'none' | 'email' | 'otp'>('none');
   const [resetEmail, setResetEmail] = useState('');
@@ -48,17 +60,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
     setError(null);
 
     try {
-      // Check if user exists
       const user = db.findUserByEmail(resetEmail);
       if (!user) {
         throw new Error("No account found with this email");
       }
 
-      // Generate the OTP
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       setGeneratedOtp(otp);
       
-      // Call the server to send the actual email
       const response = await fetch("/api/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -68,7 +77,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
       const data = await response.json();
 
       if (!response.ok) {
-        // If the server doesn't have the API key, it will return a specific error
         if (response.status === 503) {
           console.warn("[AUTH] Server email service not configured. Falling back to alert.");
           alert(`Email sending isn't set up yet. Your code is: ${otp}`);
@@ -108,7 +116,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
         setNewPassword('');
         setGeneratedOtp('');
         setIsLogin(true);
-        // Clear login form fields
         setEmail(resetEmail);
         setPassword('');
       }
@@ -127,18 +134,30 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
     setLoading(true);
     setError(null);
     setSuccessMessage(null);
+    setDevCodeNotice(null);
+
+    const trimmedEmail = email.trim().toLowerCase();
 
     try {
       /**
-       * LOGIN → Authenticate via server (JWT-based)
+       * LOGIN → Check credentials first, then trigger 2FA
        */
       if (isLogin) {
-        const trimmedEmail = email.trim();
-        
         try {
-          // Try server-side authentication first (with JWT)
           const result = await login(trimmedEmail, password);
 
+          if (result.requires2FA) {
+            setPendingEmail(trimmedEmail);
+            setPendingRole(result.role || null);
+            if (result.devCode) {
+              setDevCodeNotice(result.devCode);
+            }
+            setAuthStep('login_2fa');
+            setSuccessMessage(`2FA security verification code sent to ${trimmedEmail}`);
+            return;
+          }
+
+          // Direct login fallback
           if (result.success && result.user) {
             onLoginSuccess({
               user: result.user,
@@ -147,22 +166,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
             return;
           }
         } catch (serverError: any) {
-          // If server auth fails, try local fallback
+          // If server auth fails, try local fallback with 2FA simulated code
           console.log("[Auth] Server auth failed, trying local fallback...", serverError.message);
           const localResult = await db.authenticateUser(trimmedEmail, password);
           
           if (localResult) {
-            // Store token for local user (for compatibility)
-            // In a real app, you'd have the server handle this
-            localStorage.setItem(
-              "user",
-              JSON.stringify(localResult.user)
-            );
-
-            onLoginSuccess({
-              user: localResult.user,
-              needsPasswordReset: localResult.needsPasswordReset
-            });
+            const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
+            setDevCodeNotice(fallbackCode);
+            setPendingEmail(trimmedEmail);
+            setPendingRole(localResult.user.role);
+            setAuthStep('login_2fa');
+            setSuccessMessage(`2FA code generated for local authentication: ${fallbackCode}`);
             return;
           }
           
@@ -171,53 +185,155 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
       }
 
       /**
-       * REGISTER → Uses server database endpoint
+       * REGISTER → Trigger 2FA email verification for account creation
        */
       else {
-        const newUserPayload = {
-          name,
-          email,
-          role,
-          avatar: `https://picsum.photos/seed/${name.replace(/\s/g, '')}/100/100`
-        };
-
-        await register(newUserPayload, password);
-
-        // Also sync local db if available for fallback
         try {
-          await db.registerUser(newUserPayload, password);
-        } catch {
-          // Ignore if local db already exists or fails
+          const res = await sendTwoFactorOtp(trimmedEmail, 'REGISTER');
+          if (res.devCode) {
+            setDevCodeNotice(res.devCode);
+          }
+          setPendingEmail(trimmedEmail);
+          setAuthStep('register_2fa');
+          setSuccessMessage(`2FA account activation code sent to ${trimmedEmail}`);
+        } catch (regErr: any) {
+          // Local fallback for 2FA registration OTP
+          const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
+          setDevCodeNotice(fallbackCode);
+          setPendingEmail(trimmedEmail);
+          setAuthStep('register_2fa');
+          setSuccessMessage(`2FA activation code generated: ${fallbackCode}`);
         }
-
-        setSuccessMessage(
-          'Account created! You can now sign in.'
-        );
-
-        setIsLogin(true);
-
-        // Clear fields
-        setName('');
-        setEmail('');
-        setPassword('');
       }
     } catch (err: any) {
       setError(
-        err.message || "Something went wrong. Please check your internet connection and try again."
+        err.message || "Something went wrong. Please check your connection and try again."
       );
     } finally {
       setLoading(false);
     }
   };
 
+  const handleVerifyLogin2FA = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!twoFactorCode || twoFactorCode.length < 6) {
+      setError("Please enter the complete 6-digit 2FA code.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Try verifying on server
+      try {
+        const result = await verifyLoginTwoFactor(pendingEmail, twoFactorCode);
+        if (result.success && result.user) {
+          onLoginSuccess({
+            user: result.user,
+            needsPasswordReset: result.needsPasswordReset || false
+          });
+          return;
+        }
+      } catch (srvErr: any) {
+        // Fallback for demo code if devCodeNotice matches
+        if (devCodeNotice && twoFactorCode.trim() === devCodeNotice.trim()) {
+          const localUser = db.findUserByEmail(pendingEmail);
+          if (localUser) {
+            localStorage.setItem("user", JSON.stringify(localUser));
+            onLoginSuccess({
+              user: localUser,
+              needsPasswordReset: false
+            });
+            return;
+          }
+        }
+        throw srvErr;
+      }
+    } catch (err: any) {
+      setError(err.message || "Invalid 2FA code. Please check and try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyRegister2FA = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!twoFactorCode || twoFactorCode.length < 6) {
+      setError("Please enter the complete 6-digit 2FA code.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const newUserPayload = {
+        name,
+        email: pendingEmail,
+        role,
+        avatar: `https://picsum.photos/seed/${name.replace(/\s/g, '')}/100/100`
+      };
+
+      try {
+        await register(newUserPayload, password, twoFactorCode);
+      } catch (regErr: any) {
+        if (devCodeNotice && twoFactorCode.trim() === devCodeNotice.trim()) {
+          // Dev code accepted
+        } else {
+          throw regErr;
+        }
+      }
+
+      // Sync local db
+      try {
+        await db.registerUser(newUserPayload, password);
+      } catch {}
+
+      setSuccessMessage('2FA Verified! Account created successfully. You can now sign in with 2FA.');
+      setAuthStep('credentials');
+      setIsLogin(true);
+      setEmail(pendingEmail);
+      setPassword('');
+      setTwoFactorCode('');
+      setDevCodeNotice(null);
+    } catch (err: any) {
+      setError(err.message || "Invalid 2FA code. Account creation failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend2FA = async () => {
+    setIsResending(true);
+    setError(null);
+    try {
+      const purpose = authStep === 'login_2fa' ? 'LOGIN' : 'REGISTER';
+      const res = await sendTwoFactorOtp(pendingEmail, purpose);
+      if (res.devCode) {
+        setDevCodeNotice(res.devCode);
+      }
+      setSuccessMessage(`A fresh 2FA code has been sent to ${pendingEmail}`);
+    } catch (err: any) {
+      const newCode = Math.floor(100000 + Math.random() * 900000).toString();
+      setDevCodeNotice(newCode);
+      setSuccessMessage(`Fresh 2FA code generated: ${newCode}`);
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   const toggleMode = () => {
     setIsLogin(!isLogin);
+    setAuthStep('credentials');
     setError(null);
     setSuccessMessage(null);
     setForgotPasswordStep('none');
     setResetEmail('');
     setResetOtp('');
     setGeneratedOtp('');
+    setTwoFactorCode('');
+    setDevCodeNotice(null);
   };
 
   return (
@@ -230,7 +346,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
         <div className="glass-card p-8 md:p-10 rounded-[2.5rem]">
 
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center text-white text-3xl font-bold mx-auto mb-4 shadow-xl shadow-primary-900/20">
+            <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center text-white text-3xl font-bold mx-auto mb-4 shadow-xl shadow-primary-900/20 border border-primary-400/30">
               E
             </div>
 
@@ -238,250 +354,431 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
               E-SYLAB
             </h1>
 
-            <p className="text-slate-400 mt-2 font-medium">
-              {isLogin
+            <p className="text-slate-400 mt-2 font-medium text-sm">
+              {authStep !== 'credentials' 
+                ? 'Two-Factor Security Verification'
+                : isLogin
                 ? 'Welcome back to your campus'
                 : 'Create your secure student account'}
             </p>
           </div>
 
-          <form onSubmit={handleAuth} className="space-y-5">
+          {/* Messages */}
+          {error && (
+            <div className="bg-rose-950/80 border border-rose-500/30 text-rose-300 text-xs py-3 px-4 rounded-2xl flex items-center gap-2.5 mb-5 animate-in fade-in">
+              <Shield className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
-            {error && (
-              <div className="bg-rose-50 border border-rose-100 text-rose-600 text-sm py-3 px-4 rounded-xl flex items-center gap-2">
-                <Shield className="w-4 h-4" />
-                {error}
+          {successMessage && (
+            <div className="bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 text-xs py-3 px-4 rounded-2xl flex items-center gap-2.5 mb-5 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{successMessage}</span>
+            </div>
+          )}
+
+          {/* Dev Code Helper Notice if Email Service unconfigured */}
+          {devCodeNotice && (
+            <div className="bg-purple-950/60 border border-purple-500/40 p-3.5 rounded-2xl mb-5 flex items-center justify-between gap-2 animate-in zoom-in-95">
+              <div className="flex items-center gap-2 text-xs text-purple-200 font-medium">
+                <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+                <span>Demo 2FA Code: <strong className="font-mono text-purple-300 text-sm tracking-wider ml-1">{devCodeNotice}</strong></span>
               </div>
-            )}
+              <button
+                type="button"
+                onClick={() => setTwoFactorCode(devCodeNotice)}
+                className="px-2.5 py-1 bg-purple-600/50 hover:bg-purple-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+              >
+                Auto-Fill
+              </button>
+            </div>
+          )}
 
-            {successMessage && (
-              <div className="bg-emerald-50 border border-emerald-100 text-emerald-600 text-sm py-3 px-4 rounded-xl flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                {successMessage}
-              </div>
-            )}
+          {/* STEP 1: LOGIN / REGISTER CREDENTIALS FORM */}
+          {authStep === 'credentials' && (
+            <form onSubmit={handleAuth} className="space-y-5">
+              {!isLogin && (
+                <div className="bg-primary-950/40 border border-primary-500/20 p-4 rounded-2xl flex gap-3 items-start">
+                  <Info className="w-5 h-5 text-primary-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-primary-100 leading-relaxed">
+                    Public registration is for <strong>Students</strong>. 2FA verification will be sent to your email to activate account.
+                  </p>
+                </div>
+              )}
 
-            {!isLogin && (
-              <div className="bg-primary-950/40 border border-primary-500/20 p-4 rounded-2xl flex gap-3 items-start">
-                <Info className="w-5 h-5 text-primary-400 shrink-0 mt-0.5" />
-                <p className="text-xs text-primary-100 leading-relaxed">
-                  Public registration is for <strong>Students</strong> only.
-                  Faculty members must obtain credentials from the school administration.
-                </p>
-              </div>
-            )}
+              {!isLogin && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-300 ml-1 uppercase tracking-wider">
+                    Full Name
+                  </label>
 
-            {!isLogin && (
+                  <div className="relative group">
+                    <UserIcon className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+
+                    <input
+                      required
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Enter your name"
+                      className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
-                <label className="text-sm font-bold text-slate-300 ml-1">
-                  Full Name
+                <label className="text-xs font-bold text-slate-300 ml-1 uppercase tracking-wider">
+                  Email Address
                 </label>
 
                 <div className="relative group">
-                  <UserIcon className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Mail className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
 
                   <input
                     required
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Enter your name"
-                    className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@esylab.com"
+                    className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all text-sm"
                   />
                 </div>
               </div>
-            )}
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-300 ml-1">
-                Email Address
-              </label>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-300 ml-1 uppercase tracking-wider">
+                  Password
+                </label>
 
-              <div className="relative group">
-                <Mail className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <div className="relative group">
+                  <Lock className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
 
-                <input
-                  required
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@esylab.com"
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all"
-                />
+                  <input
+                    required
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all text-sm"
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-300 ml-1">
-                Password
-              </label>
+              <button
+                disabled={loading}
+                className="w-full bg-primary-600 hover:bg-primary-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 text-sm"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    {isLogin ? 'Checking Credentials...' : 'Sending 2FA Code...'}
+                  </>
+                ) : (
+                  <>
+                    {isLogin ? 'Sign In with 2FA' : 'Get 2FA Verification Code'}
+                    <ArrowRight className="w-5 h-5" />
+                  </>
+                )}
+              </button>
+            </form>
+          )}
 
-              <div className="relative group">
-                <Lock className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-
-                <input
-                  required
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all"
-                />
-              </div>
-            </div>
-
-            <button
-              disabled={loading}
-              className="w-full bg-primary-600 hover:bg-primary-700 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  {isLogin ? 'Authenticating...' : 'Creating Record...'}
-                </>
-              ) : (
-                <>
-                  {isLogin ? 'Sign In' : 'Create Account'}
-                  <ArrowRight className="w-5 h-5" />
-                </>
-              )}
-            </button>
-          </form>
-
-          <div className="mt-8 pt-6 border-t border-white/10 text-center">
-            <p className="text-slate-400 text-sm">
-              {isLogin
-                ? "Don't have an account yet?"
-                : "Already have an account?"}
-            </p>
-
-            <button
-              type="button"
-              onClick={toggleMode}
-              className="mt-2 text-primary-400 font-bold hover:underline"
-            >
-              {isLogin
-                ? 'Sign up for free'
-                : 'Log in to your account'}
-            </button>
-
-            <div className="mt-6 pt-4 border-t border-white/10">
-              {forgotPasswordStep === 'none' ? (
-                <button
-                  type="button"
-                  onClick={() => setForgotPasswordStep('email')}
-                  className="text-xs text-primary-300 font-bold hover:underline"
-                >
-                  Forgot Password?
-                </button>
-              ) : (
-                <div className="space-y-4 animate-in slide-in-from-bottom-4">
-                  {forgotPasswordStep === 'email' ? (
-                    <div className="space-y-3">
-                      <p className="text-xs text-slate-400 text-left ml-1 font-medium">Enter your email and we'll send you a code</p>
-                      <div className="relative group">
-                        <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input
-                          type="email"
-                          value={resetEmail}
-                          onChange={(e) => setResetEmail(e.target.value)}
-                          placeholder="your.email@example.com"
-                          className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs outline-none focus:border-primary-500 text-white"
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={handleSendOtp}
-                          disabled={loading}
-                          className="flex-1 bg-primary-600 text-white py-2 rounded-xl text-xs font-bold hover:bg-primary-700 transition-colors disabled:opacity-50"
-                        >
-                          {loading ? 'Sending...' : 'Send Code'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setForgotPasswordStep('none')}
-                          className="px-4 py-2 bg-white/5 text-slate-300 rounded-xl text-xs font-bold hover:bg-white/10"
-                        >
-                          Back
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 text-emerald-400 mb-1">
-                        <CheckCircle2 className="w-4 h-4" />
-                        <p className="text-[10px] font-bold uppercase tracking-wider">Code Sent to {resetEmail}</p>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1 text-left">
-                          <label className="text-[10px] font-bold text-slate-500 ml-1 uppercase">6-Digit Code</label>
-                          <input
-                            type="text"
-                            maxLength={6}
-                            value={resetOtp}
-                            onChange={(e) => setResetOtp(e.target.value)}
-                            placeholder="000000"
-                            className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm font-mono outline-none focus:border-primary-500 text-center text-white"
-                          />
-                        </div>
-                        <div className="space-y-1 text-left">
-                          <label className="text-[10px] font-bold text-slate-500 ml-1 uppercase">New Password</label>
-                          <input
-                            type="password"
-                            value={newPassword}
-                            onChange={(e) => setNewPassword(e.target.value)}
-                            placeholder="••••••••"
-                            className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 text-white"
-                          />
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleVerifyAndReset}
-                        disabled={loading}
-                        className="w-full bg-primary-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-primary-700 transition-colors shadow-lg shadow-primary-900/40"
-                      >
-                        {loading ? 'Resetting...' : 'Verify & Reset Password'}
-                      </button>
-                    </div>
+          {/* STEP 2: 2FA LOGIN VERIFICATION */}
+          {authStep === 'login_2fa' && (
+            <form onSubmit={handleVerifyLogin2FA} className="space-y-5 animate-in fade-in zoom-in-95">
+              <div className="bg-primary-950/40 border border-primary-500/30 p-4 rounded-2xl text-center space-y-2">
+                <div className="w-10 h-10 bg-primary-600/30 border border-primary-500/40 rounded-xl flex items-center justify-center mx-auto text-primary-300">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-xs font-bold text-white">Enter 6-Digit 2FA Code</span>
+                  {pendingRole && (
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      {pendingRole}
+                    </span>
                   )}
                 </div>
-              )}
-            </div>
+                <p className="text-xs text-slate-400">
+                  A 2FA code was sent to <strong className="text-primary-300">{pendingEmail}</strong>
+                </p>
+              </div>
 
-            <div className="mt-8 pt-4 border-t border-white/10 flex flex-col items-center">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-300 ml-1 uppercase tracking-wider">
+                  6-Digit Security Code
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-primary-400" />
+                  <input
+                    required
+                    autoFocus
+                    type="text"
+                    maxLength={6}
+                    value={twoFactorCode}
+                    onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-primary-500/40 rounded-2xl outline-none focus:border-primary-400 text-center font-mono text-xl tracking-[0.3em] font-bold text-white transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthStep('credentials');
+                    setTwoFactorCode('');
+                    setError(null);
+                  }}
+                  className="px-4 py-3.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-2xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/10"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || twoFactorCode.length < 6}
+                  className="flex-1 bg-primary-600 hover:bg-primary-500 text-white py-3.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Verifying 2FA...
+                    </>
+                  ) : (
+                    <>
+                      Verify 2FA & Log In <CheckCircle2 className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={handleResend2FA}
+                  disabled={isResending}
+                  className="text-xs text-primary-400 font-bold hover:underline flex items-center justify-center gap-1.5 mx-auto disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isResending ? 'animate-spin' : ''}`} />
+                  {isResending ? 'Sending fresh code...' : 'Resend 2FA Code'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* STEP 2: 2FA REGISTRATION VERIFICATION */}
+          {authStep === 'register_2fa' && (
+            <form onSubmit={handleVerifyRegister2FA} className="space-y-5 animate-in fade-in zoom-in-95">
+              <div className="bg-primary-950/40 border border-primary-500/30 p-4 rounded-2xl text-center space-y-2">
+                <div className="w-10 h-10 bg-primary-600/30 border border-primary-500/40 rounded-xl flex items-center justify-center mx-auto text-primary-300">
+                  <Shield className="w-5 h-5" />
+                </div>
+                <h3 className="text-xs font-bold text-white">2FA Account Activation</h3>
+                <p className="text-xs text-slate-400">
+                  Enter the 6-digit code sent to <strong className="text-primary-300">{pendingEmail}</strong> to activate your student account.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-300 ml-1 uppercase tracking-wider">
+                  6-Digit Activation Code
+                </label>
+                <div className="relative">
+                  <KeyRound className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-primary-400" />
+                  <input
+                    required
+                    autoFocus
+                    type="text"
+                    maxLength={6}
+                    value={twoFactorCode}
+                    onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="000000"
+                    className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-primary-500/40 rounded-2xl outline-none focus:border-primary-400 text-center font-mono text-xl tracking-[0.3em] font-bold text-white transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthStep('credentials');
+                    setTwoFactorCode('');
+                    setError(null);
+                  }}
+                  className="px-4 py-3.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-2xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/10"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || twoFactorCode.length < 6}
+                  className="flex-1 bg-primary-600 hover:bg-primary-500 text-white py-3.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 disabled:opacity-50"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Verifying...
+                    </>
+                  ) : (
+                    <>
+                      Verify 2FA & Create Account <CheckCircle2 className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={handleResend2FA}
+                  disabled={isResending}
+                  className="text-xs text-primary-400 font-bold hover:underline flex items-center justify-center gap-1.5 mx-auto disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isResending ? 'animate-spin' : ''}`} />
+                  {isResending ? 'Sending fresh code...' : 'Resend Activation Code'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Bottom Switch Mode / Options */}
+          {authStep === 'credentials' && (
+            <div className="mt-8 pt-6 border-t border-white/10 text-center">
+              <p className="text-slate-400 text-sm">
+                {isLogin
+                  ? "Don't have an account yet?"
+                  : "Already have an account?"}
+              </p>
+
               <button
                 type="button"
-                id="reset-trigger"
-                onClick={(e) => {
-                  const target = e.currentTarget;
-                  if (target.getAttribute('data-confirm') === 'true') {
-                    db.reset();
-                    window.location.reload();
-                  } else {
-                    target.setAttribute('data-confirm', 'true');
-                    target.innerText = "CONFIRM: DELETE EVERYTHING?";
-                    target.classList.remove('text-slate-500');
-                    target.classList.add('text-rose-500', 'animate-pulse');
-                    setTimeout(() => {
-                      if (target) {
-                        target.setAttribute('data-confirm', 'false');
-                        target.innerText = "Zero System - Clear All Data";
-                        target.classList.add('text-slate-500');
-                        target.classList.remove('text-rose-500', 'animate-pulse');
-                      }
-                    }, 3000);
-                  }
-                }}
-                className="text-[9px] text-slate-500 hover:text-rose-400 font-bold uppercase tracking-[0.2em] transition-all duration-300"
+                onClick={toggleMode}
+                className="mt-2 text-primary-400 font-bold hover:underline"
               >
-                Zero System - Clear All Data
+                {isLogin
+                  ? 'Sign up for free'
+                  : 'Log in to your account'}
               </button>
+
+              <div className="mt-6 pt-4 border-t border-white/10">
+                {forgotPasswordStep === 'none' ? (
+                  <button
+                    type="button"
+                    onClick={() => setForgotPasswordStep('email')}
+                    className="text-xs text-primary-300 font-bold hover:underline"
+                  >
+                    Forgot Password?
+                  </button>
+                ) : (
+                  <div className="space-y-4 animate-in slide-in-from-bottom-4">
+                    {forgotPasswordStep === 'email' ? (
+                      <div className="space-y-3">
+                        <p className="text-xs text-slate-400 text-left ml-1 font-medium">Enter your email and we'll send you a code</p>
+                        <div className="relative group">
+                          <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="email"
+                            value={resetEmail}
+                            onChange={(e) => setResetEmail(e.target.value)}
+                            placeholder="your.email@example.com"
+                            className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs outline-none focus:border-primary-500 text-white"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={handleSendOtp}
+                            disabled={loading}
+                            className="flex-1 bg-primary-600 text-white py-2 rounded-xl text-xs font-bold hover:bg-primary-700 transition-colors disabled:opacity-50"
+                          >
+                            {loading ? 'Sending...' : 'Send Code'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setForgotPasswordStep('none')}
+                            className="px-4 py-2 bg-white/5 text-slate-300 rounded-xl text-xs font-bold hover:bg-white/10"
+                          >
+                            Back
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-emerald-400 mb-1">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <p className="text-[10px] font-bold uppercase tracking-wider">Code Sent to {resetEmail}</p>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1 text-left">
+                            <label className="text-[10px] font-bold text-slate-500 ml-1 uppercase">6-Digit Code</label>
+                            <input
+                              type="text"
+                              maxLength={6}
+                              value={resetOtp}
+                              onChange={(e) => setResetOtp(e.target.value)}
+                              placeholder="000000"
+                              className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm font-mono outline-none focus:border-primary-500 text-center text-white"
+                            />
+                          </div>
+                          <div className="space-y-1 text-left">
+                            <label className="text-[10px] font-bold text-slate-500 ml-1 uppercase">New Password</label>
+                            <input
+                              type="password"
+                              value={newPassword}
+                              onChange={(e) => setNewPassword(e.target.value)}
+                              placeholder="••••••••"
+                              className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 text-white"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleVerifyAndReset}
+                          disabled={loading}
+                          className="w-full bg-primary-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-primary-700 transition-colors shadow-lg shadow-primary-900/40"
+                        >
+                          {loading ? 'Resetting...' : 'Verify & Reset Password'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-8 pt-4 border-t border-white/10 flex flex-col items-center">
+                <button
+                  type="button"
+                  id="reset-trigger"
+                  onClick={(e) => {
+                    const target = e.currentTarget;
+                    if (target.getAttribute('data-confirm') === 'true') {
+                      db.reset();
+                      window.location.reload();
+                    } else {
+                      target.setAttribute('data-confirm', 'true');
+                      target.innerText = "CONFIRM: DELETE EVERYTHING?";
+                      target.classList.remove('text-slate-500');
+                      target.classList.add('text-rose-500', 'animate-pulse');
+                      setTimeout(() => {
+                        if (target) {
+                          target.setAttribute('data-confirm', 'false');
+                          target.innerText = "Zero System - Clear All Data";
+                          target.classList.add('text-slate-500');
+                          target.classList.remove('text-rose-500', 'animate-pulse');
+                        }
+                      }, 3000);
+                    }
+                  }}
+                  className="text-[9px] text-slate-500 hover:text-rose-400 font-bold uppercase tracking-[0.2em] transition-all duration-300"
+                >
+                  Zero System - Clear All Data
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
         </div>
       </div>

@@ -44,8 +44,8 @@ export async function ensureSessionToken(userParam?: any): Promise<string | null
         return data.token;
       }
     }
-  } catch (err) {
-    console.error("[Auth] Failed to acquire session token:", err);
+  } catch (err: any) {
+    console.warn("[Auth] Unable to reach session token endpoint:", err?.message || err);
   }
   return null;
 }
@@ -96,11 +96,30 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
 }
 
 // ─── Authentication APIs ─────────────────────────────────────────────────────
-export async function register(userData: { name: string; email: string; avatar?: string; role?: UserRole }, password: string) {
+export async function sendTwoFactorOtp(email: string, purpose: 'LOGIN' | 'REGISTER') {
+  const response = await fetch(`${API_BASE_URL}/auth/2fa/send-otp`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ email, purpose })
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "Failed to send 2FA verification code");
+  }
+
+  return data;
+}
+
+export async function register(
+  userData: { name: string; email: string; avatar?: string; role?: UserRole }, 
+  password: string, 
+  twoFactorCode?: string
+) {
   const response = await fetch(`${API_BASE_URL}/register`, {
     method: "POST",
     headers: getAuthHeaders(),
-    body: JSON.stringify({ ...userData, password })
+    body: JSON.stringify({ ...userData, password, twoFactorCode })
   });
 
   if (!response.ok) {
@@ -117,10 +136,14 @@ export async function register(userData: { name: string; email: string; avatar?:
   return data;
 }
 
-export async function createUserByAdmin(userData: { name: string; email: string; role: UserRole; avatar?: string }, password: string) {
+export async function createUserByAdmin(
+  userData: { name: string; email: string; role: UserRole; avatar?: string }, 
+  password: string,
+  twoFactorCode?: string
+) {
   const response = await authFetch(`${API_BASE_URL}/admin/create-user`, {
     method: "POST",
-    body: JSON.stringify({ ...userData, password })
+    body: JSON.stringify({ ...userData, password, twoFactorCode })
   });
 
   if (!response.ok) {
@@ -145,11 +168,31 @@ export async function login(email: string, password: string) {
 
   const data = await response.json();
   
-  // Store the JWT token
+  // If token returned directly (e.g. bypass or 2FA pre-cleared)
   if (data.token) {
     setToken(data.token);
   }
   
+  return data;
+}
+
+export async function verifyLoginTwoFactor(email: string, twoFactorCode: string) {
+  const response = await fetch(`${API_BASE_URL}/login/verify-2fa`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ email, twoFactorCode })
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || "2FA verification failed");
+  }
+
+  if (data.token) {
+    setToken(data.token);
+  }
+
   return data;
 }
 
@@ -171,20 +214,24 @@ export async function logout() {
 
 // ─── Profile APIs ──────────────────────────────────────────────────────────────
 export async function getProfile() {
-  const response = await fetch(`${API_BASE_URL}/profile`, {
-    method: "GET",
-    headers: getAuthHeaders(false)
-  });
+  try {
+    const response = await fetch(`${API_BASE_URL}/profile`, {
+      method: "GET",
+      headers: getAuthHeaders(false)
+    });
 
-  if (!response.ok) {
-    if (response.status === 401) {
-      clearToken();
-      throw new Error("Session expired. Please login again.");
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearToken();
+        return { success: false, error: "Session expired" };
+      }
+      return { success: false, error: "Failed to load profile" };
     }
-    throw new Error("Failed to load profile");
-  }
 
-  return response.json();
+    return response.json();
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to fetch" };
+  }
 }
 
 export async function updateProfile(updates: Record<string, any>) {
@@ -510,6 +557,28 @@ export async function getStaffPerformance() {
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Failed to fetch staff performance metrics");
+  }
+  return response.json();
+}
+
+// ─── Blockchain Ledger Methods ──────────────────────────────────────────────
+export async function getAllLedgerRecords() {
+  const response = await authFetch(`${API_BASE_URL}/blockchain/ledger/all`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch ledger transactions");
+  }
+  return response.json();
+}
+
+export async function verifyLedgerRecord(offlineHash: string) {
+  const response = await authFetch(`${API_BASE_URL}/blockchain/ledger/verify`, {
+    method: "POST",
+    body: JSON.stringify({ offlineHash }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to verify ledger record");
   }
   return response.json();
 }

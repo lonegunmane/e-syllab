@@ -444,16 +444,6 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
                   >
                     Mark another day
                   </button>
-                  {lastRecord.explorerUrl && (
-                    <a
-                      href={lastRecord.explorerUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-primary-400 transition-colors"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" /> View verification record
-                    </a>
-                  )}
                 </div>
               )}
             </div>
@@ -538,17 +528,6 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
                           <span className="flex items-center gap-1 text-[11px] font-bold text-amber-400">
                             <Clock className="w-3.5 h-3.5" /> Pending
                           </span>
-                        )}
-                        {r.explorerUrl && (
-                          <a
-                            href={r.explorerUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-slate-600 hover:text-primary-400 transition-colors"
-                            title="View verification record"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
                         )}
                       </div>
                     </div>

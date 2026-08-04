@@ -495,7 +495,7 @@ export const serverDb = {
     if (stmt.step()) {
       const row = stmt.getAsObject();
       stmt.free();
-      return { ...row, lastLogin: (row as any).lastLogin || null } as AuthCredential;
+      return { ...row, lastLogin: (row as any).lastLogin || null } as unknown as AuthCredential;
     }
 
     stmt.free();

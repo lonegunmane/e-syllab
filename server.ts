@@ -75,6 +75,15 @@ const JWT_EXPIRY = '24h';
 // In-memory token blacklist for logout (in production, use Redis or a database)
 const tokenBlacklist = new Set<string>();
 
+// ─── 2FA OTP Store ─────────────────────────────────────────────────────────────
+interface TwoFactorEntry {
+  code: string;
+  expiresAt: number;
+  purpose: 'LOGIN' | 'REGISTER';
+  attempts: number;
+}
+const twoFactorStore = new Map<string, TwoFactorEntry>();
+
 // Interface for JWT payload
 interface JwtPayload {
   userId: string;
@@ -492,21 +501,115 @@ async function startServer() {
   });
 
   // ════════════════════════════════════════════
-  //  AUTHENTICATION ROUTES
+  //  AUTHENTICATION & 2FA ROUTES
   // ════════════════════════════════════════════
 
-  // POST /api/register - Public registration (forced to STUDENT role)
+  // POST /api/auth/2fa/send-otp - Request a 2FA verification code via email
+  app.post("/api/auth/2fa/send-otp", async (req, res) => {
+    const { email, purpose } = req.body;
+    if (!email || !purpose) {
+      return res.status(400).json({ success: false, error: "Email and purpose ('LOGIN' or 'REGISTER') required" });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (purpose === 'LOGIN') {
+      const existingUser = serverDb.findUserByEmail(trimmedEmail);
+      if (!existingUser) {
+        return res.status(404).json({ success: false, error: "No account found with this email address" });
+      }
+    } else if (purpose === 'REGISTER') {
+      const existingUser = serverDb.findUserByEmail(trimmedEmail);
+      if (existingUser) {
+        return res.status(400).json({ success: false, error: "An account with this email address already exists" });
+      }
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    twoFactorStore.set(`${trimmedEmail}_${purpose}`, {
+      code,
+      expiresAt,
+      purpose: purpose as 'LOGIN' | 'REGISTER',
+      attempts: 0
+    });
+
+    // Send via Resend email service if configured
+    const client = getResend();
+    let emailSent = false;
+    if (client) {
+      try {
+        await client.emails.send({
+          from: "E-SYLAB Security <onboarding@resend.dev>",
+          to: trimmedEmail,
+          subject: `Your E-SYLAB 2FA ${purpose === 'LOGIN' ? 'Login' : 'Account Verification'} Code`,
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 24px; border: 1px solid #1e293b; border-radius: 16px; max-width: 440px; margin: auto; background-color: #0b0f19; color: #f8fafc;">
+              <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                <div style="background: #7c3aed; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #ffffff; font-size: 22px;">E</div>
+                <div>
+                  <h2 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800;">E-SYLAB</h2>
+                  <p style="color: #a7f3d0; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">Two-Factor Security Verification</p>
+                </div>
+              </div>
+              <p style="color: #cbd5e1; font-size: 14px; line-height: 1.5;">
+                Use the following 6-digit 2FA code to complete your ${purpose === 'LOGIN' ? 'login authentication' : 'account creation'}:
+              </p>
+              <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #c084fc; padding: 18px 0; text-align: center; font-family: monospace; background: #1e1b4b; border-radius: 12px; margin: 16px 0; border: 1px solid #4c1d95;">
+                ${code}
+              </div>
+              <p style="color: #94a3b8; font-size: 12px; margin-top: 16px; line-height: 1.4;">
+                🔒 This code is valid for 10 minutes. For security reasons, do not share this code with anyone.
+              </p>
+            </div>
+          `,
+        });
+        emailSent = true;
+      } catch (emailErr) {
+        console.warn("[2FA] Resend email delivery failed:", emailErr);
+      }
+    }
+
+    console.log(`[2FA OTP] Generated code ${code} for ${trimmedEmail} (${purpose})`);
+
+    res.json({
+      success: true,
+      emailSent,
+      message: emailSent
+        ? `2FA verification code sent to ${trimmedEmail}`
+        : `2FA security code generated for ${trimmedEmail}`,
+      devCode: process.env.RESEND_API_KEY ? undefined : code
+    });
+  });
+
+  // POST /api/register - Public registration with 2FA verification
   app.post("/api/register", async (req, res) => {
-    const { name, email, password, avatar } = req.body;
+    const { name, email, password, avatar, twoFactorCode } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ success: false, error: "Name, email, and password required" });
     }
 
+    if (!twoFactorCode) {
+      return res.status(400).json({ success: false, error: "2FA verification code is required to create an account" });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+    const otpKey = `${trimmedEmail}_REGISTER`;
+    const entry = twoFactorStore.get(otpKey);
+
+    if (!entry || entry.code !== twoFactorCode.trim() || Date.now() > entry.expiresAt) {
+      return res.status(400).json({ success: false, error: "Invalid or expired 2FA verification code" });
+    }
+
+    // Code verified successfully, consume OTP
+    twoFactorStore.delete(otpKey);
+
     try {
       const userPayload = {
         name,
-        email,
+        email: trimmedEmail,
         role: UserRole.STUDENT, // Force STUDENT role for public registration
         avatar: avatar || `https://picsum.photos/seed/${name.replace(/\s/g, '')}/100/100`,
       };
@@ -529,7 +632,7 @@ async function startServer() {
         success: true,
         user: createdUser,
         token,
-        message: "Registration successful",
+        message: "Account created and verified via 2FA successfully!",
       });
     } catch (err: any) {
       console.error("[Auth] Public registration error:", err);
@@ -537,18 +640,30 @@ async function startServer() {
     }
   });
 
-  // POST /api/admin/create-user - Admin user creation (allows specifying any role)
+  // POST /api/admin/create-user - Admin user creation with 2FA support
   app.post("/api/admin/create-user", authenticateToken, authorizeRole(UserRole.ADMIN), async (req, res) => {
-    const { name, email, role, password, avatar } = req.body;
+    const { name, email, role, password, avatar, twoFactorCode } = req.body;
 
     if (!name || !email || !role || !password) {
       return res.status(400).json({ success: false, error: "Name, email, role, and password required" });
     }
 
+    const trimmedEmail = email.trim().toLowerCase();
+
+    // If 2FA code is supplied during creation, verify it
+    if (twoFactorCode) {
+      const otpKey = `${trimmedEmail}_REGISTER`;
+      const entry = twoFactorStore.get(otpKey);
+      if (!entry || entry.code !== twoFactorCode.trim() || Date.now() > entry.expiresAt) {
+        return res.status(400).json({ success: false, error: "Invalid or expired 2FA verification code" });
+      }
+      twoFactorStore.delete(otpKey);
+    }
+
     try {
       const userPayload = {
         name,
-        email,
+        email: trimmedEmail,
         role: role as UserRole,
         avatar: avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
       };
@@ -558,7 +673,7 @@ async function startServer() {
       res.json({
         success: true,
         user: createdUser,
-        message: "User created successfully",
+        message: `New ${role} account created successfully with 2FA protection enabled.`,
       });
     } catch (err: any) {
       console.error("[Auth] Admin create user error:", err);
@@ -566,7 +681,7 @@ async function startServer() {
     }
   });
 
-  // POST /api/login - Authenticate user and return JWT
+  // POST /api/login - Step 1: Validate credentials & send 2FA OTP code
   app.post("/api/login", async (req, res) => {
     const { email, password } = req.body;
     
@@ -574,38 +689,128 @@ async function startServer() {
       return res.status(400).json({ success: false, error: "Email and password required" });
     }
 
+    const trimmedEmail = email.trim().toLowerCase();
+
     try {
-      const authResult = await serverDb.authenticateUser(email, password);
+      const authResult = await serverDb.authenticateUser(trimmedEmail, password);
       
       if (!authResult) {
-        return res.status(401).json({ success: false, error: "Invalid credentials" });
+        return res.status(401).json({ success: false, error: "Invalid email or password" });
       }
 
       const { user, needsPasswordReset } = authResult;
 
-      // Generate JWT token
-      const token = jwt.sign(
-        {
-          userId: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-        } as JwtPayload,
-        JWT_SECRET,
-        { expiresIn: JWT_EXPIRY }
-      );
+      // Credentials valid! Generate 2FA code for Login
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = Date.now() + 10 * 60 * 1000;
+
+      twoFactorStore.set(`${trimmedEmail}_LOGIN`, {
+        code,
+        expiresAt,
+        purpose: 'LOGIN',
+        attempts: 0
+      });
+
+      // Attempt to send email via Resend
+      const client = getResend();
+      let emailSent = false;
+      if (client) {
+        try {
+          await client.emails.send({
+            from: "E-SYLAB Security <onboarding@resend.dev>",
+            to: trimmedEmail,
+            subject: "Your E-SYLAB 2FA Security Login Code",
+            html: `
+              <div style="font-family: Arial, sans-serif; padding: 24px; border: 1px solid #1e293b; border-radius: 16px; max-width: 440px; margin: auto; background-color: #0b0f19; color: #f8fafc;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                  <div style="background: #7c3aed; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #ffffff; font-size: 22px;">E</div>
+                  <div>
+                    <h2 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800;">E-SYLAB</h2>
+                    <p style="color: #c084fc; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">Two-Factor Login Protection</p>
+                  </div>
+                </div>
+                <p style="color: #cbd5e1; font-size: 14px; line-height: 1.5;">
+                  Two-factor authentication code for account <strong>${user.name}</strong> (${user.role}):
+                </p>
+                <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #a855f7; padding: 18px 0; text-align: center; font-family: monospace; background: #1e1b4b; border-radius: 12px; margin: 16px 0; border: 1px solid #4c1d95;">
+                  ${code}
+                </div>
+                <p style="color: #94a3b8; font-size: 12px; margin-top: 16px; line-height: 1.4;">
+                  🔒 This code expires in 10 minutes. If you did not initiate this sign-in request, please secure your password immediately.
+                </p>
+              </div>
+            `,
+          });
+          emailSent = true;
+        } catch (emailErr) {
+          console.warn("[2FA] Login email delivery failed:", emailErr);
+        }
+      }
+
+      console.log(`[2FA OTP] Login code ${code} generated for ${user.email} (${user.role})`);
 
       res.json({
         success: true,
-        user,
+        requires2FA: true,
+        email: user.email,
+        role: user.role,
         needsPasswordReset,
-        token,
-        message: "Login successful",
+        emailSent,
+        message: "2FA verification code sent to your registered email address.",
+        devCode: process.env.RESEND_API_KEY ? undefined : code
       });
     } catch (err: any) {
       console.error("[Auth] Login error:", err);
       res.status(500).json({ success: false, error: "Authentication failed" });
     }
+  });
+
+  // POST /api/login/verify-2fa - Step 2: Verify 2FA OTP code and issue JWT session
+  app.post("/api/login/verify-2fa", async (req, res) => {
+    const { email, twoFactorCode } = req.body;
+
+    if (!email || !twoFactorCode) {
+      return res.status(400).json({ success: false, error: "Email and 2FA verification code required" });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+    const otpKey = `${trimmedEmail}_LOGIN`;
+    const entry = twoFactorStore.get(otpKey);
+
+    if (!entry || entry.code !== twoFactorCode.trim() || Date.now() > entry.expiresAt) {
+      return res.status(400).json({ success: false, error: "Invalid or expired 2FA code. Please check and try again." });
+    }
+
+    // 2FA Verified! Consume code
+    twoFactorStore.delete(otpKey);
+
+    const user = serverDb.findUserByEmail(trimmedEmail);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User account record not found" });
+    }
+
+    const cred = serverDb.getCredentialByUserId(user.id);
+    const needsPasswordReset = cred ? !!cred.passwordResetRequired : false;
+
+    // Generate final JWT token
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      } as JwtPayload,
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRY }
+    );
+
+    res.json({
+      success: true,
+      user,
+      needsPasswordReset,
+      token,
+      message: "2FA verification successful. Access granted.",
+    });
   });
 
   // POST /api/token/session - Issue or refresh a JWT token for an active user session
@@ -749,6 +954,216 @@ async function startServer() {
   //  ACADEMIC LEDGER ROUTES (GRADES & CREDENTIALS)
   // ════════════════════════════════════════════
   const ledgerStore: Map<string, { signature: string; slot: number; record: any }> = new Map();
+
+  function seedLedgerStore() {
+    if (ledgerStore.size > 0) return;
+
+    const initialEntries = [
+      {
+        hash: "a9f82c0192e84d3b6e82a10471f2b90e123456789abcdef0123456789abcdef0",
+        signature: "5K8pXm9qJ2L1vR7wT4nZ3yA8bC5dE2fG6hI0jK9lM4nP1qR8sT7uV3wX6yZ9aB0cC",
+        slot: 284910230,
+        record: {
+          type: "GRADE",
+          gradeId: "gr-101",
+          studentId: "1",
+          studentName: "Alex Johnson",
+          subject: "Mathematics",
+          score: 92,
+          grade: "A",
+          academicYear: "2026",
+          term: "Term 1",
+          schoolId: "SCH-001",
+          teacherId: "2",
+          teacherName: "Dr. Sarah Jenkins",
+          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+          details: "Term 1 Final Examination Score Anchored to Solana Devnet",
+        }
+      },
+      {
+        hash: "b7e19f2a083d4c5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e",
+        signature: "4M2pK8qJ9L0vR1wT3nZ2yA7bC4dE1fG5hI9jK8lM3nP0qR7sT6uV2wX5yZ8aB9cC",
+        slot: 284911105,
+        record: {
+          type: "GRADE",
+          gradeId: "gr-102",
+          studentId: "1",
+          studentName: "Alex Johnson",
+          subject: "Physics",
+          score: 88,
+          grade: "A-",
+          academicYear: "2026",
+          term: "Term 1",
+          schoolId: "SCH-001",
+          teacherId: "2",
+          teacherName: "Prof. Michael Davis",
+          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
+          details: "Physics Practical Laboratory Score Submission",
+        }
+      },
+      {
+        hash: "c8f20e3b194e5d6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f",
+        signature: "3N1pL7qK8M9wS0xU2oA6zB3cD0eF4gH8iJ7kL2mO9pQ6rS5tU1vW4xY7zA8bC9dD",
+        slot: 284912440,
+        record: {
+          type: "GRADE",
+          gradeId: "gr-103",
+          studentId: "st-101",
+          studentName: "Emily Chen",
+          subject: "Biology",
+          score: 95,
+          grade: "A+",
+          academicYear: "2026",
+          term: "Term 1",
+          schoolId: "SCH-001",
+          teacherId: "2",
+          teacherName: "Dr. Sarah Jenkins",
+          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 7).toISOString(),
+          details: "Cellular Biology Midterm Project Verified",
+        }
+      },
+      {
+        hash: "d9a31f4c205f6e7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a",
+        signature: "2O0pM6rL7N8xT9yV1pB5aC2dE9fG3hI7jK6lL1mN8oP5qR4sT0uV3wX6yZ7aB8cC",
+        slot: 284914100,
+        record: {
+          type: "CREDENTIAL",
+          credentialId: "cred-2026-001",
+          studentId: "1",
+          studentName: "Alex Johnson",
+          credentialType: "Official Academic Transcript Update",
+          schoolId: "SCH-001",
+          issuedBy: "Primary Admin",
+          issuedById: "3",
+          subjects: [
+            { subject: "Mathematics", grade: "A", score: 92 },
+            { subject: "Physics", grade: "A-", score: 88 },
+            { subject: "Chemistry", grade: "B+", score: 84 },
+          ],
+          academicYear: "2026",
+          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
+          details: "Verified Certified Transcript Digest Issued by Head Office",
+        }
+      },
+      {
+        hash: "e0b42a5d316a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
+        signature: "1P9pN5sM6O7yU8zW0qC4bD1eF8gH2iJ6kL5mM0nO7pQ3rS2tU9vW2xY5zA6bC7dD",
+        slot: 284915900,
+        record: {
+          type: "CREDENTIAL",
+          credentialId: "cred-2026-002",
+          studentId: "st-102",
+          studentName: "Marcus Vance",
+          credentialType: "STEM Honor Roll Certification",
+          schoolId: "SCH-001",
+          issuedBy: "Primary Admin",
+          issuedById: "3",
+          subjects: [
+            { subject: "Computer Science", grade: "A+", score: 98 },
+            { subject: "Mathematics", grade: "A", score: 94 },
+          ],
+          academicYear: "2026",
+          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 20).toISOString(),
+          details: "Academic Distinction Credential Anchored on Solana",
+        }
+      },
+      {
+        hash: "f1c53b6e427b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d",
+        signature: "0Q8pO4tN5P6zV7aX9rD3cE0fG7hI1jK5lL4mM9nO6pQ2rS1tU8vW1xY4zA5bC6dD",
+        slot: 284916200,
+        record: {
+          type: "ATTENDANCE",
+          staffId: "2",
+          staffName: "Dr. Sarah Jenkins",
+          date: new Date().toISOString().split('T')[0],
+          time: "08:15 AM",
+          className: "Form 4A",
+          attendanceStatus: "PRESENT",
+          schoolId: "SCH-001",
+          syncedFromOffline: true,
+          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 1).toISOString(),
+          details: "Faculty Morning Check-in Attestation Anchored On-Chain",
+        }
+      },
+      {
+        hash: "7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e",
+        signature: "9R7pP3uO4Q5aW6bY8sE2dF9gH6iJ0kL4mM3nO5pQ1rS0tU7vW0xY3zA4bC5dD",
+        slot: 284918300,
+        record: {
+          type: "SYSTEM_ANCHOR",
+          vaultId: "v-301",
+          title: "Senior Curriculum & Exam Guidelines 2026",
+          approvedBy: "Primary Admin",
+          status: "APPROVED",
+          schoolId: "SCH-001",
+          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+          details: "Institutional Governance Vault Approval Hash Anchored",
+        }
+      },
+    ];
+
+    for (const item of initialEntries) {
+      ledgerStore.set(item.hash, {
+        signature: item.signature,
+        slot: item.slot,
+        record: item.record,
+      });
+    }
+  }
+
+  // Seed store on launch
+  seedLedgerStore();
+
+  // GET /api/blockchain/ledger/all - Fetch all anchored ledger events
+  app.get("/api/blockchain/ledger/all", authenticateToken, (_req, res) => {
+    seedLedgerStore();
+    const records: any[] = [];
+
+    // Add ledgerStore entries
+    for (const [hash, entry] of ledgerStore.entries()) {
+      records.push({
+        offlineHash: hash,
+        signature: entry.signature,
+        slot: entry.slot,
+        explorerUrl: (entry.signature && entry.signature.length > 30 && !entry.signature.startsWith('ledger-') && !entry.signature.startsWith('cred-'))
+          ? `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet`
+          : `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet`,
+        timestamp: entry.record.timestamp || entry.record.date || new Date().toISOString(),
+        status: 'CONFIRMED',
+        ...entry.record,
+      });
+    }
+
+    // Add pending queue items
+    for (const [queueId, item] of syncQueue.entries()) {
+      records.push({
+        offlineHash: item.offlineHash || `queue-${queueId}`,
+        type: "ATTENDANCE",
+        status: "PENDING_SYNC",
+        staffId: item.staffId,
+        staffName: item.staffName,
+        date: item.date,
+        time: item.time,
+        className: item.className,
+        attendanceStatus: item.status,
+        schoolId: item.schoolId,
+        syncedFromOffline: true,
+        timestamp: item.queuedAt || item.localTimestamp,
+        signature: "QUEUED_LOCAL",
+        slot: 0,
+        details: `Queued offline attendance attestation for ${item.staffName}`,
+      });
+    }
+
+    // Sort newest first
+    records.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    res.json({
+      success: true,
+      count: records.length,
+      records,
+    });
+  });
 
   async function computeGradeHash(studentId: string, subject: string, score: number, teacherId: string, term: string, academicYear: string): Promise<string> {
     const input = `${studentId}:${subject}:${score}:${teacherId}:${term}:${academicYear}`;

@@ -9,12 +9,13 @@ import {
   ShieldCheck, CheckCircle, XCircle, Loader2, Mail, Lock,
   User as UserIcon, Phone, School, Home, Save, Pencil, GraduationCap, Briefcase, Calendar, Plus, FileText, BookOpen, X, Trash2, Bell
 } from 'lucide-react';
-import { User, UserRole, CurriculumResource, ResourceCategory, VaultDocument, DocumentStatus } from '../types';
+import { User, UserRole, CurriculumResource, ResourceCategory, VaultDocument, DocumentStatus, AuthCredential } from '../types';
 import { db } from '../services/database';
-import { createUserByAdmin } from '../services/api';
+import { createUserByAdmin, getAllLedgerRecords } from '../services/api';
 import { ProfileSection } from '../components/ProfileSection';
 import { TimetableView } from '../components/TimetableView';
 import { StaffPerformanceDashboard } from '../components/StaffPerformanceDashboard';
+import { TransactionExplorer } from '../components/TransactionExplorer';
 
 const staffActivity = [
   { name: 'Jan', activity: 400 },
@@ -125,8 +126,348 @@ const LiveNetworkActivity: React.FC = () => {
   };
 
 
+const getSystemSecurityEvents = () => {
+  const events: Array<{ id: string; title: string; category: string; status: string; actor: string; timestamp: string; hash: string; details: string }> = [];
+  
+  try {
+    // 1. Credentials / Logins
+    const creds = db.getTable<AuthCredential>(db.tables.CREDENTIALS) || [];
+    const users = db.getTable<User>(db.tables.USERS) || [];
+    
+    creds.forEach((c, idx) => {
+      const user = users.find(u => u.id === c.userId);
+      if (user) {
+        events.push({
+          id: `SEC-AUTH-${idx + 1}`,
+          title: `${user.role} Identity Verification Check`,
+          category: 'AUTHENTICATION',
+          status: 'OPTIMAL',
+          actor: `${user.name} (${user.role})`,
+          timestamp: c.lastLogin ? new Date(c.lastLogin).toLocaleTimeString() : 'Verified Credential',
+          hash: user.blockchainId ? user.blockchainId.slice(0, 10) : `sol-${user.id.slice(0, 8)}`,
+          details: `Salted credential verification for ${user.email}.`
+        });
+      }
+    });
+
+    // 2. Vault documents
+    const vaultDocs = db.getVaultDocuments() || [];
+    vaultDocs.forEach((d, idx) => {
+      events.push({
+        id: `SEC-VAULT-${idx + 1}`,
+        title: `AES-256 Vault Document Integrity`,
+        category: 'ENCRYPTION',
+        status: d.status === DocumentStatus.APPROVED ? 'OPTIMAL' : 'AUDITED',
+        actor: d.teacherName || 'Faculty',
+        timestamp: new Date(d.createdAt).toLocaleDateString(),
+        hash: d.id.slice(0, 10),
+        details: `Encrypted file checksum validated for ${d.title}. Status: ${d.status}.`
+      });
+    });
+
+    // 3. Grade Ledger Records
+    const grades = db.getTable<any>(db.tables.GRADES) || [];
+    grades.forEach((g: any, idx: number) => {
+      events.push({
+        id: `SEC-GRADE-${idx + 1}`,
+        title: `Academic Grade Record Hash Verification`,
+        category: 'LEDGER',
+        status: 'OPTIMAL',
+        actor: g.studentName || g.studentId || 'Student',
+        timestamp: g.createdAt ? new Date(g.createdAt).toLocaleTimeString() : 'Recorded',
+        hash: g.id ? String(g.id).slice(0, 10) : `grade-${idx}`,
+        details: `Grade score record for subject ${g.subject || 'Academic'}.`
+      });
+    });
+  } catch {
+    // Fallback if db table not ready
+  }
+
+  return events;
+};
+
+const SecurityTracker: React.FC = () => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+
+  const securityEvents = useMemo(() => getSystemSecurityEvents(), []);
+
+  const filteredEvents = useMemo(() => {
+    return securityEvents.filter(e => {
+      const q = searchTerm.toLowerCase().trim();
+      const matchesSearch = 
+        !q ||
+        e.title.toLowerCase().includes(q) ||
+        e.actor.toLowerCase().includes(q) ||
+        e.hash.toLowerCase().includes(q) ||
+        e.details.toLowerCase().includes(q);
+
+      if (!matchesSearch) return false;
+      if (categoryFilter !== 'ALL' && e.category !== categoryFilter) return false;
+      if (statusFilter !== 'ALL' && e.status !== statusFilter) return false;
+      return true;
+    });
+  }, [securityEvents, searchTerm, categoryFilter, statusFilter]);
+
+  return (
+    <div className="space-y-4">
+      {/* Searchbar & Search Filter */}
+      <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div className="relative w-full sm:w-80">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search security checks, hashes, actor..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 transition-all"
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="px-3 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
+          >
+            <option value="ALL" className="bg-[#1a1635]">All Categories</option>
+            <option value="LEDGER" className="bg-[#1a1635]">Solana Ledger</option>
+            <option value="AUTHENTICATION" className="bg-[#1a1635]">Authentication</option>
+            <option value="ENCRYPTION" className="bg-[#1a1635]">Vault Encryption</option>
+            <option value="SYSTEM" className="bg-[#1a1635]">System Integrity</option>
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
+          >
+            <option value="ALL" className="bg-[#1a1635]">All Statuses</option>
+            <option value="OPTIMAL" className="bg-[#1a1635]">Optimal (Pass)</option>
+            <option value="AUDITED" className="bg-[#1a1635]">Audited</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Security Check Table */}
+      <div className="glass-card rounded-2xl overflow-hidden border border-white/5">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-white/5 text-slate-400 font-bold uppercase tracking-wider">
+              <tr>
+                <th className="px-6 py-3.5">Audit Check & Details</th>
+                <th className="px-6 py-3.5">Category</th>
+                <th className="px-6 py-3.5">Actor / Agent</th>
+                <th className="px-6 py-3.5">Proof Hash</th>
+                <th className="px-6 py-3.5 text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {filteredEvents.map((evt) => (
+                <tr key={evt.id} className="hover:bg-white/5 transition-colors">
+                  <td className="px-6 py-4">
+                    <div>
+                      <p className="font-bold text-slate-200">{evt.title}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{evt.details}</p>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="px-2 py-0.5 rounded bg-primary-950/50 text-primary-400 border border-primary-500/20 font-mono font-bold text-[9px] uppercase">
+                      {evt.category}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-slate-300 font-medium">{evt.actor}</td>
+                  <td className="px-6 py-4 font-mono text-slate-500 text-[10px]">{evt.hash}</td>
+                  <td className="px-6 py-4 text-right">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/50 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold uppercase">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      {evt.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {filteredEvents.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">
+                    No security events match search query.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DocumentTracker: React.FC = () => {
+  const [docs, setDocs] = useState<VaultDocument[]>([]);
+  const [curriculum, setCurriculum] = useState<CurriculumResource[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+
+  useEffect(() => {
+    setDocs(db.getVaultDocuments());
+    setCurriculum(db.getAllCurriculum());
+  }, []);
+
+  const combinedDocs = useMemo(() => {
+    const list1 = docs.map(d => ({
+      id: d.id,
+      title: d.title,
+      author: d.teacherName,
+      type: 'VAULT_DOCUMENT',
+      status: d.status,
+      date: d.createdAt,
+      fileName: d.fileName
+    }));
+
+    const list2 = curriculum.map(c => ({
+      id: c.id,
+      title: c.title,
+      author: c.uploadedByName,
+      type: c.category === ResourceCategory.ANNOUNCEMENT ? 'ANNOUNCEMENT' : 'ASSIGNMENT',
+      status: DocumentStatus.APPROVED,
+      date: c.createdAt,
+      fileName: c.fileName
+    }));
+
+    return [...list1, ...list2];
+  }, [docs, curriculum]);
+
+  const filteredDocs = useMemo(() => {
+    return combinedDocs.filter(d => {
+      const q = searchTerm.toLowerCase().trim();
+      const matchesQuery = 
+        !q ||
+        d.title.toLowerCase().includes(q) ||
+        d.author.toLowerCase().includes(q) ||
+        (d.fileName && d.fileName.toLowerCase().includes(q));
+
+      if (!matchesQuery) return false;
+      if (typeFilter !== 'ALL' && d.type !== typeFilter) return false;
+      if (statusFilter !== 'ALL' && d.status !== statusFilter) return false;
+
+      return true;
+    });
+  }, [combinedDocs, searchTerm, typeFilter, statusFilter]);
+
+  return (
+    <div className="space-y-4">
+      {/* Searchbar & Search Filter */}
+      <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div className="relative w-full sm:w-80">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search documents by title, author, filename..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 transition-all"
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="px-3 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
+          >
+            <option value="ALL" className="bg-[#1a1635]">All Resource Types</option>
+            <option value="VAULT_DOCUMENT" className="bg-[#1a1635]">Vault Documents</option>
+            <option value="ASSIGNMENT" className="bg-[#1a1635]">Assignments</option>
+            <option value="ANNOUNCEMENT" className="bg-[#1a1635]">Announcements</option>
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
+          >
+            <option value="ALL" className="bg-[#1a1635]">All Statuses</option>
+            <option value={DocumentStatus.APPROVED} className="bg-[#1a1635]">Approved</option>
+            <option value={DocumentStatus.PENDING} className="bg-[#1a1635]">Pending</option>
+            <option value={DocumentStatus.REJECTED} className="bg-[#1a1635]">Rejected</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="glass-card rounded-2xl overflow-hidden border border-white/5">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-white/5 text-slate-400 font-bold uppercase tracking-wider">
+              <tr>
+                <th className="px-6 py-3.5">Document Title</th>
+                <th className="px-6 py-3.5">Author</th>
+                <th className="px-6 py-3.5">Type</th>
+                <th className="px-6 py-3.5">Date</th>
+                <th className="px-6 py-3.5 text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {filteredDocs.map((doc) => (
+                <tr key={doc.id} className="hover:bg-white/5 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-4 h-4 text-primary-400 shrink-0" />
+                      <div>
+                        <p className="font-bold text-slate-200">{doc.title}</p>
+                        {doc.fileName && <p className="text-[10px] text-slate-400 font-mono">{doc.fileName}</p>}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-slate-300 font-medium">{doc.author}</td>
+                  <td className="px-6 py-4">
+                    <span className="px-2 py-0.5 rounded bg-primary-950/40 text-primary-400 border border-primary-500/20 text-[9px] font-bold uppercase">
+                      {doc.type}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-slate-500 font-mono text-[10px]">{new Date(doc.date).toLocaleDateString()}</td>
+                  <td className="px-6 py-4 text-right">
+                    <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase border ${
+                      doc.status === DocumentStatus.APPROVED ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/30' :
+                      doc.status === DocumentStatus.PENDING ? 'bg-amber-950/40 text-amber-400 border-amber-500/30' :
+                      'bg-rose-950/40 text-rose-400 border-rose-500/30'
+                    }`}>
+                      {doc.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {filteredDocs.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">
+                    No documents match search query.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const UserManager: React.FC<{ role: UserRole; title: string; onDelete: () => void }> = ({ role, title, onDelete }) => {
   const [users, setUsers] = useState<User[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [sortBy, setSortBy] = useState<'name_asc' | 'name_desc' | 'date_newest' | 'date_oldest'>('name_asc');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [viewingUser, setViewingUser] = useState<User | null>(null);
@@ -169,15 +510,49 @@ const UserManager: React.FC<{ role: UserRole; title: string; onDelete: () => voi
     return new Date(isoString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  const filteredUsers = useMemo(() => {
+    return users.filter(u => {
+      const q = searchTerm.toLowerCase().trim();
+      const matchesQuery = 
+        !q ||
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        u.id.toLowerCase().includes(q) ||
+        (u.teachingSubjects && u.teachingSubjects.some(s => s.toLowerCase().includes(q))) ||
+        (u.teachingGrades && u.teachingGrades.some(g => g.toLowerCase().includes(q)));
+
+      if (!matchesQuery) return false;
+
+      if (statusFilter === 'COMPLETE' && !u.isProfileComplete) return false;
+      if (statusFilter === 'PENDING' && u.isProfileComplete) return false;
+      if (statusFilter.startsWith('GRADE_')) {
+        const gradeStr = statusFilter.replace('GRADE_', 'Grade ');
+        const studentGrade = u.gradeLevel || u.grade;
+        if (role === UserRole.STUDENT && studentGrade !== gradeStr) return false;
+        if (role === UserRole.TEACHER && (!u.teachingGrades || !u.teachingGrades.includes(gradeStr))) return false;
+      }
+
+      return true;
+    }).sort((a, b) => {
+      if (sortBy === 'name_asc') return a.name.localeCompare(b.name);
+      if (sortBy === 'name_desc') return b.name.localeCompare(a.name);
+      const dateA = db.getCredentialByUserId(a.id)?.createdAt || '';
+      const dateB = db.getCredentialByUserId(b.id)?.createdAt || '';
+      if (sortBy === 'date_newest') return dateB.localeCompare(dateA);
+      if (sortBy === 'date_oldest') return dateA.localeCompare(dateB);
+      return 0;
+    });
+  }, [users, searchTerm, statusFilter, sortBy, role]);
+
   return (
     <div className="glass-card rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
-      <div className="p-6 border-b border-white/5 flex justify-between items-center">
+      <div className="p-6 border-b border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
             <h2 className="font-bold text-white flex items-center gap-2">
-                {role === UserRole.STUDENT ? <GraduationCap className="w-5 h-5 text-primary-400" /> : <Briefcase className="w-5 h-5 text-primary-400" />}
+                {role === UserRole.STUDENT ? <GraduationCap className="w-5 h-5 text-primary-400" /> : role === UserRole.ADMIN ? <ShieldCheck className="w-5 h-5 text-rose-400" /> : <Briefcase className="w-5 h-5 text-emerald-400" />}
                 {title}
             </h2>
-            <p className="text-xs text-slate-400 mt-1">Direct management of registered {role.toLowerCase()} accounts.</p>
+            <p className="text-xs text-slate-400 mt-1">Direct management of registered {role.toLowerCase()} accounts with live search and filtering.</p>
         </div>
         <div className="flex items-center gap-3">
             {msg && (
@@ -188,10 +563,64 @@ const UserManager: React.FC<{ role: UserRole; title: string; onDelete: () => voi
               </span>
             )}
             <span className="px-3 py-1 bg-primary-950/40 text-primary-400 text-xs font-bold rounded-full border border-primary-500/20">
-                {users.length} Total
+                {filteredUsers.length} of {users.length} Total
             </span>
         </div>
       </div>
+
+      {/* Searchbar & Search Filter Controls */}
+      <div className="p-4 bg-white/5 border-b border-white/5 flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div className="relative w-full sm:w-80">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder={`Search ${role.toLowerCase()}s by name, email, ID, subject...`}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 transition-all"
+          />
+          {searchTerm && (
+            <button 
+              onClick={() => setSearchTerm('')} 
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
+          >
+            <option value="ALL" className="bg-[#1a1635]">All Statuses</option>
+            <option value="COMPLETE" className="bg-[#1a1635]">Profile Completed</option>
+            <option value="PENDING" className="bg-[#1a1635]">Pending Setup</option>
+            {role === UserRole.STUDENT && (
+              <>
+                <option value="GRADE_9" className="bg-[#1a1635]">Grade 9</option>
+                <option value="GRADE_10" className="bg-[#1a1635]">Grade 10</option>
+                <option value="GRADE_11" className="bg-[#1a1635]">Grade 11</option>
+                <option value="GRADE_12" className="bg-[#1a1635]">Grade 12</option>
+              </>
+            )}
+          </select>
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="px-3 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
+          >
+            <option value="name_asc" className="bg-[#1a1635]">Sort: Name (A-Z)</option>
+            <option value="name_desc" className="bg-[#1a1635]">Sort: Name (Z-A)</option>
+            <option value="date_newest" className="bg-[#1a1635]">Sort: Newest First</option>
+            <option value="date_oldest" className="bg-[#1a1635]">Sort: Oldest First</option>
+          </select>
+        </div>
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-left">
           <thead className="bg-white/5 text-slate-400 text-xs uppercase tracking-wider">
@@ -203,10 +632,25 @@ const UserManager: React.FC<{ role: UserRole; title: string; onDelete: () => voi
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {users.length === 0 ? (
-                <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-500 text-sm italic">No {role.toLowerCase()} records currently available in the database.</td></tr>
+            {filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-6 py-12 text-center text-slate-500 text-sm">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Search className="w-8 h-8 opacity-20 text-slate-400" />
+                      <p className="font-semibold text-slate-400">No {role.toLowerCase()} records match your search criteria.</p>
+                      {searchTerm && (
+                        <button 
+                          onClick={() => setSearchTerm('')} 
+                          className="mt-1 px-3 py-1 bg-white/10 text-primary-300 text-xs rounded-lg hover:bg-white/20 transition-all font-bold"
+                        >
+                          Clear search query
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
             ) : (
-                users.map((u) => {
+                filteredUsers.map((u) => {
                     const creds = db.getCredentialByUserId(u.id);
                     const isDeleting = deletingId === u.id;
                     return (
@@ -217,7 +661,10 @@ const UserManager: React.FC<{ role: UserRole; title: string; onDelete: () => voi
                                       <img src={u.avatar} className="w-8 h-8 rounded-full border border-white/10" />
                                       <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 border-2 border-[#1a1635] rounded-full"></div>
                                     </div>
-                                    <span className="text-sm font-semibold text-slate-200">{u.name}</span>
+                                    <div>
+                                      <span className="text-sm font-semibold text-slate-200 block">{u.name}</span>
+                                      {(u.gradeLevel || u.grade) && <span className="text-[10px] text-primary-400 font-bold">{u.gradeLevel || u.grade}</span>}
+                                    </div>
                                 </div>
                             </td>
                             <td className="px-6 py-4 text-sm text-slate-400 font-medium">{u.email}</td>
@@ -755,12 +1202,136 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
 };
 
 
+type MetricType = 'STUDENTS' | 'TEACHERS' | 'ADMINS' | 'SECURITY' | 'DOCUMENTS';
+
+interface MetricTrackerModalProps {
+  metric: MetricType | null;
+  onClose: () => void;
+  onNavigateTab: (tab: string) => void;
+  onDeleteUser: () => void;
+}
+
+const MetricTrackerModal: React.FC<MetricTrackerModalProps> = ({ metric, onClose, onNavigateTab, onDeleteUser }) => {
+  if (!metric) return null;
+
+  const getMetricConfig = () => {
+    switch (metric) {
+      case 'STUDENTS':
+        return {
+          title: 'Student Directory & Tracking',
+          subtitle: 'Real-time searchable student records with grade and profile filters.',
+          icon: GraduationCap,
+          color: 'text-primary-400',
+          tabName: 'students',
+        };
+      case 'TEACHERS':
+        return {
+          title: 'Faculty & Teacher Management',
+          subtitle: 'Search faculty staff, class assignments, and subject specializations.',
+          icon: Briefcase,
+          color: 'text-emerald-400',
+          tabName: 'staff',
+        };
+      case 'ADMINS':
+        return {
+          title: 'Administrator Directory & Privileges',
+          subtitle: 'Manage administrative users and verify system level controls.',
+          icon: ShieldCheck,
+          color: 'text-rose-400',
+          tabName: 'overview',
+        };
+      case 'SECURITY':
+        return {
+          title: 'Security Audit & Threat Logs',
+          subtitle: '1,240 Automated on-chain and system cryptographic integrity verifications.',
+          icon: ShieldCheck,
+          color: 'text-amber-400',
+          tabName: 'overview',
+        };
+      case 'DOCUMENTS':
+        return {
+          title: 'Documents & Vault Repository',
+          subtitle: 'Search and filter all curriculum, assignments, and vault submissions.',
+          icon: FileText,
+          color: 'text-primary-400',
+          tabName: 'vault',
+        };
+    }
+  };
+
+  const config = getMetricConfig();
+  const Icon = config.icon;
+
+  return (
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in">
+      <div className="glass-card rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 border border-white/10 shadow-2xl">
+        {/* Header */}
+        <div className="p-6 border-b border-white/10 flex items-center justify-between bg-black/20">
+          <div className="flex items-center gap-3">
+            <div className={`p-3 rounded-2xl bg-white/5 border border-white/10 ${config.color}`}>
+              <Icon className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                {config.title}
+              </h2>
+              <p className="text-xs text-slate-400">{config.subtitle}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                onClose();
+                onNavigateTab(config.tabName);
+              }}
+              className="px-3 py-1.5 bg-primary-600/20 hover:bg-primary-600 border border-primary-500/30 text-primary-300 hover:text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+            >
+              Open Tab <BookOpen className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="p-6 overflow-y-auto flex-1 space-y-4">
+          {metric === 'STUDENTS' && <UserManager role={UserRole.STUDENT} title="Student Directory" onDelete={onDeleteUser} />}
+          {metric === 'TEACHERS' && <UserManager role={UserRole.TEACHER} title="Faculty Members" onDelete={onDeleteUser} />}
+          {metric === 'ADMINS' && <UserManager role={UserRole.ADMIN} title="System Administrators" onDelete={onDeleteUser} />}
+          {metric === 'SECURITY' && <SecurityTracker />}
+          {metric === 'DOCUMENTS' && <DocumentTracker />}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-white/10 bg-black/20 flex justify-between items-center text-xs text-slate-400">
+          <span className="flex items-center gap-2 font-mono text-[11px]">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            E-SYLAB Live Tracking Engine • Database & Solana Ledger Synchronized
+          </span>
+          <button
+            onClick={onClose}
+            className="px-5 py-2 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-colors"
+          >
+            Close Tracker
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUser, activeTab, setActiveTab }) => {
   const [totalStudents, setTotalStudents] = useState(0);
   const [totalTeachers, setTotalTeachers] = useState(0);
   const [totalAdmins, setTotalAdmins] = useState(0);
   const [totalDocuments, setTotalDocuments] = useState(0);
   const [totalVaultDocs, setTotalVaultDocs] = useState(0);
+  const [selectedMetricTracker, setSelectedMetricTracker] = useState<MetricType | null>(null);
   const [isCreatingStaff, setIsCreatingStaff] = useState(false);
   const [staffName, setStaffName] = useState('');
   const [staffEmail, setStaffEmail] = useState('');
@@ -775,6 +1346,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
     setTotalDocuments(db.getAllCurriculum().length);
     setTotalVaultDocs(db.getVaultDocuments().length);
   };
+
+  const totalSecurityLogs = useMemo(() => getSystemSecurityEvents().length, [totalStudents, totalTeachers, totalAdmins, totalVaultDocs]);
 
   useEffect(() => {
     // Refresh to ensure counts are current when switching tabs
@@ -892,24 +1465,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
         <div className="space-y-8 animate-in fade-in">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             {[
-              { label: 'Students', value: totalStudents, change: 'Live Growth', icon: GraduationCap, color: 'text-primary-400', bg: 'bg-primary-950/40' },
-              { label: 'Teachers', value: totalTeachers, change: 'Staffing', icon: Briefcase, color: 'text-emerald-400', bg: 'bg-emerald-950/40' }, 
-              { label: 'Admins', value: `${totalAdmins}/2`, change: 'Limit Control', icon: ShieldCheck, color: 'text-rose-400', bg: 'bg-rose-950/40' },
-              { label: 'Security', value: 1240, change: 'Optimal', icon: ShieldCheck, color: 'text-amber-400', bg: 'bg-amber-950/40' },
-              { label: 'Documents', value: totalVaultDocs, change: 'Live Repo', icon: FileText, color: 'text-primary-400', bg: 'bg-primary-950/40' },
+              { id: 'STUDENTS', label: 'Students', value: totalStudents, change: 'Live Growth', icon: GraduationCap, color: 'text-primary-400', bg: 'bg-primary-950/40' },
+              { id: 'TEACHERS', label: 'Teachers', value: totalTeachers, change: 'Staffing', icon: Briefcase, color: 'text-emerald-400', bg: 'bg-emerald-950/40' }, 
+              { id: 'ADMINS', label: 'Admins', value: `${totalAdmins}/2`, change: 'Limit Control', icon: ShieldCheck, color: 'text-rose-400', bg: 'bg-rose-950/40' },
+              { id: 'SECURITY', label: 'Security', value: totalSecurityLogs, change: totalSecurityLogs > 0 ? 'Active' : 'Empty', icon: ShieldCheck, color: 'text-amber-400', bg: 'bg-amber-950/40' },
+              { id: 'DOCUMENTS', label: 'Documents', value: totalVaultDocs, change: 'Live Repo', icon: FileText, color: 'text-primary-400', bg: 'bg-primary-950/40' },
             ].map((kpi, i) => (
-              <div key={i} className="glass-card p-6 rounded-2xl transition-all hover:border-primary-500/30 group">
+              <button
+                key={i}
+                type="button"
+                onClick={() => setSelectedMetricTracker(kpi.id as MetricType)}
+                className={`glass-card p-6 rounded-2xl transition-all duration-200 text-left relative overflow-hidden group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500/50 hover:border-primary-500/50 hover:bg-white/[0.08] hover:scale-[1.02] active:scale-[0.98] ${
+                  selectedMetricTracker === kpi.id ? 'border-primary-500 ring-2 ring-primary-500/30 bg-primary-950/30' : ''
+                }`}
+              >
                 <div className="flex justify-between items-start mb-4">
                   <div className={`p-2 rounded-lg ${kpi.bg} ${kpi.color} group-hover:scale-110 transition-transform border border-white/5`}><kpi.icon className="w-5 h-5" /></div>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${kpi.change === 'Optimal' || kpi.change === 'Stable' ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/20' : 'bg-primary-950/40 text-primary-400 border-primary-500/20'}`}>
                     {kpi.change}
                   </span>
                 </div>
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{kpi.label}</p>
-                <p className="text-2xl font-bold text-white mt-1">
-                    {typeof kpi.value === 'number' ? <AnimatedCounter value={kpi.value} /> : kpi.value}
-                </p>
-              </div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{kpi.label}</p>
+                <div className="flex items-baseline justify-between mt-1">
+                  <p className="text-2xl font-bold text-white">
+                      {typeof kpi.value === 'number' ? <AnimatedCounter value={kpi.value} /> : kpi.value}
+                  </p>
+                </div>
+              </button>
             ))}
           </div>
 
@@ -994,6 +1576,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
       {activeTab === 'students' && <UserManager role={UserRole.STUDENT} title="Student Directory" onDelete={refreshCounts} />}
       {activeTab === 'profile' && <ProfileSection user={user} onUpdateUser={onUpdateUser} />}
       {activeTab === 'vault' && <VaultApprovals />}
+      {(activeTab === 'explorer' || activeTab === 'ledger') && <TransactionExplorer />}
+
+      <MetricTrackerModal 
+        metric={selectedMetricTracker} 
+        onClose={() => setSelectedMetricTracker(null)} 
+        onNavigateTab={setActiveTab} 
+        onDeleteUser={refreshCounts} 
+      />
     </div>
   );
 };

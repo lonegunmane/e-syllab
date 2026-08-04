@@ -35,7 +35,7 @@ const App: React.FC = () => {
       if (token) {
         try {
           const result = await getProfile();
-          if (result.success && result.user) {
+          if (result && result.success && result.user) {
             setCurrentUser(result.user);
             localStorage.setItem('esylab_session', JSON.stringify(result.user));
             const creds = db.getCredentialByUserId(result.user.id);
@@ -47,7 +47,7 @@ const App: React.FC = () => {
             checkLegacySession();
           }
         } catch (err: any) {
-          console.error("[App] Failed to verify session:", err.message);
+          console.warn("[App] Session check falling back to local session:", err?.message || err);
           clearToken();
           checkLegacySession();
         }
@@ -99,19 +99,17 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      // Call the server logout endpoint to revoke the token
-      const response = await fetch('/api/logout', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${getToken()}`
-        }
-      });
-      
-      if (response.ok) {
-        console.log("[App] Server-side logout successful");
+      const token = getToken();
+      if (token) {
+        await fetch('/api/logout', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
       }
     } catch (err) {
-      console.error("[App] Server logout failed:", err);
+      console.warn("[App] Server logout unreachable:", err);
     } finally {
       // Clear tokens and session
       clearToken();
