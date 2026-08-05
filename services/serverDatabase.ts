@@ -6,10 +6,8 @@ import bcrypt from 'bcryptjs';
 import { encryptField, decryptField } from './encryption';
 import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential, TimetableEntry, Assessment, AssessmentScore, SystemNotification } from '../types';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
-const dbPath = path.join(__dirname, '..', 'data', 'esylab.db');
+const dbPath = path.join(process.cwd(), '..', 'data', 'esylab.db');
 
 // Ensure data directory exists
 const dataDir = path.dirname(dbPath);

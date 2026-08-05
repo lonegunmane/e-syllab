@@ -17,8 +17,6 @@ import {
   getConnection,
 } from "./services/blockchain.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // ─── School signing keypair (used to auto-sync offline records) ──────────────
 // Generate once with: node generate-keypair.js
@@ -2206,12 +2204,12 @@ async function startServer() {
   app.get("/sw.js", (_req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Content-Type", "application/javascript");
-    res.sendFile(path.join(__dirname, "sw.js"));
+    res.sendFile(path.join(process.cwd(), "sw.js"));
   });
 
   app.get("/manifest.json", (_req, res) => {
     res.setHeader("Content-Type", "application/manifest+json");
-    res.sendFile(path.join(__dirname, "manifest.json"));
+    res.sendFile(path.join(process.cwd(), "manifest.json"));
   });
 
   // ── Vite middleware ─────────────────────────────────────────────────────────
@@ -2219,7 +2217,7 @@ async function startServer() {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(__dirname, "dist");
+    const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*all", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
