@@ -14,7 +14,7 @@ import { db } from './services/database';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { TeacherSetupModal } from './components/TeacherSetupModal';
 import { StudentSetupModal } from './components/StudentSetupModal';
-import { getToken, clearToken, getProfile, ensureSessionToken } from './services/api';
+import { getToken, clearToken, getProfile } from './services/api';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -25,63 +25,46 @@ const App: React.FC = () => {
   useEffect(() => {
     db.init();
     
-    // Check if we have a valid JWT token or saved user session
+    // Check if we have a valid session strictly verified by the server
     const initAuth = async () => {
-      let token = getToken();
-      
+      const token = getToken();
+
       if (!token) {
-        token = await ensureSessionToken();
+        clearToken();
+        setCurrentUser(null);
+        setInitializing(false);
+        return;
       }
 
-      if (token) {
-        try {
-          const result = await getProfile();
-          if (result && result.success && result.user) {
-            setCurrentUser(result.user);
-            localStorage.setItem('esylab_session', JSON.stringify(result.user));
-            const creds = db.getCredentialByUserId(result.user.id);
-            if (creds?.passwordResetRequired) {
-              setShowPasswordReset(true);
-            }
-          } else {
-            clearToken();
-            checkLegacySession();
-          }
-        } catch (err: any) {
-          console.warn("[App] Session check falling back to local session:", err?.message || err);
-          clearToken();
-          checkLegacySession();
-        }
-      } else {
-        checkLegacySession();
-      }
-      setInitializing(false);
-    };
-
-    const checkLegacySession = () => {
-      const savedUser = localStorage.getItem('esylab_session') || localStorage.getItem('user');
-      if (savedUser) {
-        try {
-          const user = JSON.parse(savedUser);
-          setCurrentUser(user);
-          ensureSessionToken(user);
-          const creds = db.getCredentialByUserId(user.id);
+      try {
+        const result = await getProfile();
+        if (result && result.success && result.user) {
+          setCurrentUser(result.user);
+          localStorage.setItem('esylab_session', JSON.stringify(result.user));
+          const creds = db.getCredentialByUserId(result.user.id);
           if (creds?.passwordResetRequired) {
             setShowPasswordReset(true);
           }
-        } catch (err) {
-          console.error("[App] Failed to parse legacy session:", err);
+        } else {
+          // Token expired, invalid, blacklisted, deactivated or profile failed
+          clearToken();
+          setCurrentUser(null);
         }
+      } catch (err: any) {
+        console.warn("[App] Session verification failed:", err?.message || err);
+        clearToken();
+        setCurrentUser(null);
+      } finally {
+        setInitializing(false);
       }
     };
 
     initAuth();
   }, []);
 
-  const handleLoginSuccess = async (loginData: { user: User, needsPasswordReset: boolean }) => {
+  const handleLoginSuccess = (loginData: { user: User; needsPasswordReset: boolean }) => {
     setCurrentUser(loginData.user);
     localStorage.setItem('esylab_session', JSON.stringify(loginData.user));
-    await ensureSessionToken(loginData.user);
     if (loginData.needsPasswordReset) {
       setShowPasswordReset(true);
     }

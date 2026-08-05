@@ -200,9 +200,9 @@ export const db = {
     return users.find(u => u.email === email);
   },
 
-  getUsersByRole(role: UserRole): User[] {
+  getUsersByRole(role: UserRole, includeInactive: boolean = false): User[] {
     const users = this.getTable(this.tables.USERS) as User[];
-    return users.filter(u => u.role === role);
+    return users.filter(u => u.role === role && (includeInactive || u.active !== false));
   },
 
   getCredentialByUserId(userId: string): AuthCredential | undefined {
@@ -213,7 +213,7 @@ export const db = {
   async authenticateUser(email: string, password: string): Promise<{ user: User, needsPasswordReset: boolean } | null> {
     this.init();
     const allUsers = this.getTable(this.tables.USERS) as User[];
-    const potentialUsers = allUsers.filter(u => u.email === email);
+    const potentialUsers = allUsers.filter(u => u.email === email && u.active !== false);
 
     if (potentialUsers.length === 0) return null;
 
@@ -263,13 +263,11 @@ export const db = {
 
   deleteUser(userId: string): void {
     const users = this.getTable(this.tables.USERS) as User[];
-    const credentials = this.getTable(this.tables.CREDENTIALS) as AuthCredential[];
-    
-    const newUsers = users.filter(u => u.id !== userId);
-    const newCreds = credentials.filter(c => c.userId !== userId);
-    
-    this.saveTable(this.tables.USERS, newUsers);
-    this.saveTable(this.tables.CREDENTIALS, newCreds);
+    const userIndex = users.findIndex(u => u.id === userId);
+    if (userIndex > -1) {
+      users[userIndex].active = false;
+      this.saveTable(this.tables.USERS, users);
+    }
   },
 
   getTotalUsersByRole(role: UserRole): number {

@@ -2,6 +2,7 @@ import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { encryptField, decryptField } from './encryption';
 import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential, TimetableEntry, Assessment, AssessmentScore, SystemNotification } from '../types';
@@ -71,6 +72,7 @@ export const serverDb = {
         className TEXT,
         enrolledSubjects TEXT,
         isProfileComplete BOOLEAN DEFAULT 0,
+        active BOOLEAN DEFAULT 1,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       )
@@ -248,6 +250,11 @@ export const serverDb = {
         FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+
+    // Migration: ensure active column exists in users table for existing databases
+    try {
+      sqlDb.run(`ALTER TABLE users ADD COLUMN active BOOLEAN DEFAULT 1`);
+    } catch {}
   },
 
   seedInitialData(): void {
@@ -264,12 +271,22 @@ export const serverDb = {
 
       const adminId = '3';
       const now = new Date().toISOString();
-      const passwordHash = bcrypt.hashSync('1357', 10);
+
+      let adminPassword = process.env.ADMIN_SEED_PASSWORD?.trim();
+      if (!adminPassword) {
+        adminPassword = crypto.randomBytes(16).toString('hex');
+        console.warn("================================================================================");
+        console.warn("[Security] No ADMIN_SEED_PASSWORD set — generated a random one-time admin password, check server logs now, it will not be shown again.");
+        console.warn(`[Security] Admin Email: admin@gmail.com | Temporary One-Time Password: ${adminPassword}`);
+        console.warn("================================================================================");
+      }
+
+      const passwordHash = bcrypt.hashSync(adminPassword, 10);
 
       // Insert admin user
       let insertStmt = sqlDb.prepare(`
-        INSERT INTO users (id, email, name, role, avatar, blockchainId, contact, school, gender, residentialAddress, isProfileComplete, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO users (id, email, name, role, avatar, blockchainId, contact, school, gender, residentialAddress, isProfileComplete, active, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       insertStmt.bind([
         adminId,
@@ -282,6 +299,7 @@ export const serverDb = {
         'ESYLAB Headquarters',
         encryptField('Prefer not to say'),
         encryptField('789 Pine Rd, Capital City'),
+        1,
         1,
         now,
         now,
@@ -380,8 +398,8 @@ export const serverDb = {
     const residentialAddress = user.residentialAddress ? encryptField(user.residentialAddress) : null;
 
     const insertStmt = sqlDb.prepare(`
-      INSERT INTO users (id, email, name, role, avatar, contact, gender, residentialAddress, isProfileComplete, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, email, name, role, avatar, contact, gender, residentialAddress, isProfileComplete, active, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     insertStmt.bind([
       userId,
@@ -393,6 +411,7 @@ export const serverDb = {
       gender,
       residentialAddress,
       user.isProfileComplete ? 1 : 0,
+      user.active !== undefined ? (user.active ? 1 : 0) : 1,
       now,
       now,
     ]);
@@ -403,8 +422,11 @@ export const serverDb = {
     return this.findUserById(userId)!;
   },
 
-  getAllUsers(): User[] {
-    const stmt = sqlDb.prepare('SELECT * FROM users ORDER BY createdAt DESC');
+  getAllUsers(includeInactive: boolean = false): User[] {
+    const query = includeInactive
+      ? 'SELECT * FROM users ORDER BY createdAt DESC'
+      : 'SELECT * FROM users WHERE (active IS NULL OR active = 1) ORDER BY createdAt DESC';
+    const stmt = sqlDb.prepare(query);
     const users: User[] = [];
 
     while (stmt.step()) {
@@ -416,8 +438,11 @@ export const serverDb = {
     return users;
   },
 
-  getUsersByRole(role: UserRole): User[] {
-    const stmt = sqlDb.prepare('SELECT * FROM users WHERE role = ? ORDER BY createdAt DESC');
+  getUsersByRole(role: UserRole, includeInactive: boolean = false): User[] {
+    const query = includeInactive
+      ? 'SELECT * FROM users WHERE role = ? ORDER BY createdAt DESC'
+      : 'SELECT * FROM users WHERE role = ? AND (active IS NULL OR active = 1) ORDER BY createdAt DESC';
+    const stmt = sqlDb.prepare(query);
     stmt.bind([role]);
 
     const users: User[] = [];
@@ -483,8 +508,8 @@ export const serverDb = {
     const residentialAddress = user.residentialAddress ? encryptField(user.residentialAddress) : null;
 
     const insertStmt = sqlDb.prepare(`
-      INSERT INTO users (id, email, name, role, avatar, contact, gender, residentialAddress, isProfileComplete, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, email, name, role, avatar, contact, gender, residentialAddress, isProfileComplete, active, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     insertStmt.bind([
       userId,
@@ -496,6 +521,7 @@ export const serverDb = {
       gender,
       residentialAddress,
       user.role === UserRole.ADMIN ? 1 : 0,
+      1,
       now,
       now,
     ]);
@@ -516,30 +542,25 @@ export const serverDb = {
 
   deleteUser(userId: string): void {
     try {
-      const credStmt = sqlDb.prepare('DELETE FROM auth_credentials WHERE userId = ?');
-      credStmt.bind([userId]);
-      credStmt.step();
-      credStmt.free();
-
-      const sessStmt = sqlDb.prepare('DELETE FROM sessions WHERE userId = ?');
-      sessStmt.bind([userId]);
-      sessStmt.step();
-      sessStmt.free();
-
-      const stmt = sqlDb.prepare('DELETE FROM users WHERE id = ?');
-      stmt.bind([userId]);
+      const now = new Date().toISOString();
+      const stmt = sqlDb.prepare('UPDATE users SET active = 0, updatedAt = ? WHERE id = ?');
+      stmt.bind([now, userId]);
       stmt.step();
       stmt.free();
       this.save();
     } catch (e) {
-      console.error('[serverDb] Error deleting user:', e);
+      console.error('[serverDb] Error deactivating user:', e);
     }
   },
 
   // ─── Authentication ────────────────────────────────────────────────────────
-  async authenticateUser(email: string, password: string): Promise<{ user: User; needsPasswordReset: boolean } | null> {
+  async authenticateUser(email: string, password: string): Promise<{ user: User; needsPasswordReset: boolean; deactivated?: boolean } | null> {
     const user = this.findUserByEmail(email);
     if (!user) return null;
+
+    if (user.active === false) {
+      return { user, needsPasswordReset: false, deactivated: true };
+    }
 
     const stmt = sqlDb.prepare('SELECT * FROM auth_credentials WHERE userId = ?');
     stmt.bind([user.id]);
@@ -1083,6 +1104,7 @@ export const serverDb = {
       className: row.className,
       enrolledSubjects: row.enrolledSubjects ? JSON.parse(row.enrolledSubjects) : undefined,
       isProfileComplete: Boolean(row.isProfileComplete),
+      active: row.active !== undefined && row.active !== null ? Boolean(Number(row.active)) : true,
     };
   },
 

@@ -69,7 +69,7 @@ const getResend = () => {
 
 // ─── JWT Configuration ────────────────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const JWT_EXPIRY = '24h';
+const JWT_EXPIRY = '12h';
 
 // In-memory token blacklist for logout (in production, use Redis or a database)
 const tokenBlacklist = new Set<string>();
@@ -118,10 +118,14 @@ function authenticateToken(req: Request, res: Response, next: NextFunction) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    const dbUser = serverDb.findUserById(decoded.userId);
+    if (dbUser && dbUser.active === false) {
+      return res.status(403).json({ success: false, error: 'This account has been deactivated' });
+    }
     req.user = decoded;
     next();
   } catch (err: any) {
-    return res.status(403).json({ success: false, error: 'Your login has ended, please sign in again' });
+    return res.status(401).json({ success: false, error: 'Your login has ended, please sign in again' });
   }
 }
 
@@ -540,6 +544,9 @@ async function startServer() {
       if (!existingUser) {
         return res.status(404).json({ success: false, error: "No account found with this email address" });
       }
+      if (existingUser.active === false) {
+        return res.status(403).json({ success: false, error: "This account has been deactivated" });
+      }
     } else if (purpose === 'REGISTER') {
       const existingUser = serverDb.findUserByEmail(trimmedEmail);
       if (existingUser) {
@@ -719,10 +726,19 @@ async function startServer() {
     const trimmedEmail = email.trim().toLowerCase();
 
     try {
+      const existingUser = serverDb.findUserByEmail(trimmedEmail);
+      if (existingUser && existingUser.active === false) {
+        return res.status(403).json({ success: false, error: "This account has been deactivated" });
+      }
+
       const authResult = await serverDb.authenticateUser(trimmedEmail, password);
       
       if (!authResult) {
         return res.status(401).json({ success: false, error: "That username or password doesn’t look right" });
+      }
+
+      if (authResult.deactivated || authResult.user.active === false) {
+        return res.status(403).json({ success: false, error: "This account has been deactivated" });
       }
 
       const { user, needsPasswordReset } = authResult;
@@ -816,6 +832,10 @@ async function startServer() {
       return res.status(404).json({ success: false, error: "User account not found" });
     }
 
+    if (user.active === false) {
+      return res.status(403).json({ success: false, error: "This account has been deactivated" });
+    }
+
     const cred = serverDb.getCredentialByUserId(user.id);
     const needsPasswordReset = cred ? !!cred.passwordResetRequired : false;
 
@@ -843,44 +863,6 @@ async function startServer() {
       token,
       message: "Sign in successful.",
     });
-  });
-
-  // POST /api/token/session - Issue or refresh a token for an active user session
-  app.post("/api/token/session", async (req, res) => {
-    const { user } = req.body;
-
-    if (!user || (!user.id && !user.email)) {
-      return res.status(400).json({ success: false, error: "User info required" });
-    }
-
-    try {
-      const activeUser = serverDb.ensureUser(user);
-
-      const token = jwt.sign(
-        {
-          userId: activeUser.id,
-          email: activeUser.email,
-          name: activeUser.name,
-          role: activeUser.role,
-        } as JwtPayload,
-        JWT_SECRET,
-        { expiresIn: JWT_EXPIRY }
-      );
-
-      // Record session
-      const userAgent = (req.headers['user-agent'] as string) || '';
-      const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
-      serverDb.createSession(activeUser.id, parseDevice(userAgent), ipAddress, token);
-
-      res.json({
-        success: true,
-        token,
-        user: activeUser,
-      });
-    } catch (err: any) {
-      console.error("[Auth] Session token generation error:", err);
-      res.status(500).json({ success: false, error: "Something went wrong, please try again" });
-    }
   });
 
   // POST /api/logout - Revoke JWT token
@@ -987,10 +969,10 @@ async function startServer() {
       tokenBlacklist.add(currentToken);
     }
 
-    // Delete user
+    // Soft delete / deactivate user
     serverDb.deleteUser(userId);
 
-    res.json({ success: true, message: "Your account and data have been permanently deleted." });
+    res.json({ success: true, message: "Your account has been deactivated." });
   });
 
   // GET /api/profile - Get current user profile (requires authentication)

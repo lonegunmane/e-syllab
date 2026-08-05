@@ -37,6 +37,7 @@ export interface User {
   className?: string;
   enrolledSubjects?: string[];
   lastViewedCurriculumAt?: string;
+  active?: boolean;
 }
 
 export interface CurriculumResource {

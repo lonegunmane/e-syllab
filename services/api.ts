@@ -15,39 +15,9 @@ export function setToken(token: string): void {
 
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
-}
-
-export async function ensureSessionToken(userParam?: any): Promise<string | null> {
-  let token = getToken();
-  if (token) return token;
-
-  let savedUser = userParam;
-  if (!savedUser) {
-    const savedUserStr = localStorage.getItem('esylab_session') || localStorage.getItem('user');
-    if (savedUserStr) {
-      try { savedUser = JSON.parse(savedUserStr); } catch {}
-    }
-  }
-
-  if (!savedUser) return null;
-
-  try {
-    const res = await fetch(`${API_BASE_URL}/token/session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user: savedUser })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.token) {
-        setToken(data.token);
-        return data.token;
-      }
-    }
-  } catch (err: any) {
-    console.warn("[Auth] Unable to reach session token endpoint:", err?.message || err);
-  }
-  return null;
+  localStorage.removeItem('esylab_session');
+  localStorage.removeItem('user');
+  localStorage.removeItem('educhain_session');
 }
 
 // ─── Helper to build Authorization header ──────────────────────────────────────
@@ -67,10 +37,7 @@ function getAuthHeaders(includeContentType = true): Record<string, string> {
 }
 
 export async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  let token = getToken();
-  if (!token) {
-    token = await ensureSessionToken();
-  }
+  const token = getToken();
 
   const headers = new Headers(options.headers || {});
   if (token) {
@@ -80,16 +47,11 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
     headers.set('Content-Type', 'application/json');
   }
 
-  let response = await fetch(url, { ...options, headers });
+  const response = await fetch(url, { ...options, headers });
 
-  // If 401 Unauthorized, try auto-refreshing token from active session and retrying once
-  if (response.status === 401) {
+  // If 401 Unauthorized or 403 Forbidden, session is expired or revoked
+  if (response.status === 401 || response.status === 403) {
     clearToken();
-    const newToken = await ensureSessionToken();
-    if (newToken) {
-      headers.set('Authorization', `Bearer ${newToken}`);
-      response = await fetch(url, { ...options, headers });
-    }
   }
 
   return response;
@@ -214,6 +176,12 @@ export async function logout() {
 
 // ─── Profile APIs ──────────────────────────────────────────────────────────────
 export async function getProfile() {
+  const token = getToken();
+  if (!token) {
+    clearToken();
+    return { success: false, error: "No active token" };
+  }
+
   try {
     const response = await fetch(`${API_BASE_URL}/profile`, {
       method: "GET",
@@ -221,16 +189,19 @@ export async function getProfile() {
     });
 
     if (!response.ok) {
-      if (response.status === 401) {
-        clearToken();
-        return { success: false, error: "Your login has ended, please sign in again" };
-      }
-      return { success: false, error: "Could not load profile" };
+      clearToken();
+      let errMsg = "Your login has ended, please sign in again";
+      try {
+        const errData = await response.json();
+        if (errData.error) errMsg = errData.error;
+      } catch {}
+      return { success: false, error: errMsg };
     }
 
     return response.json();
   } catch (err: any) {
-    return { success: false, error: err?.message || "Something went wrong, please try again" };
+    clearToken();
+    return { success: false, error: err?.message || "Could not connect to server" };
   }
 }
 
