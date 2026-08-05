@@ -345,11 +345,11 @@ export const db = {
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
-  addCurriculum(resource: Omit<CurriculumResource, 'id' | 'createdAt'>): CurriculumResource {
+  addCurriculum(resource: Omit<CurriculumResource, 'id' | 'createdAt'> & { id?: string }): CurriculumResource {
     const items = this.getTable(this.tables.CURRICULUM) as CurriculumResource[];
     const newItem: CurriculumResource = {
       ...resource,
-      id: this.generateId(),
+      id: resource.id || this.generateId(),
       createdAt: new Date().toISOString()
     };
     items.push(newItem);
@@ -414,11 +414,11 @@ export const db = {
     return this.getTable(this.tables.GRADES) as GradeRecord[];
   },
 
-  saveGrade(grade: Omit<GradeRecord, 'id' | 'timestamp'>): GradeRecord {
+  saveGrade(grade: Omit<GradeRecord, 'id' | 'timestamp'> & { id?: string }): GradeRecord {
     const grades = this.getTable(this.tables.GRADES) as GradeRecord[];
     const newGrade: GradeRecord = {
       ...grade,
-      id: this.generateId(),
+      id: grade.id || this.generateId(),
       timestamp: new Date().toISOString()
     };
     grades.push(newGrade);
@@ -463,7 +463,7 @@ export const db = {
     return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
-  async addVaultDocument(doc: Omit<VaultDocument, 'id' | 'createdAt' | 'status'>): Promise<VaultDocument> {
+  async addVaultDocument(doc: Omit<VaultDocument, 'id' | 'createdAt' | 'status'> & { id?: string }): Promise<VaultDocument> {
     const items = this.getTable(this.tables.VAULT) as VaultDocument[];
     
     let hash = '';
@@ -479,7 +479,7 @@ export const db = {
 
     const newItem: VaultDocument = {
       ...doc,
-      id: this.generateId(),
+      id: doc.id || this.generateId(),
       status: DocumentStatus.PENDING,
       createdAt: new Date().toISOString(),
       hash

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { User, UserRole, Message } from '../types';
 import { db } from '../services/database';
+import { getMessages, sendMessage as apiSendMessage, clearMessages as apiClearMessages, authFetch } from '../services/api';
 
 interface MessagingViewProps {
   currentUser: User;
@@ -25,17 +26,46 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
 
   useEffect(() => {
     // Load potential recipients
-    if (currentUser.role === UserRole.ADMIN) {
-      setRecipients(db.getUsersByRole(UserRole.TEACHER));
-    } else {
-      setRecipients(db.getUsersByRole(UserRole.ADMIN));
-    }
+    const loadRecipients = async () => {
+      try {
+        if (currentUser.role === UserRole.ADMIN) {
+          const res = await authFetch('/api/admin/users');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && Array.isArray(data.users)) {
+              setRecipients(data.users.filter((u: User) => u.role === UserRole.TEACHER));
+              return;
+            }
+          }
+          setRecipients(db.getUsersByRole(UserRole.TEACHER));
+        } else {
+          setRecipients(db.getUsersByRole(UserRole.ADMIN));
+        }
+      } catch {
+        if (currentUser.role === UserRole.ADMIN) {
+          setRecipients(db.getUsersByRole(UserRole.TEACHER));
+        } else {
+          setRecipients(db.getUsersByRole(UserRole.ADMIN));
+        }
+      }
+    };
+    loadRecipients();
   }, [currentUser.role]);
 
-  useEffect(() => {
-    const loadMessages = () => {
+  const loadMessages = async () => {
+    try {
+      const res = await getMessages();
+      if (res.success && Array.isArray(res.messages)) {
+        setMessages(res.messages);
+        return;
+      }
       setMessages(db.getMessages(currentUser.id));
-    };
+    } catch {
+      setMessages(db.getMessages(currentUser.id));
+    }
+  };
+
+  useEffect(() => {
     loadMessages();
     const interval = setInterval(loadMessages, 3000);
     return () => clearInterval(interval);
@@ -47,35 +77,66 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
     }
   }, [messages, selectedRecipientId]);
 
-  const handleSendMessage = (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputValue.trim() && !selectedFile) return;
 
     const recipientId = selectedRecipientId || (currentUser.role === UserRole.ADMIN ? 'TEACHER_BROADCAST' : 'ALL_ADMINS');
+    const recipient = recipients.find(r => r.id === recipientId);
+    const content = inputValue;
+    const file = selectedFile || undefined;
+
+    setInputValue('');
+    setSelectedFile(null);
 
     try {
+      // Send to server API
+      await apiSendMessage({
+        recipientId,
+        recipientName: recipient?.name,
+        subject: '',
+        content,
+        file,
+      });
+
+      // Mirror to local db
       db.sendMessage({
         senderId: currentUser.id,
         senderName: currentUser.name,
         recipientId: recipientId,
-        content: inputValue,
-        file: selectedFile || undefined
+        content,
+        file,
       });
 
-      setInputValue('');
-      setSelectedFile(null);
-      setMessages(db.getMessages(currentUser.id));
+      await loadMessages();
     } catch (err) {
       console.error('Failed to send message:', err);
-      // alert is handled in database.ts throw block
+      // fallback to local db
+      try {
+        db.sendMessage({
+          senderId: currentUser.id,
+          senderName: currentUser.name,
+          recipientId: recipientId,
+          content,
+          file,
+        });
+        setMessages(db.getMessages(currentUser.id));
+      } catch (dbErr) {
+        console.error('Failed to cache message locally:', dbErr);
+      }
     }
   };
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
     if (window.confirm('Are you sure you want to clear your message history? This will free up storage space for new secure attachments.')) {
       try {
+        await apiClearMessages();
+      } catch (err) {
+        console.error('Failed to clear server history:', err);
+      }
+      try {
         db.clearMessages(currentUser.id);
-        setMessages(db.getMessages(currentUser.id));
+        setMessages([]);
       } catch (err) {
         console.error('Failed to clear history:', err);
       }

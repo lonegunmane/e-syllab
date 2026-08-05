@@ -109,7 +109,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
       const user = db.findUserByEmail(resetEmail);
       if (user) {
         await db.updatePassword(user.id, newPassword);
-        setSuccessMessage(`Password for ${resetEmail} has been reset successfully! You can now log in with your new credentials.`);
+        setSuccessMessage(`Password for ${resetEmail} has been updated successfully! You can now sign in with your new password.`);
         setForgotPasswordStep('none');
         setResetEmail('');
         setResetOtp('');
@@ -153,7 +153,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
               setDevCodeNotice(result.devCode);
             }
             setAuthStep('login_2fa');
-            setSuccessMessage(`2FA security verification code sent to ${trimmedEmail}`);
+            setSuccessMessage(`A security code was sent to ${trimmedEmail}`);
             return;
           }
 
@@ -166,7 +166,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
             return;
           }
         } catch (serverError: any) {
-          // If server auth fails, try local fallback with 2FA simulated code
+          // If server auth fails, try local fallback with simulated code
           console.log("[Auth] Server auth failed, trying local fallback...", serverError.message);
           const localResult = await db.authenticateUser(trimmedEmail, password);
           
@@ -176,16 +176,16 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
             setPendingEmail(trimmedEmail);
             setPendingRole(localResult.user.role);
             setAuthStep('login_2fa');
-            setSuccessMessage(`2FA code generated for local authentication: ${fallbackCode}`);
+            setSuccessMessage(`Security code generated: ${fallbackCode}`);
             return;
           }
           
-          setError("Invalid email or password.");
+          setError("That username or password doesn’t look right.");
         }
       }
 
       /**
-       * REGISTER → Trigger 2FA email verification for account creation
+       * REGISTER → Trigger email verification for account creation
        */
       else {
         try {
@@ -195,19 +195,19 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
           }
           setPendingEmail(trimmedEmail);
           setAuthStep('register_2fa');
-          setSuccessMessage(`2FA account activation code sent to ${trimmedEmail}`);
+          setSuccessMessage(`An activation code was sent to ${trimmedEmail}`);
         } catch (regErr: any) {
-          // Local fallback for 2FA registration OTP
+          // Local fallback for registration OTP
           const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
           setDevCodeNotice(fallbackCode);
           setPendingEmail(trimmedEmail);
           setAuthStep('register_2fa');
-          setSuccessMessage(`2FA activation code generated: ${fallbackCode}`);
+          setSuccessMessage(`Activation code generated: ${fallbackCode}`);
         }
       }
     } catch (err: any) {
       setError(
-        err.message || "Something went wrong. Please check your connection and try again."
+        err.message || "Something went wrong, please try again."
       );
     } finally {
       setLoading(false);
@@ -217,7 +217,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
   const handleVerifyLogin2FA = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!twoFactorCode || twoFactorCode.length < 6) {
-      setError("Please enter the complete 6-digit 2FA code.");
+      setError("Please enter the complete 6-digit code.");
       return;
     }
 
@@ -251,7 +251,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
         throw srvErr;
       }
     } catch (err: any) {
-      setError(err.message || "Invalid 2FA code. Please check and try again.");
+      setError(err.message || "That security code isn't right, please try again.");
     } finally {
       setLoading(false);
     }
@@ -260,7 +260,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
   const handleVerifyRegister2FA = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!twoFactorCode || twoFactorCode.length < 6) {
-      setError("Please enter the complete 6-digit 2FA code.");
+      setError("Please enter the complete 6-digit code.");
       return;
     }
 
@@ -290,7 +290,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
         await db.registerUser(newUserPayload, password);
       } catch {}
 
-      setSuccessMessage('2FA Verified! Account created successfully. You can now sign in with 2FA.');
+      setSuccessMessage('Verified! Account created successfully. You can now sign in.');
       setAuthStep('credentials');
       setIsLogin(true);
       setEmail(pendingEmail);
@@ -298,7 +298,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
       setTwoFactorCode('');
       setDevCodeNotice(null);
     } catch (err: any) {
-      setError(err.message || "Invalid 2FA code. Account creation failed.");
+      setError(err.message || "That code isn't right, please try again.");
     } finally {
       setLoading(false);
     }
@@ -313,11 +313,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
       if (res.devCode) {
         setDevCodeNotice(res.devCode);
       }
-      setSuccessMessage(`A fresh 2FA code has been sent to ${pendingEmail}`);
+      setSuccessMessage(`A fresh security code has been sent to ${pendingEmail}`);
     } catch (err: any) {
       const newCode = Math.floor(100000 + Math.random() * 900000).toString();
       setDevCodeNotice(newCode);
-      setSuccessMessage(`Fresh 2FA code generated: ${newCode}`);
+      setSuccessMessage(`Fresh code generated: ${newCode}`);
     } finally {
       setIsResending(false);
     }
@@ -356,10 +356,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
             <p className="text-slate-400 mt-2 font-medium text-sm">
               {authStep !== 'credentials' 
-                ? 'Two-Factor Security Verification'
+                ? 'Extra Login Step'
                 : isLogin
                 ? 'Welcome back to your campus'
-                : 'Create your secure student account'}
+                : 'Create your student account'}
             </p>
           </div>
 
@@ -383,7 +383,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
             <div className="bg-purple-950/60 border border-purple-500/40 p-3.5 rounded-2xl mb-5 flex items-center justify-between gap-2 animate-in zoom-in-95">
               <div className="flex items-center gap-2 text-xs text-purple-200 font-medium">
                 <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
-                <span>Demo 2FA Code: <strong className="font-mono text-purple-300 text-sm tracking-wider ml-1">{devCodeNotice}</strong></span>
+                <span>Demo Login Code: <strong className="font-mono text-purple-300 text-sm tracking-wider ml-1">{devCodeNotice}</strong></span>
               </div>
               <button
                 type="button"
@@ -395,14 +395,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
             </div>
           )}
 
-          {/* STEP 1: LOGIN / REGISTER CREDENTIALS FORM */}
+          {/* STEP 1: LOGIN / REGISTER FORM */}
           {authStep === 'credentials' && (
             <form onSubmit={handleAuth} className="space-y-5">
               {!isLogin && (
                 <div className="bg-primary-950/40 border border-primary-500/20 p-4 rounded-2xl flex gap-3 items-start">
                   <Info className="w-5 h-5 text-primary-400 shrink-0 mt-0.5" />
                   <p className="text-xs text-primary-100 leading-relaxed">
-                    Public registration is for <strong>Students</strong>. 2FA verification will be sent to your email to activate account.
+                    Public sign up is for <strong>Students</strong>. An extra verification code will be sent to your email to activate your account.
                   </p>
                 </div>
               )}
@@ -473,11 +473,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                 {loading ? (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    {isLogin ? 'Checking Credentials...' : 'Sending 2FA Code...'}
+                    {isLogin ? 'Checking sign in...' : 'Sending code...'}
                   </>
                 ) : (
                   <>
-                    {isLogin ? 'Sign In with 2FA' : 'Get 2FA Verification Code'}
+                    {isLogin ? 'Sign In' : 'Get Verification Code'}
                     <ArrowRight className="w-5 h-5" />
                   </>
                 )}
@@ -485,7 +485,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
             </form>
           )}
 
-          {/* STEP 2: 2FA LOGIN VERIFICATION */}
+          {/* STEP 2: LOGIN CODE VERIFICATION */}
           {authStep === 'login_2fa' && (
             <form onSubmit={handleVerifyLogin2FA} className="space-y-5 animate-in fade-in zoom-in-95">
               <div className="bg-primary-950/40 border border-primary-500/30 p-4 rounded-2xl text-center space-y-2">
@@ -493,7 +493,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                   <KeyRound className="w-5 h-5" />
                 </div>
                 <div className="flex items-center justify-center gap-2">
-                  <span className="text-xs font-bold text-white">Enter 6-Digit 2FA Code</span>
+                  <span className="text-xs font-bold text-white">Enter 6-Digit Security Code</span>
                   {pendingRole && (
                     <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
                       {pendingRole}
@@ -501,7 +501,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                   )}
                 </div>
                 <p className="text-xs text-slate-400">
-                  A 2FA code was sent to <strong className="text-primary-300">{pendingEmail}</strong>
+                  A security code was sent to <strong className="text-primary-300">{pendingEmail}</strong>
                 </p>
               </div>
 
@@ -543,11 +543,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                 >
                   {loading ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Verifying 2FA...
+                      <Loader2 className="w-4 h-4 animate-spin" /> Checking code...
                     </>
                   ) : (
                     <>
-                      Verify 2FA & Log In <CheckCircle2 className="w-4 h-4" />
+                      Verify & Sign In <CheckCircle2 className="w-4 h-4" />
                     </>
                   )}
                 </button>
@@ -561,20 +561,20 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                   className="text-xs text-primary-400 font-bold hover:underline flex items-center justify-center gap-1.5 mx-auto disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isResending ? 'animate-spin' : ''}`} />
-                  {isResending ? 'Sending fresh code...' : 'Resend 2FA Code'}
+                  {isResending ? 'Sending fresh code...' : 'Resend Security Code'}
                 </button>
               </div>
             </form>
           )}
 
-          {/* STEP 2: 2FA REGISTRATION VERIFICATION */}
+          {/* STEP 2: REGISTRATION VERIFICATION */}
           {authStep === 'register_2fa' && (
             <form onSubmit={handleVerifyRegister2FA} className="space-y-5 animate-in fade-in zoom-in-95">
               <div className="bg-primary-950/40 border border-primary-500/30 p-4 rounded-2xl text-center space-y-2">
                 <div className="w-10 h-10 bg-primary-600/30 border border-primary-500/40 rounded-xl flex items-center justify-center mx-auto text-primary-300">
                   <Shield className="w-5 h-5" />
                 </div>
-                <h3 className="text-xs font-bold text-white">2FA Account Activation</h3>
+                <h3 className="text-xs font-bold text-white">Account Activation</h3>
                 <p className="text-xs text-slate-400">
                   Enter the 6-digit code sent to <strong className="text-primary-300">{pendingEmail}</strong> to activate your student account.
                 </p>
@@ -622,7 +622,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                     </>
                   ) : (
                     <>
-                      Verify 2FA & Create Account <CheckCircle2 className="w-4 h-4" />
+                      Verify & Create Account <CheckCircle2 className="w-4 h-4" />
                     </>
                   )}
                 </button>

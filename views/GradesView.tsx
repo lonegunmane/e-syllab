@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import { User, UserRole, GradeRecord } from '../types';
 import { db } from '../services/database';
-import { recordGrade } from '../services/academicLedger';
+import { getGrades, recordGrade as apiRecordGrade, authFetch } from '../services/api';
+import { recordGrade as recordLedgerGrade } from '../services/academicLedger';
 
 interface GradesViewProps {
   currentUser: User;
@@ -26,7 +27,8 @@ function calculateGrade(s: number): { grade: string; label: string; color: strin
   return       { grade: 'F',  label: 'Fail',          color: 'text-rose-400',    bg: 'bg-rose-950/40',    border: 'border-rose-500/30'    };
 }
 
-function friendlyDate(iso: string) {
+function friendlyDate(iso?: string) {
+  if (!iso) return new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
@@ -76,14 +78,41 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
   const isStudent = currentUser.role === UserRole.STUDENT;
   const isTeacher = currentUser.role === UserRole.TEACHER;
 
-  const refresh = () => {
-    if (isStudent) {
-      setGrades(db.getGradesByStudent(currentUser.id));
-    } else if (currentUser.role === UserRole.ADMIN) {
-      setGrades(db.getAllGrades());
-      setStudents(db.getUsersByRole(UserRole.STUDENT));
-    } else {
-      setGrades(db.getGradesByTeacher(currentUser.id));
+  const refresh = async () => {
+    try {
+      const res = await getGrades();
+      if (res.success && Array.isArray(res.grades)) {
+        setGrades(res.grades);
+      } else {
+        if (isStudent) {
+          setGrades(db.getGradesByStudent(currentUser.id));
+        } else if (currentUser.role === UserRole.ADMIN) {
+          setGrades(db.getAllGrades());
+        } else {
+          setGrades(db.getGradesByTeacher(currentUser.id));
+        }
+      }
+    } catch {
+      if (isStudent) {
+        setGrades(db.getGradesByStudent(currentUser.id));
+      } else if (currentUser.role === UserRole.ADMIN) {
+        setGrades(db.getAllGrades());
+      } else {
+        setGrades(db.getGradesByTeacher(currentUser.id));
+      }
+    }
+
+    if (!isStudent) {
+      try {
+        const res = await authFetch('/api/students');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && Array.isArray(data.students)) {
+            setStudents(data.students);
+            return;
+          }
+        }
+      } catch {}
       setStudents(db.getUsersByRole(UserRole.STUDENT));
     }
   };
@@ -100,7 +129,7 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
       return;
     }
 
-    const { grade } = calculateGrade(scoreNum);
+    const { grade, label } = calculateGrade(scoreNum);
     const student   = students.find(s => s.id === selectedStudentId);
     if (!student) return;
 
@@ -109,26 +138,38 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
     setLastExplorerUrl(null);
 
     try {
-      // Step 1: Save to local database
+      // Step 1: Save to server API
+      const apiRes = await apiRecordGrade({
+        studentId: selectedStudentId,
+        subject,
+        score: scoreNum,
+        grade,
+        comment: label,
+        feedback: label,
+        recordedAt: new Date().toISOString(),
+      });
+
+      // Step 2: Cache locally in db
       const gradeRecord = db.saveGrade({
+        id: apiRes?.grade?.id,
         studentId:   selectedStudentId,
         studentName: student.name,
         teacherId:   currentUser.id,
         subject,
         score:       scoreNum,
         grade,
-        comment:     calculateGrade(scoreNum).label,
+        comment:     label,
       });
 
-      refresh();
+      await refresh();
 
-      // Step 2: Record on blockchain via school keypair
-      setSaveMsg('Securing grade permanently on-chain...');
-      const result = await recordGrade(gradeRecord, currentUser.name, 'ZMB-KAPASA-001', academicYear, term);
+      // Step 3: Record on ledger / verifiable receipt
+      setSaveMsg('Saving grade securely...');
+      const result = await recordLedgerGrade(gradeRecord, currentUser.name, 'ZMB-KAPASA-001', academicYear, term);
 
-      if (result.success) {
+      if (result && result.success) {
         setSaveState('done');
-        setSaveMsg(`Grade saved and permanently secured. ✓`);
+        setSaveMsg(`Grade saved successfully. ✓`);
         setLastExplorerUrl(result.explorerUrl || null);
         // Reset form
         setShowForm(false);
@@ -136,9 +177,12 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
         setSubject('');
         setScore('');
       } else {
-        // Blockchain failed but local save succeeded — still a success for the teacher
         setSaveState('done');
-        setSaveMsg(`Grade saved locally. Blockchain sync pending: ${result.error || 'Server queue'}`);
+        setSaveMsg(`Grade saved successfully.`);
+        setShowForm(false);
+        setSelectedStudentId('');
+        setSubject('');
+        setScore('');
       }
     } catch (err: any) {
       setSaveState('error');
@@ -148,10 +192,14 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
 
   const filtered = grades
     .filter(g =>
-      g.studentName.toLowerCase().includes(search.toLowerCase()) ||
-      g.subject.toLowerCase().includes(search.toLowerCase())
+      (g.studentName || '').toLowerCase().includes(search.toLowerCase()) ||
+      (g.subject || '').toLowerCase().includes(search.toLowerCase())
     )
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    .sort((a, b) => {
+      const timeA = new Date(a.timestamp || a.recordedAt || a.createdAt || 0).getTime();
+      const timeB = new Date(b.timestamp || b.recordedAt || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
 
   const avg    = grades.length ? (grades.reduce((a, c) => a + c.score, 0) / grades.length) : 0;
   const topG   = grades.length ? grades.reduce((p, c) => p.score > c.score ? p : c) : null;
@@ -281,7 +329,7 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
             {lastExplorerUrl && (
               <a href={lastExplorerUrl} target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 mt-2 text-xs text-primary-400 hover:underline">
-                <ExternalLink className="w-3 h-3" /> View permanent record
+                <ExternalLink className="w-3 h-3" /> View verification details
               </a>
             )}
           </div>

@@ -8,6 +8,10 @@ import {
 import { blockchainService } from '../services/blockchain';
 import { User, UserRole, CurriculumResource, ResourceCategory, VaultDocument, DocumentStatus } from '../types';
 import { db } from '../services/database';
+import { 
+  getCurriculum, addCurriculum as apiAddCurriculum, deleteCurriculum as apiDeleteCurriculum,
+  getVaultDocuments, addVaultDocument as apiAddVaultDocument 
+} from '../services/api';
 import { ProfileSection } from '../components/ProfileSection';
 import { BlockchainAttendance } from '../components/BlockchainAttendance';
 import { TimetableView } from '../components/TimetableView';
@@ -108,13 +112,27 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
     const [fileType, setFileType] = useState('');
     const [fileData, setFileData] = useState('');
 
-    useEffect(() => {
-        const all = db.getAllCurriculum();
-        if (filterCategory) {
-            setMaterials(all.filter(m => m.category === filterCategory));
-        } else {
-            setMaterials(all);
+    const loadMaterials = async () => {
+        try {
+            const res = await getCurriculum();
+            if (res && res.success && Array.isArray(res.curriculum)) {
+                if (filterCategory) {
+                    setMaterials(res.curriculum.filter(m => m.category === filterCategory));
+                } else {
+                    setMaterials(res.curriculum);
+                }
+                return;
+            }
+            const all = db.getAllCurriculum();
+            setMaterials(filterCategory ? all.filter(m => m.category === filterCategory) : all);
+        } catch {
+            const all = db.getAllCurriculum();
+            setMaterials(filterCategory ? all.filter(m => m.category === filterCategory) : all);
         }
+    };
+
+    useEffect(() => {
+        loadMaterials();
     }, [filterCategory]);
 
     useEffect(() => {
@@ -171,13 +189,33 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
         URL.revokeObjectURL(url);
     };
 
-    const handleAdd = (e: React.FormEvent) => {
+    const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
             const displayTitle = title || (category === ResourceCategory.ANNOUNCEMENT ? 'Faculty Announcement' : 'Academic Task');
             const displaySubject = category === ResourceCategory.ANNOUNCEMENT ? 'General' : subject;
 
+            let createdItem: CurriculumResource | null = null;
+            try {
+                const apiRes = await apiAddCurriculum({
+                    title: displayTitle,
+                    subject: displaySubject,
+                    gradeLevel,
+                    description,
+                    category,
+                    fileName: fileName || undefined,
+                    fileType: fileType || undefined,
+                    fileData: fileData || undefined
+                });
+                if (apiRes && apiRes.resource) {
+                    createdItem = apiRes.resource;
+                }
+            } catch (apiErr) {
+                console.error('Failed to add curriculum via API:', apiErr);
+            }
+
             const newItem = db.addCurriculum({ 
+                id: createdItem?.id,
                 title: displayTitle, 
                 subject: displaySubject, 
                 gradeLevel, 
@@ -190,7 +228,7 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
                 fileType: fileType || undefined,
                 fileData: fileData || undefined
             });
-            setMaterials([newItem, ...materials]);
+            setMaterials([createdItem || newItem, ...materials]);
             setIsAdding(false);
             setTitle(''); setDescription(''); setFileName(''); setFileType(''); setFileData('');
         } catch (err) {
@@ -198,8 +236,13 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
         }
     };
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (window.confirm('Are you sure you want to delete this educational material? This will remove it for all students and teachers.')) {
+            try {
+                await apiDeleteCurriculum(id);
+            } catch (err) {
+                console.error('Failed to delete curriculum via API:', err);
+            }
             db.deleteCurriculum(id);
             setMaterials(materials.filter(m => m.id !== id));
         }
@@ -409,9 +452,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onUpda
   const [vaultDocs, setVaultDocs] = useState<VaultDocument[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const loadVaultDocs = async () => {
+    try {
+      const res = await getVaultDocuments();
+      if (res && res.success && Array.isArray(res.documents)) {
+        setVaultDocs(res.documents.filter(d => d.teacherId === user.id));
+        return;
+      }
+      setVaultDocs(db.getVaultDocuments(user.id));
+    } catch {
+      setVaultDocs(db.getVaultDocuments(user.id));
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'overview') {
-      setVaultDocs(db.getVaultDocuments(user.id));
+      loadVaultDocs();
     }
   }, [activeTab, user.id]);
 
@@ -444,16 +500,35 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onUpda
       reader.onload = async (event) => {
         try {
           const fileData = event.target?.result as string;
+          const fileType = file.type || file.name.split('.').pop() || 'unknown';
+
+          let apiCreatedDoc: VaultDocument | null = null;
+          try {
+            const apiRes = await apiAddVaultDocument({
+              title: file.name,
+              type: type,
+              fileName: file.name,
+              fileType,
+              fileData
+            });
+            if (apiRes && apiRes.document) {
+              apiCreatedDoc = apiRes.document;
+            }
+          } catch (apiErr) {
+            console.error("API Vault upload failed, falling back to local storage:", apiErr);
+          }
+
           const newDoc = await db.addVaultDocument({
+            id: apiCreatedDoc?.id,
             title: file.name,
             type: type,
             teacherId: user.id,
             teacherName: user.name,
             fileName: file.name,
-            fileType: file.type || file.name.split('.').pop() || 'unknown',
+            fileType,
             fileData
           });
-          setVaultDocs(prev => [newDoc, ...prev]);
+          setVaultDocs(prev => [apiCreatedDoc || newDoc, ...prev]);
           window.alert("Document securely uploaded and pending administrative verification.");
         } catch (err) {
           console.error("Upload failed in processing:", err);
@@ -561,8 +636,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onUpda
             </div>
             <div className="bg-gradient-to-br from-primary-600 to-primary-900 rounded-3xl p-8 text-white relative overflow-hidden shadow-xl shadow-primary-950/40 group">
                 <h3 className="font-bold text-xl mb-4 relative z-10 transition-transform group-hover:translate-x-1">Student Records</h3>
-                <p className="text-primary-100 text-sm mb-8 relative z-10 leading-relaxed font-medium">Access and grade student submissions verified on the Solana blockchain infrastructure.</p>
-                <button onClick={() => setActiveTab('students')} className="w-full py-3 bg-white text-primary-600 rounded-2xl text-sm font-bold hover:bg-primary-50 transition-all relative z-10 shadow-lg active:scale-95">Access Directory</button>
+                <p className="text-primary-100 text-sm mb-8 relative z-10 leading-relaxed font-medium">View and grade student submissions with secure record keeping.</p>
+                <button onClick={() => setActiveTab('students')} className="w-full py-3 bg-white text-primary-600 rounded-2xl text-sm font-bold hover:bg-primary-50 transition-all relative z-10 shadow-lg active:scale-95">View Students</button>
                 <GraduationCap className="w-40 h-40 absolute -right-8 -bottom-8 text-white/10 group-hover:rotate-12 transition-transform duration-700" />
             </div>
           </div>

@@ -1,12 +1,13 @@
 import express, { Request, Response, NextFunction } from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { fileURLToPath } from "url";
 import { Resend } from "resend";
 import { PublicKey, Keypair, Transaction, TransactionInstruction } from "@solana/web3.js";
 import jwt from "jsonwebtoken";
 import { db } from "./services/database.js";
 import { serverDb } from "./services/serverDatabase.js";
-import { UserRole } from "./types.js";
+import { UserRole, DocumentStatus } from "./types.js";
 import {
   buildAttendanceTransaction,
   confirmTransaction,
@@ -15,6 +16,8 @@ import {
   getConnection,
 } from "./services/blockchain.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ─── School signing keypair (used to auto-sync offline records) ──────────────
 // Generate once with: node generate-keypair.js
@@ -106,12 +109,12 @@ function authenticateToken(req: Request, res: Response, next: NextFunction) {
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
   if (!token) {
-    return res.status(401).json({ success: false, error: 'Access token required' });
+    return res.status(401).json({ success: false, error: 'Please sign in to continue' });
   }
 
   // Check if token is blacklisted
   if (tokenBlacklist.has(token)) {
-    return res.status(401).json({ success: false, error: 'Token has been revoked' });
+    return res.status(401).json({ success: false, error: 'Your login has ended, please sign in again' });
   }
 
   try {
@@ -119,7 +122,7 @@ function authenticateToken(req: Request, res: Response, next: NextFunction) {
     req.user = decoded;
     next();
   } catch (err: any) {
-    return res.status(403).json({ success: false, error: 'Invalid or expired token' });
+    return res.status(403).json({ success: false, error: 'Your login has ended, please sign in again' });
   }
 }
 
@@ -127,11 +130,11 @@ function authenticateToken(req: Request, res: Response, next: NextFunction) {
 function authorizeRole(...allowedRoles: UserRole[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
+      return res.status(401).json({ success: false, error: 'Please sign in to continue' });
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ success: false, error: 'Insufficient permissions for this action' });
+      return res.status(403).json({ success: false, error: "You don't have permission to perform this action" });
     }
 
     next();
@@ -142,7 +145,7 @@ function authorizeRole(...allowedRoles: UserRole[]) {
 // ─── Server ───────────────────────────────────────────────────────────────────
 async function startServer() {
   const app = express();
- const PORT = Number(process.env.PORT) || 3000;
+  const PORT = 3000;
 
   // Initialize database
   await serverDb.init();
@@ -498,10 +501,10 @@ async function startServer() {
   });
 
   // ════════════════════════════════════════════
-  //  AUTHENTICATION & 2FA ROUTES
+  //  SIGN IN & SECURITY CODE ROUTES
   // ════════════════════════════════════════════
 
-  // POST /api/auth/2fa/send-otp - Request a 2FA verification code via email
+  // POST /api/auth/2fa/send-otp - Request a security code via email
   app.post("/api/auth/2fa/send-otp", async (req, res) => {
     const { email, purpose } = req.body;
     if (!email || !purpose) {
@@ -540,18 +543,18 @@ async function startServer() {
         await client.emails.send({
           from: "E-SYLAB Security <onboarding@resend.dev>",
           to: trimmedEmail,
-          subject: `Your E-SYLAB 2FA ${purpose === 'LOGIN' ? 'Login' : 'Account Verification'} Code`,
+          subject: `Your E-SYLAB ${purpose === 'LOGIN' ? 'Login' : 'Account Verification'} Code`,
           html: `
             <div style="font-family: Arial, sans-serif; padding: 24px; border: 1px solid #1e293b; border-radius: 16px; max-width: 440px; margin: auto; background-color: #0b0f19; color: #f8fafc;">
               <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
                 <div style="background: #7c3aed; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #ffffff; font-size: 22px;">E</div>
                 <div>
                   <h2 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800;">E-SYLAB</h2>
-                  <p style="color: #a7f3d0; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">Two-Factor Security Verification</p>
+                  <p style="color: #a7f3d0; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">Extra Login Step</p>
                 </div>
               </div>
               <p style="color: #cbd5e1; font-size: 14px; line-height: 1.5;">
-                Use the following 6-digit 2FA code to complete your ${purpose === 'LOGIN' ? 'login authentication' : 'account creation'}:
+                Use the following 6-digit code to complete your ${purpose === 'LOGIN' ? 'sign in' : 'account creation'}:
               </p>
               <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #c084fc; padding: 18px 0; text-align: center; font-family: monospace; background: #1e1b4b; border-radius: 12px; margin: 16px 0; border: 1px solid #4c1d95;">
                 ${code}
@@ -564,23 +567,23 @@ async function startServer() {
         });
         emailSent = true;
       } catch (emailErr) {
-        console.warn("[2FA] Resend email delivery failed:", emailErr);
+        console.warn("[Security] Resend email delivery failed:", emailErr);
       }
     }
 
-    console.log(`[2FA OTP] Generated code ${code} for ${trimmedEmail} (${purpose})`);
+    console.log(`[Security OTP] Generated code ${code} for ${trimmedEmail} (${purpose})`);
 
     res.json({
       success: true,
       emailSent,
       message: emailSent
-        ? `2FA verification code sent to ${trimmedEmail}`
-        : `2FA security code generated for ${trimmedEmail}`,
+        ? `Security verification code sent to ${trimmedEmail}`
+        : `Security code generated for ${trimmedEmail}`,
       devCode: process.env.RESEND_API_KEY ? undefined : code
     });
   });
 
-  // POST /api/register - Public registration with 2FA verification
+  // POST /api/register - Public registration with security code verification
   app.post("/api/register", async (req, res) => {
     const { name, email, password, avatar, twoFactorCode } = req.body;
 
@@ -589,7 +592,7 @@ async function startServer() {
     }
 
     if (!twoFactorCode) {
-      return res.status(400).json({ success: false, error: "2FA verification code is required to create an account" });
+      return res.status(400).json({ success: false, error: "Verification code is required to create an account" });
     }
 
     const trimmedEmail = email.trim().toLowerCase();
@@ -597,7 +600,7 @@ async function startServer() {
     const entry = twoFactorStore.get(otpKey);
 
     if (!entry || entry.code !== twoFactorCode.trim() || Date.now() > entry.expiresAt) {
-      return res.status(400).json({ success: false, error: "Invalid or expired 2FA verification code" });
+      return res.status(400).json({ success: false, error: "That security code isn't right, please try again." });
     }
 
     // Code verified successfully, consume OTP
@@ -629,7 +632,7 @@ async function startServer() {
         success: true,
         user: createdUser,
         token,
-        message: "Account created and verified via 2FA successfully!",
+        message: "Account created successfully!",
       });
     } catch (err: any) {
       console.error("[Auth] Public registration error:", err);
@@ -637,7 +640,7 @@ async function startServer() {
     }
   });
 
-  // POST /api/admin/create-user - Admin user creation with 2FA support
+  // POST /api/admin/create-user - Admin user creation with security code support
   app.post("/api/admin/create-user", authenticateToken, authorizeRole(UserRole.ADMIN), async (req, res) => {
     const { name, email, role, password, avatar, twoFactorCode } = req.body;
 
@@ -647,12 +650,12 @@ async function startServer() {
 
     const trimmedEmail = email.trim().toLowerCase();
 
-    // If 2FA code is supplied during creation, verify it
+    // If verification code is supplied during creation, verify it
     if (twoFactorCode) {
       const otpKey = `${trimmedEmail}_REGISTER`;
       const entry = twoFactorStore.get(otpKey);
       if (!entry || entry.code !== twoFactorCode.trim() || Date.now() > entry.expiresAt) {
-        return res.status(400).json({ success: false, error: "Invalid or expired 2FA verification code" });
+        return res.status(400).json({ success: false, error: "That security code isn't right, please try again." });
       }
       twoFactorStore.delete(otpKey);
     }
@@ -670,7 +673,7 @@ async function startServer() {
       res.json({
         success: true,
         user: createdUser,
-        message: `New ${role} account created successfully with 2FA protection enabled.`,
+        message: `New ${role} account created successfully.`,
       });
     } catch (err: any) {
       console.error("[Auth] Admin create user error:", err);
@@ -678,7 +681,7 @@ async function startServer() {
     }
   });
 
-  // POST /api/login - Step 1: Validate credentials & send 2FA OTP code
+  // POST /api/login - Step 1: Validate sign in & send security code
   app.post("/api/login", async (req, res) => {
     const { email, password } = req.body;
     
@@ -692,12 +695,12 @@ async function startServer() {
       const authResult = await serverDb.authenticateUser(trimmedEmail, password);
       
       if (!authResult) {
-        return res.status(401).json({ success: false, error: "Invalid email or password" });
+        return res.status(401).json({ success: false, error: "That username or password doesn’t look right" });
       }
 
       const { user, needsPasswordReset } = authResult;
 
-      // Credentials valid! Generate 2FA code for Login
+      // Credentials valid! Generate code for Login
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = Date.now() + 10 * 60 * 1000;
 
@@ -716,18 +719,18 @@ async function startServer() {
           await client.emails.send({
             from: "E-SYLAB Security <onboarding@resend.dev>",
             to: trimmedEmail,
-            subject: "Your E-SYLAB 2FA Security Login Code",
+            subject: "Your E-SYLAB Security Login Code",
             html: `
               <div style="font-family: Arial, sans-serif; padding: 24px; border: 1px solid #1e293b; border-radius: 16px; max-width: 440px; margin: auto; background-color: #0b0f19; color: #f8fafc;">
                 <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
                   <div style="background: #7c3aed; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #ffffff; font-size: 22px;">E</div>
                   <div>
                     <h2 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800;">E-SYLAB</h2>
-                    <p style="color: #c084fc; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">Two-Factor Login Protection</p>
+                    <p style="color: #c084fc; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">Extra Login Step</p>
                   </div>
                 </div>
                 <p style="color: #cbd5e1; font-size: 14px; line-height: 1.5;">
-                  Two-factor authentication code for account <strong>${user.name}</strong> (${user.role}):
+                  Security login code for account <strong>${user.name}</strong> (${user.role}):
                 </p>
                 <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #a855f7; padding: 18px 0; text-align: center; font-family: monospace; background: #1e1b4b; border-radius: 12px; margin: 16px 0; border: 1px solid #4c1d95;">
                   ${code}
@@ -740,11 +743,11 @@ async function startServer() {
           });
           emailSent = true;
         } catch (emailErr) {
-          console.warn("[2FA] Login email delivery failed:", emailErr);
+          console.warn("[Security] Login email delivery failed:", emailErr);
         }
       }
 
-      console.log(`[2FA OTP] Login code ${code} generated for ${user.email} (${user.role})`);
+      console.log(`[Security OTP] Login code ${code} generated for ${user.email} (${user.role})`);
 
       res.json({
         success: true,
@@ -753,21 +756,21 @@ async function startServer() {
         role: user.role,
         needsPasswordReset,
         emailSent,
-        message: "2FA verification code sent to your registered email address.",
+        message: "Security code sent to your registered email address.",
         devCode: process.env.RESEND_API_KEY ? undefined : code
       });
     } catch (err: any) {
       console.error("[Auth] Login error:", err);
-      res.status(500).json({ success: false, error: "Authentication failed" });
+      res.status(500).json({ success: false, error: "Something went wrong, please try again" });
     }
   });
 
-  // POST /api/login/verify-2fa - Step 2: Verify 2FA OTP code and issue JWT session
+  // POST /api/login/verify-2fa - Step 2: Verify security code and issue session
   app.post("/api/login/verify-2fa", async (req, res) => {
     const { email, twoFactorCode } = req.body;
 
     if (!email || !twoFactorCode) {
-      return res.status(400).json({ success: false, error: "Email and 2FA verification code required" });
+      return res.status(400).json({ success: false, error: "Email and security code required" });
     }
 
     const trimmedEmail = email.trim().toLowerCase();
@@ -775,15 +778,15 @@ async function startServer() {
     const entry = twoFactorStore.get(otpKey);
 
     if (!entry || entry.code !== twoFactorCode.trim() || Date.now() > entry.expiresAt) {
-      return res.status(400).json({ success: false, error: "Invalid or expired 2FA code. Please check and try again." });
+      return res.status(400).json({ success: false, error: "That security code isn't right, please try again." });
     }
 
-    // 2FA Verified! Consume code
+    // Verified! Consume code
     twoFactorStore.delete(otpKey);
 
     const user = serverDb.findUserByEmail(trimmedEmail);
     if (!user) {
-      return res.status(404).json({ success: false, error: "User account record not found" });
+      return res.status(404).json({ success: false, error: "User account not found" });
     }
 
     const cred = serverDb.getCredentialByUserId(user.id);
@@ -806,16 +809,16 @@ async function startServer() {
       user,
       needsPasswordReset,
       token,
-      message: "2FA verification successful. Access granted.",
+      message: "Sign in successful.",
     });
   });
 
-  // POST /api/token/session - Issue or refresh a JWT token for an active user session
+  // POST /api/token/session - Issue or refresh a token for an active user session
   app.post("/api/token/session", async (req, res) => {
     const { user } = req.body;
 
     if (!user || (!user.id && !user.email)) {
-      return res.status(400).json({ success: false, error: "User payload required" });
+      return res.status(400).json({ success: false, error: "User info required" });
     }
 
     try {
@@ -839,7 +842,7 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("[Auth] Session token generation error:", err);
-      res.status(500).json({ success: false, error: "Token generation failed" });
+      res.status(500).json({ success: false, error: "Something went wrong, please try again" });
     }
   });
 
@@ -1792,20 +1795,286 @@ async function startServer() {
     }
   });
 
+  // ─── Students Roster Route ────────────────────────────────────────────────
+  // GET /api/students (Teacher, Admin)
+  app.get("/api/students", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), (_req, res) => {
+    try {
+      const students = serverDb.getUsersByRole(UserRole.STUDENT);
+      res.json({ success: true, count: students.length, students });
+    } catch (err: any) {
+      console.error("[Students] GET error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to fetch students" });
+    }
+  });
+
+  // ─── Academic Grades Routes ────────────────────────────────────────────────
+  // GET /api/grades (any authenticated user — students see only their own, teachers/admins see all)
+  app.get("/api/grades", authenticateToken, (req, res) => {
+    try {
+      const user = req.user!;
+      let grades;
+      if (user.role === UserRole.STUDENT) {
+        grades = serverDb.getStudentGrades(user.userId);
+      } else {
+        grades = serverDb.getAllGrades();
+      }
+      res.json({ success: true, count: grades.length, grades });
+    } catch (err: any) {
+      console.error("[Grades] GET error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to fetch grades" });
+    }
+  });
+
+  // POST /api/grades (Teacher, Admin)
+  app.post("/api/grades", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), (req, res) => {
+    const { studentId, subject, score, grade, feedback, comment, recordedAt } = req.body;
+
+    if (!studentId || !subject) {
+      return res.status(400).json({ success: false, error: "Missing required fields: studentId, subject" });
+    }
+
+    try {
+      const student = serverDb.findUserById(studentId);
+      const gradeRecord = serverDb.recordGrade({
+        studentId,
+        studentName: student ? student.name : undefined,
+        teacherId: req.user!.userId,
+        subject,
+        score: score !== undefined ? parseFloat(score) : undefined,
+        grade,
+        feedback,
+        comment,
+        recordedAt,
+      });
+
+      res.json({ success: true, grade: gradeRecord, message: "Grade recorded successfully" });
+    } catch (err: any) {
+      console.error("[Grades] POST error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to record grade" });
+    }
+  });
+
+  // ─── Messages Routes ───────────────────────────────────────────────────────
+  // GET /api/messages (any authenticated user — only their own sent/received/broadcasts)
+  app.get("/api/messages", authenticateToken, (req, res) => {
+    try {
+      const messages = serverDb.getUserMessages(req.user!.userId, req.user!.role);
+      res.json({ success: true, count: messages.length, messages });
+    } catch (err: any) {
+      console.error("[Messages] GET error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to fetch messages" });
+    }
+  });
+
+  // POST /api/messages (any authenticated user)
+  app.post("/api/messages", authenticateToken, (req, res) => {
+    const { recipientId, recipientName, subject, content, file } = req.body;
+
+    if (!content && !file) {
+      return res.status(400).json({ success: false, error: "Message content or attachment is required" });
+    }
+
+    try {
+      const sender = serverDb.findUserById(req.user!.userId);
+      const senderName = sender ? sender.name : 'User';
+
+      const message = serverDb.sendMessage({
+        senderId: req.user!.userId,
+        senderName,
+        recipientId,
+        recipientName,
+        subject,
+        content: content || '',
+        file,
+      });
+
+      res.json({ success: true, message, successMessage: "Message sent successfully" });
+    } catch (err: any) {
+      console.error("[Messages] POST error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to send message" });
+    }
+  });
+
+  // DELETE /api/messages (any authenticated user — clears user's message history)
+  app.delete("/api/messages", authenticateToken, (req, res) => {
+    try {
+      serverDb.clearMessages(req.user!.userId);
+      res.json({ success: true, message: "Message history cleared successfully" });
+    } catch (err: any) {
+      console.error("[Messages] DELETE error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to clear message history" });
+    }
+  });
+
+  // ─── Curriculum Resources Routes ───────────────────────────────────────────
+  // GET /api/curriculum (any authenticated user)
+  app.get("/api/curriculum", authenticateToken, (_req, res) => {
+    try {
+      const curriculum = serverDb.getAllCurriculum();
+      res.json({ success: true, count: curriculum.length, curriculum });
+    } catch (err: any) {
+      console.error("[Curriculum] GET error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to fetch curriculum materials" });
+    }
+  });
+
+  // POST /api/curriculum (Teacher, Admin)
+  app.post("/api/curriculum", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), (req, res) => {
+    const { title, subject, gradeLevel, description, category, fileName, fileType, fileData } = req.body;
+
+    if (!title || !subject || !gradeLevel || !category) {
+      return res.status(400).json({ success: false, error: "Missing required fields: title, subject, gradeLevel, category" });
+    }
+
+    try {
+      const uploader = serverDb.findUserById(req.user!.userId);
+      const uploadedByName = uploader ? uploader.name : 'Staff';
+
+      const resource = serverDb.addCurriculum({
+        title,
+        subject,
+        gradeLevel,
+        description: description || '',
+        category,
+        authorRole: req.user!.role,
+        uploadedById: req.user!.userId,
+        uploadedByName,
+        fileName,
+        fileType,
+        fileData,
+      });
+
+      res.json({ success: true, resource, message: "Curriculum material uploaded successfully" });
+    } catch (err: any) {
+      console.error("[Curriculum] POST error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to create curriculum material" });
+    }
+  });
+
+  // DELETE /api/curriculum/:id (Teacher, Admin)
+  app.delete("/api/curriculum/:id", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), (req, res) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    try {
+      serverDb.deleteCurriculum(id);
+      res.json({ success: true, message: "Curriculum material deleted successfully" });
+    } catch (err: any) {
+      console.error("[Curriculum] DELETE error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to delete curriculum material" });
+    }
+  });
+
+  // ─── Vault Documents Routes ────────────────────────────────────────────────
+  // GET /api/vault (Teacher sees their own submissions, Admin sees all)
+  app.get("/api/vault", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), (req, res) => {
+    try {
+      const user = req.user!;
+      let documents;
+      if (user.role === UserRole.ADMIN) {
+        documents = serverDb.getAllVaultDocuments();
+      } else {
+        documents = serverDb.getVaultDocumentsByTeacher(user.userId);
+      }
+      res.json({ success: true, count: documents.length, documents });
+    } catch (err: any) {
+      console.error("[Vault] GET error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to fetch vault documents" });
+    }
+  });
+
+  // POST /api/vault (Teacher, Admin)
+  app.post("/api/vault", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), (req, res) => {
+    const { title, type, fileName, fileType, fileData } = req.body;
+
+    if (!title || !type) {
+      return res.status(400).json({ success: false, error: "Missing required fields: title, type" });
+    }
+
+    try {
+      const teacher = serverDb.findUserById(req.user!.userId);
+      const teacherName = teacher ? teacher.name : 'Teacher';
+
+      const document = serverDb.addVaultDocument({
+        title,
+        type,
+        status: DocumentStatus.PENDING,
+        teacherId: req.user!.userId,
+        teacherName,
+        fileName,
+        fileType,
+        fileData,
+      });
+
+      res.json({ success: true, document, message: "Document submitted to vault successfully" });
+    } catch (err: any) {
+      console.error("[Vault] POST error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to submit document to vault" });
+    }
+  });
+
+  // PUT /api/vault/:id/approve (Admin only)
+  app.put("/api/vault/:id/approve", authenticateToken, authorizeRole(UserRole.ADMIN), (req, res) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    try {
+      const document = serverDb.updateVaultDocumentStatus(id, DocumentStatus.APPROVED);
+      if (!document) {
+        return res.status(404).json({ success: false, error: "Vault document not found" });
+      }
+      res.json({ success: true, document, message: "Vault document approved successfully" });
+    } catch (err: any) {
+      console.error("[Vault] Approve error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to approve vault document" });
+    }
+  });
+
+  // PUT /api/vault/:id/reject (Admin only)
+  app.put("/api/vault/:id/reject", authenticateToken, authorizeRole(UserRole.ADMIN), (req, res) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    try {
+      const document = serverDb.updateVaultDocumentStatus(id, DocumentStatus.REJECTED);
+      if (!document) {
+        return res.status(404).json({ success: false, error: "Vault document not found" });
+      }
+      res.json({ success: true, document, message: "Vault document rejected successfully" });
+    } catch (err: any) {
+      console.error("[Vault] Reject error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to reject vault document" });
+    }
+  });
+
+  // PUT /api/vault/:id/status (Admin only)
+  app.put("/api/vault/:id/status", authenticateToken, authorizeRole(UserRole.ADMIN), (req, res) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const { status } = req.body;
+
+    if (!status || !Object.values(DocumentStatus).includes(status)) {
+      return res.status(400).json({ success: false, error: "Valid status ('PENDING', 'APPROVED', 'REJECTED') is required" });
+    }
+
+    try {
+      const document = serverDb.updateVaultDocumentStatus(id, status);
+      if (!document) {
+        return res.status(404).json({ success: false, error: "Vault document not found" });
+      }
+      res.json({ success: true, document, message: `Vault document status updated to ${status}` });
+    } catch (err: any) {
+      console.error("[Vault] Status update error:", err);
+      res.status(500).json({ success: false, error: err.message || "Failed to update vault document status" });
+    }
+  });
+
 
   // ── Vite middleware ─────────────────────────────────────────────────────────
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-  const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.join(__dirname, "dist");
     app.use(express.static(distPath));
     app.get("*all", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
-
-app.get("/health", (_req, res) => {
-  res.status(200).json({ ok: true });
-});
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`\n🚀 E-SYLLAB Server → http://localhost:${PORT}`);

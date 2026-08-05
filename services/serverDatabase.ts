@@ -6,9 +6,11 @@ import bcrypt from 'bcryptjs';
 import { encryptField, decryptField } from './encryption';
 import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential, TimetableEntry, Assessment, AssessmentScore, SystemNotification } from '../types';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+const dbPath = path.join(__dirname, '..', 'data', 'esylab.db');
 
-const dbPath = path.join(process.cwd(), 'data', 'esylab.db');
 // Ensure data directory exists
 const dataDir = path.dirname(dbPath);
 if (!fs.existsSync(dataDir)) {
@@ -622,10 +624,34 @@ export const serverDb = {
     return null;
   },
 
+  deleteCurriculum(id: string): boolean {
+    const stmt = sqlDb.prepare('DELETE FROM curriculum_resources WHERE id = ?');
+    stmt.bind([id]);
+    stmt.step();
+    stmt.free();
+    this.save();
+    return true;
+  },
+
   // ─── Messages ──────────────────────────────────────────────────────────────
-  sendMessage(message: Omit<Message, 'id' | 'read' | 'createdAt'>): Message {
+  sendMessage(message: {
+    senderId: string;
+    senderName: string;
+    recipientId?: string;
+    recipientName?: string;
+    subject?: string;
+    content: string;
+    file?: { name: string; type: string; data: string; size: number };
+  }): Message {
     const id = this.generateId();
     const now = new Date().toISOString();
+
+    let subjectVal = message.subject || '';
+    if (message.file) {
+      try {
+        subjectVal = JSON.stringify({ file: message.file, origSubject: message.subject || '' });
+      } catch {}
+    }
 
     const stmt = sqlDb.prepare(`
       INSERT INTO messages (id, senderId, senderName, recipientId, recipientName, subject, content, createdAt)
@@ -637,8 +663,8 @@ export const serverDb = {
       message.senderName,
       message.recipientId || null,
       message.recipientName || null,
-      message.subject || '',
-      message.content,
+      subjectVal,
+      message.content || '',
       now,
     ]);
     stmt.step();
@@ -662,11 +688,18 @@ export const serverDb = {
     return null;
   },
 
-  getUserMessages(userId: string): Message[] {
-    const stmt = sqlDb.prepare(`
-      SELECT * FROM messages WHERE senderId = ? OR recipientId = ? ORDER BY createdAt DESC
-    `);
-    stmt.bind([userId, userId]);
+  getUserMessages(userId: string, role?: UserRole): Message[] {
+    let query = `SELECT * FROM messages WHERE senderId = ? OR recipientId = ?`;
+    const params: any[] = [userId, userId];
+    if (role === UserRole.ADMIN) {
+      query += ` OR recipientId = 'ALL_ADMINS' OR recipientId = 'TEACHER_BROADCAST'`;
+    } else if (role === UserRole.TEACHER) {
+      query += ` OR recipientId = 'TEACHER_BROADCAST' OR recipientId = 'ALL_ADMINS'`;
+    }
+    query += ` ORDER BY createdAt ASC`;
+
+    const stmt = sqlDb.prepare(query);
+    stmt.bind(params);
 
     const messages: Message[] = [];
     while (stmt.step()) {
@@ -678,10 +711,39 @@ export const serverDb = {
     return messages;
   },
 
+  clearMessages(userId: string): void {
+    const stmt = sqlDb.prepare('DELETE FROM messages WHERE senderId = ? OR recipientId = ?');
+    stmt.bind([userId, userId]);
+    stmt.step();
+    stmt.free();
+    this.save();
+  },
+
   // ─── Grades ────────────────────────────────────────────────────────────────
-  recordGrade(grade: Omit<GradeRecord, 'id' | 'createdAt'>): GradeRecord {
-    const id = this.generateId();
+  recordGrade(grade: {
+    id?: string;
+    studentId: string;
+    studentName?: string;
+    teacherId: string;
+    subject: string;
+    score?: number;
+    grade?: string | number;
+    feedback?: string;
+    comment?: string;
+    recordedAt?: string;
+  }): GradeRecord {
+    const id = grade.id || this.generateId();
     const now = new Date().toISOString();
+
+    let scoreNum = 0;
+    if (grade.score !== undefined) {
+      scoreNum = grade.score;
+    } else if (grade.grade !== undefined) {
+      scoreNum = typeof grade.grade === 'number' ? grade.grade : (parseFloat(String(grade.grade)) || 0);
+    }
+
+    const feedbackText = grade.feedback || grade.comment || '';
+    const recordedAtTime = grade.recordedAt || now;
 
     const stmt = sqlDb.prepare(`
       INSERT INTO grades (id, studentId, teacherId, subject, grade, feedback, recordedAt, createdAt)
@@ -692,9 +754,9 @@ export const serverDb = {
       grade.studentId,
       grade.teacherId,
       grade.subject,
-      grade.grade,
-      grade.feedback || '',
-      grade.recordedAt,
+      scoreNum,
+      feedbackText,
+      recordedAtTime,
       now,
     ]);
     stmt.step();
@@ -732,9 +794,46 @@ export const serverDb = {
     return grades;
   },
 
+  getGradesByTeacher(teacherId: string): GradeRecord[] {
+    const stmt = sqlDb.prepare('SELECT * FROM grades WHERE teacherId = ? ORDER BY recordedAt DESC');
+    stmt.bind([teacherId]);
+
+    const grades: GradeRecord[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      grades.push(this.rowToGrade(row as any));
+    }
+
+    stmt.free();
+    return grades;
+  },
+
+  getAllGrades(): GradeRecord[] {
+    const stmt = sqlDb.prepare('SELECT * FROM grades ORDER BY recordedAt DESC');
+    const grades: GradeRecord[] = [];
+
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      grades.push(this.rowToGrade(row as any));
+    }
+
+    stmt.free();
+    return grades;
+  },
+
   // ─── Vault Documents ───────────────────────────────────────────────────────
-  addVaultDocument(doc: Omit<VaultDocument, 'id' | 'createdAt'>): VaultDocument {
-    const id = this.generateId();
+  addVaultDocument(doc: {
+    id?: string;
+    title: string;
+    type: string;
+    status: DocumentStatus;
+    teacherId: string;
+    teacherName: string;
+    fileName?: string;
+    fileType?: string;
+    fileData?: string;
+  }): VaultDocument {
+    const id = doc.id || this.generateId();
     const now = new Date().toISOString();
 
     const stmt = sqlDb.prepare(`
@@ -786,6 +885,46 @@ export const serverDb = {
 
     stmt.free();
     return docs;
+  },
+
+  getVaultDocumentsByTeacher(teacherId: string): VaultDocument[] {
+    const stmt = sqlDb.prepare('SELECT * FROM vault_documents WHERE teacherId = ? ORDER BY createdAt DESC');
+    stmt.bind([teacherId]);
+
+    const docs: VaultDocument[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      docs.push(this.rowToVaultDocument(row as any));
+    }
+
+    stmt.free();
+    return docs;
+  },
+
+  getPendingVaultDocuments(): VaultDocument[] {
+    const stmt = sqlDb.prepare("SELECT * FROM vault_documents WHERE status = 'PENDING' ORDER BY createdAt DESC");
+    const docs: VaultDocument[] = [];
+
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      docs.push(this.rowToVaultDocument(row as any));
+    }
+
+    stmt.free();
+    return docs;
+  },
+
+  updateVaultDocumentStatus(id: string, status: DocumentStatus): VaultDocument | null {
+    const now = new Date().toISOString();
+    const stmt = sqlDb.prepare(`
+      UPDATE vault_documents SET status = ?, updatedAt = ? WHERE id = ?
+    `);
+    stmt.bind([status, now, id]);
+    stmt.step();
+    stmt.free();
+    this.save();
+
+    return this.findVaultDocById(id);
   },
 
   // ─── Timetable Operations ──────────────────────────────────────────────────
@@ -939,29 +1078,56 @@ export const serverDb = {
   },
 
   rowToMessage(row: any): Message {
+    let fileObj = undefined;
+    let actualSubject = row.subject || '';
+
+    if (row.subject && typeof row.subject === 'string' && row.subject.startsWith('{"file":')) {
+      try {
+        const parsed = JSON.parse(row.subject);
+        fileObj = parsed.file;
+        actualSubject = parsed.origSubject || '';
+      } catch {}
+    }
+
     return {
       id: row.id,
       senderId: row.senderId,
       senderName: row.senderName,
       recipientId: row.recipientId,
       recipientName: row.recipientName,
-      subject: row.subject,
+      subject: actualSubject,
       content: row.content,
       read: Boolean(row.read),
       createdAt: row.createdAt,
+      timestamp: row.createdAt,
+      file: fileObj,
     };
   },
 
   rowToGrade(row: any): GradeRecord {
+    let studentName = 'Student';
+    if (row.studentId) {
+      const student = this.findUserById(row.studentId);
+      if (student) {
+        studentName = student.name;
+      }
+    }
+
+    const numericScore = typeof row.grade === 'number' ? row.grade : parseFloat(String(row.grade)) || 0;
+
     return {
       id: row.id,
       studentId: row.studentId,
+      studentName,
       teacherId: row.teacherId,
       subject: row.subject,
-      grade: row.grade,
-      feedback: row.feedback,
+      score: numericScore,
+      grade: String(row.grade),
+      feedback: row.feedback || undefined,
+      comment: row.feedback || undefined,
       recordedAt: row.recordedAt,
       createdAt: row.createdAt,
+      timestamp: row.recordedAt || row.createdAt,
     };
   },
 

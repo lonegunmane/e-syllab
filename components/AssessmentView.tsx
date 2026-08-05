@@ -243,7 +243,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
 
       const data = await res.json();
       if (data.success) {
-        setScoreMsg({ type: 'success', text: `Submitted ${scorePayload.length} score(s) successfully and secured on Solana blockchain! ✓` });
+        setScoreMsg({ type: 'success', text: `Submitted ${scorePayload.length} score(s) successfully! ✓` });
         if (data.report) setReport(data.report);
         if (Array.isArray(data.scores)) setExistingScores(data.scores);
       } else {
@@ -273,7 +273,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
               <Award className="w-6 h-6 text-primary-400" /> Assessment Reports & Scores
             </h1>
             <p className="text-slate-400 text-sm mt-1">
-              Your test and examination scores verified and anchored on-chain.
+              Your test and examination scores saved and verified securely.
             </p>
           </div>
           <button
@@ -288,14 +288,14 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
         {loadingStudentScores ? (
           <div className="glass-card p-12 text-center text-slate-400">
             <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary-400 mb-3" />
-            Loading your verified assessment records...
+            Loading your assessment records...
           </div>
         ) : studentScores.length === 0 ? (
           <div className="glass-card p-12 text-center text-slate-500 rounded-2xl">
             <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
             <p className="text-base font-semibold text-slate-300">No Assessment Scores Yet</p>
             <p className="text-xs text-slate-500 mt-1">
-              When your teachers post test scores, they will appear here with cryptographic proof.
+              When your teachers post test scores, they will appear here.
             </p>
           </div>
         ) : (
@@ -353,11 +353,11 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                     </div>
                   )}
 
-                  {/* Blockchain Verification Badge */}
+                  {/* Verification Badge */}
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-1 text-xs">
                     <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
                       <Shield className="w-3.5 h-3.5" />
-                      <span>Anchored on Solana Blockchain</span>
+                      <span>Verified Record</span>
                     </div>
                     {score.explorerUrl ? (
                       <a
@@ -366,11 +366,11 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-primary-400 hover:underline font-mono text-[11px]"
                       >
-                        Hash: {score.offlineHash?.substring(0, 16)}... <ExternalLink className="w-3 h-3" />
+                        Record ID: {score.offlineHash?.substring(0, 16)}... <ExternalLink className="w-3 h-3" />
                       </a>
                     ) : (
                       <span className="text-slate-500 font-mono text-[11px]">
-                        Hash: {score.offlineHash?.substring(0, 16)}...
+                        Record ID: {score.offlineHash?.substring(0, 16)}...
                       </span>
                     )}
                   </div>
@@ -674,7 +674,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                       <Users className="w-4 h-4 text-primary-400" /> Class Roster & Score Entry
                     </h3>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Enter scores for students below. All submitted scores are automatically hashed & anchored on-chain.
+                      Enter scores for students below. All submitted scores are saved securely.
                     </p>
                   </div>
                   <span className="text-xs font-bold text-slate-400 bg-white/5 px-3 py-1 rounded-full border border-white/10">
@@ -757,7 +757,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
 
                 <div className="pt-2 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3">
                   <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
-                    <Shield className="w-3.5 h-3.5 text-emerald-400" /> Each score entry generates an immutable SHA-256 digest on Solana.
+                    <Shield className="w-3.5 h-3.5 text-emerald-400" /> Each score entry is permanently saved with high-grade security.
                   </p>
 
                   <button
@@ -766,7 +766,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                     className="w-full sm:w-auto px-6 py-3 bg-primary-600 text-white text-xs font-bold rounded-xl hover:bg-primary-700 active:scale-95 transition-all shadow-lg shadow-primary-950/40 flex items-center justify-center gap-2 disabled:opacity-50"
                   >
                     {submittingScores ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    {submittingScores ? 'Submitting & Anchoring...' : 'Submit Class Scores'}
+                    {submittingScores ? 'Saving Scores...' : 'Submit Class Scores'}
                   </button>
                 </div>
               </div>

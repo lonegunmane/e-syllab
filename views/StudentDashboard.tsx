@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import { User, CurriculumResource, ResourceCategory, UserRole, GradeRecord, Assignment } from '../types';
 import { db } from '../services/database';
+import { getCurriculum, getGrades } from '../services/api';
 import { notificationService } from '../services/notificationService';
 import { ProfileSection } from '../components/ProfileSection';
 import { TimetableView } from '../components/TimetableView';
@@ -27,11 +28,30 @@ const CurriculumViewer: React.FC<{ userGrade?: string }> = ({ userGrade }) => {
     const [viewingMaterial, setViewingMaterial] = useState<CurriculumResource | null>(null);
 
     useEffect(() => {
-        const all = db.getAllCurriculum();
-        setMaterials(all.filter(m => 
-            (m.category === ResourceCategory.ANNOUNCEMENT) && 
-            (m.gradeLevel === 'All Grades' || m.gradeLevel === userGrade || !userGrade)
-        ));
+        const loadCurriculum = async () => {
+            try {
+                const res = await getCurriculum();
+                if (res && res.success && Array.isArray(res.curriculum)) {
+                    setMaterials(res.curriculum.filter(m => 
+                        (m.category === ResourceCategory.ANNOUNCEMENT) && 
+                        (m.gradeLevel === 'All Grades' || m.gradeLevel === userGrade || !userGrade)
+                    ));
+                    return;
+                }
+                const all = db.getAllCurriculum();
+                setMaterials(all.filter(m => 
+                    (m.category === ResourceCategory.ANNOUNCEMENT) && 
+                    (m.gradeLevel === 'All Grades' || m.gradeLevel === userGrade || !userGrade)
+                ));
+            } catch {
+                const all = db.getAllCurriculum();
+                setMaterials(all.filter(m => 
+                    (m.category === ResourceCategory.ANNOUNCEMENT) && 
+                    (m.gradeLevel === 'All Grades' || m.gradeLevel === userGrade || !userGrade)
+                ));
+            }
+        };
+        loadCurriculum();
     }, [userGrade]);
 
     const handleDownload = (material: CurriculumResource) => {
@@ -163,11 +183,30 @@ const AssignmentsView: React.FC<{ userGrade?: string }> = ({ userGrade }) => {
         const grade = userGrade || 'Grade 10';
         setTimedAssignments(db.getAssignments(grade));
 
-        const all = db.getAllCurriculum();
-        setCurriculumDocs(all.filter(m => 
-            (m.category === ResourceCategory.DOCUMENT) && 
-            (m.gradeLevel === 'All Grades' || m.gradeLevel === userGrade || !userGrade)
-        ));
+        const loadDocs = async () => {
+            try {
+                const res = await getCurriculum();
+                if (res && res.success && Array.isArray(res.curriculum)) {
+                    setCurriculumDocs(res.curriculum.filter(m => 
+                        (m.category === ResourceCategory.DOCUMENT) && 
+                        (m.gradeLevel === 'All Grades' || m.gradeLevel === userGrade || !userGrade)
+                    ));
+                    return;
+                }
+                const all = db.getAllCurriculum();
+                setCurriculumDocs(all.filter(m => 
+                    (m.category === ResourceCategory.DOCUMENT) && 
+                    (m.gradeLevel === 'All Grades' || m.gradeLevel === userGrade || !userGrade)
+                ));
+            } catch {
+                const all = db.getAllCurriculum();
+                setCurriculumDocs(all.filter(m => 
+                    (m.category === ResourceCategory.DOCUMENT) && 
+                    (m.gradeLevel === 'All Grades' || m.gradeLevel === userGrade || !userGrade)
+                ));
+            }
+        };
+        loadDocs();
     }, [userGrade]);
 
     const handleReminderTrigger = (asg: Assignment) => {
@@ -327,15 +366,45 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onUpda
   const [recentCurriculum, setRecentCurriculum] = useState<CurriculumResource[]>([]);
 
   useEffect(() => {
-    const grades = db.getGradesByStudent(user.id);
-    setStudentGrades(grades);
+    const loadOverviewData = async () => {
+      try {
+        const [gradesRes, currRes] = await Promise.all([
+          getGrades().catch(() => null),
+          getCurriculum().catch(() => null)
+        ]);
 
-    const allCurr = db.getAllCurriculum();
-    const studentCurr = allCurr.filter(c => c.gradeLevel === 'All Grades' || c.gradeLevel === user.grade || !user.grade);
-    setRecentCurriculum(studentCurr);
+        if (gradesRes && gradesRes.success && Array.isArray(gradesRes.grades)) {
+          setStudentGrades(gradesRes.grades);
+        } else {
+          setStudentGrades(db.getGradesByStudent(user.id));
+        }
 
-    const count = studentCurr.filter(m => m.category === ResourceCategory.DOCUMENT).length;
-    setAssignmentCount(count);
+        let studentCurr: CurriculumResource[] = [];
+        if (currRes && currRes.success && Array.isArray(currRes.curriculum)) {
+          studentCurr = currRes.curriculum.filter(c => c.gradeLevel === 'All Grades' || c.gradeLevel === user.grade || !user.grade);
+          setRecentCurriculum(studentCurr);
+        } else {
+          const allCurr = db.getAllCurriculum();
+          studentCurr = allCurr.filter(c => c.gradeLevel === 'All Grades' || c.gradeLevel === user.grade || !user.grade);
+          setRecentCurriculum(studentCurr);
+        }
+
+        const count = studentCurr.filter(m => m.category === ResourceCategory.DOCUMENT).length;
+        setAssignmentCount(count);
+      } catch {
+        const grades = db.getGradesByStudent(user.id);
+        setStudentGrades(grades);
+
+        const allCurr = db.getAllCurriculum();
+        const studentCurr = allCurr.filter(c => c.gradeLevel === 'All Grades' || c.gradeLevel === user.grade || !user.grade);
+        setRecentCurriculum(studentCurr);
+
+        const count = studentCurr.filter(m => m.category === ResourceCategory.DOCUMENT).length;
+        setAssignmentCount(count);
+      }
+    };
+
+    loadOverviewData();
 
     // Calculate Academic Rank
     const calculateRank = () => {

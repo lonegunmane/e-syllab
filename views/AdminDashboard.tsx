@@ -11,11 +11,14 @@ import {
 } from 'lucide-react';
 import { User, UserRole, CurriculumResource, ResourceCategory, VaultDocument, DocumentStatus, AuthCredential } from '../types';
 import { db } from '../services/database';
-import { createUserByAdmin, getAllLedgerRecords } from '../services/api';
+import { 
+  createUserByAdmin, getAllLedgerRecords,
+  getCurriculum, addCurriculum as apiAddCurriculum, deleteCurriculum as apiDeleteCurriculum,
+  getVaultDocuments, updateVaultDocumentStatus as apiUpdateVaultStatus
+} from '../services/api';
 import { ProfileSection } from '../components/ProfileSection';
 import { TimetableView } from '../components/TimetableView';
 import { StaffPerformanceDashboard } from '../components/StaffPerformanceDashboard';
-import { TransactionExplorer } from '../components/TransactionExplorer';
 import { AssessmentView } from '../components/AssessmentView';
 import { NotificationSendForm } from '../components/NotificationSendForm';
 
@@ -127,188 +130,6 @@ const LiveNetworkActivity: React.FC = () => {
     );
   };
 
-
-const getSystemSecurityEvents = () => {
-  const events: Array<{ id: string; title: string; category: string; status: string; actor: string; timestamp: string; hash: string; details: string }> = [];
-  
-  try {
-    // 1. Credentials / Logins
-    const creds = db.getTable<AuthCredential>(db.tables.CREDENTIALS) || [];
-    const users = db.getTable<User>(db.tables.USERS) || [];
-    
-    creds.forEach((c, idx) => {
-      const user = users.find(u => u.id === c.userId);
-      if (user) {
-        events.push({
-          id: `SEC-AUTH-${idx + 1}`,
-          title: `${user.role} Identity Verification Check`,
-          category: 'AUTHENTICATION',
-          status: 'OPTIMAL',
-          actor: `${user.name} (${user.role})`,
-          timestamp: c.lastLogin ? new Date(c.lastLogin).toLocaleTimeString() : 'Verified Credential',
-          hash: user.blockchainId ? user.blockchainId.slice(0, 10) : `sol-${user.id.slice(0, 8)}`,
-          details: `Salted credential verification for ${user.email}.`
-        });
-      }
-    });
-
-    // 2. Vault documents
-    const vaultDocs = db.getVaultDocuments() || [];
-    vaultDocs.forEach((d, idx) => {
-      events.push({
-        id: `SEC-VAULT-${idx + 1}`,
-        title: `AES-256 Vault Document Integrity`,
-        category: 'ENCRYPTION',
-        status: d.status === DocumentStatus.APPROVED ? 'OPTIMAL' : 'AUDITED',
-        actor: d.teacherName || 'Faculty',
-        timestamp: new Date(d.createdAt).toLocaleDateString(),
-        hash: d.id.slice(0, 10),
-        details: `Encrypted file checksum validated for ${d.title}. Status: ${d.status}.`
-      });
-    });
-
-    // 3. Grade Ledger Records
-    const grades = db.getTable<any>(db.tables.GRADES) || [];
-    grades.forEach((g: any, idx: number) => {
-      events.push({
-        id: `SEC-GRADE-${idx + 1}`,
-        title: `Academic Grade Record Hash Verification`,
-        category: 'LEDGER',
-        status: 'OPTIMAL',
-        actor: g.studentName || g.studentId || 'Student',
-        timestamp: g.createdAt ? new Date(g.createdAt).toLocaleTimeString() : 'Recorded',
-        hash: g.id ? String(g.id).slice(0, 10) : `grade-${idx}`,
-        details: `Grade score record for subject ${g.subject || 'Academic'}.`
-      });
-    });
-  } catch {
-    // Fallback if db table not ready
-  }
-
-  return events;
-};
-
-const SecurityTracker: React.FC = () => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('ALL');
-  const [statusFilter, setStatusFilter] = useState('ALL');
-
-  const securityEvents = useMemo(() => getSystemSecurityEvents(), []);
-
-  const filteredEvents = useMemo(() => {
-    return securityEvents.filter(e => {
-      const q = searchTerm.toLowerCase().trim();
-      const matchesSearch = 
-        !q ||
-        e.title.toLowerCase().includes(q) ||
-        e.actor.toLowerCase().includes(q) ||
-        e.hash.toLowerCase().includes(q) ||
-        e.details.toLowerCase().includes(q);
-
-      if (!matchesSearch) return false;
-      if (categoryFilter !== 'ALL' && e.category !== categoryFilter) return false;
-      if (statusFilter !== 'ALL' && e.status !== statusFilter) return false;
-      return true;
-    });
-  }, [securityEvents, searchTerm, categoryFilter, statusFilter]);
-
-  return (
-    <div className="space-y-4">
-      {/* Searchbar & Search Filter */}
-      <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Search security checks, hashes, actor..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-8 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 transition-all"
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
-          >
-            <option value="ALL" className="bg-[#1a1635]">All Categories</option>
-            <option value="LEDGER" className="bg-[#1a1635]">Solana Ledger</option>
-            <option value="AUTHENTICATION" className="bg-[#1a1635]">Authentication</option>
-            <option value="ENCRYPTION" className="bg-[#1a1635]">Vault Encryption</option>
-            <option value="SYSTEM" className="bg-[#1a1635]">System Integrity</option>
-          </select>
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
-          >
-            <option value="ALL" className="bg-[#1a1635]">All Statuses</option>
-            <option value="OPTIMAL" className="bg-[#1a1635]">Optimal (Pass)</option>
-            <option value="AUDITED" className="bg-[#1a1635]">Audited</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Security Check Table */}
-      <div className="glass-card rounded-2xl overflow-hidden border border-white/5">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-white/5 text-slate-400 font-bold uppercase tracking-wider">
-              <tr>
-                <th className="px-6 py-3.5">Audit Check & Details</th>
-                <th className="px-6 py-3.5">Category</th>
-                <th className="px-6 py-3.5">Actor / Agent</th>
-                <th className="px-6 py-3.5">Proof Hash</th>
-                <th className="px-6 py-3.5 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {filteredEvents.map((evt) => (
-                <tr key={evt.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-6 py-4">
-                    <div>
-                      <p className="font-bold text-slate-200">{evt.title}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{evt.details}</p>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="px-2 py-0.5 rounded bg-primary-950/50 text-primary-400 border border-primary-500/20 font-mono font-bold text-[9px] uppercase">
-                      {evt.category}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-slate-300 font-medium">{evt.actor}</td>
-                  <td className="px-6 py-4 font-mono text-slate-500 text-[10px]">{evt.hash}</td>
-                  <td className="px-6 py-4 text-right">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/50 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold uppercase">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                      {evt.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {filteredEvents.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">
-                    No security events match search query.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const DocumentTracker: React.FC = () => {
   const [docs, setDocs] = useState<VaultDocument[]>([]);
   const [curriculum, setCurriculum] = useState<CurriculumResource[]>([]);
@@ -317,8 +138,28 @@ const DocumentTracker: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('ALL');
 
   useEffect(() => {
-    setDocs(db.getVaultDocuments());
-    setCurriculum(db.getAllCurriculum());
+    const loadData = async () => {
+      try {
+        const [vaultRes, currRes] = await Promise.all([
+          getVaultDocuments().catch(() => null),
+          getCurriculum().catch(() => null),
+        ]);
+        if (vaultRes && vaultRes.success && Array.isArray(vaultRes.documents)) {
+          setDocs(vaultRes.documents);
+        } else {
+          setDocs(db.getVaultDocuments());
+        }
+        if (currRes && currRes.success && Array.isArray(currRes.curriculum)) {
+          setCurriculum(currRes.curriculum);
+        } else {
+          setCurriculum(db.getAllCurriculum());
+        }
+      } catch {
+        setDocs(db.getVaultDocuments());
+        setCurriculum(db.getAllCurriculum());
+      }
+    };
+    loadData();
   }, []);
 
   const combinedDocs = useMemo(() => {
@@ -785,11 +626,29 @@ const UserManager: React.FC<{ role: UserRole; title: string; onDelete: () => voi
 const VaultApprovals: React.FC = () => {
     const [pendingDocs, setPendingDocs] = useState<VaultDocument[]>([]);
     
+    const loadPending = async () => {
+        try {
+            const res = await getVaultDocuments();
+            if (res && res.success && Array.isArray(res.documents)) {
+                setPendingDocs(res.documents.filter(d => d.status === DocumentStatus.PENDING));
+                return;
+            }
+            setPendingDocs(db.getPendingVaultDocuments());
+        } catch {
+            setPendingDocs(db.getPendingVaultDocuments());
+        }
+    };
+
     useEffect(() => {
-        setPendingDocs(db.getPendingVaultDocuments());
+        loadPending();
     }, []);
 
-    const handleAction = (docId: string, status: DocumentStatus) => {
+    const handleAction = async (docId: string, status: DocumentStatus) => {
+        try {
+            await apiUpdateVaultStatus(docId, status);
+        } catch (err) {
+            console.error('Failed to update vault status via API:', err);
+        }
         db.updateVaultDocumentStatus(docId, status);
         setPendingDocs(prev => prev.filter(d => d.id !== docId));
     };
@@ -827,7 +686,7 @@ const VaultApprovals: React.FC = () => {
                             <th className="px-6 py-4">Faculty Member</th>
                             <th className="px-6 py-4">Classification</th>
                             <th className="px-6 py-4">Evidence Hash</th>
-                            <th className="px-6 py-4 text-right">Authorization</th>
+                            <th className="px-6 py-4 text-right">Approval</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
@@ -918,13 +777,27 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
     const [fileType, setFileType] = useState('');
     const [fileData, setFileData] = useState('');
 
-    useEffect(() => {
-        const all = db.getAllCurriculum();
-        if (filterCategory) {
-            setMaterials(all.filter(m => m.category === filterCategory));
-        } else {
-            setMaterials(all);
+    const loadMaterials = async () => {
+        try {
+            const res = await getCurriculum();
+            if (res && res.success && Array.isArray(res.curriculum)) {
+                if (filterCategory) {
+                    setMaterials(res.curriculum.filter(m => m.category === filterCategory));
+                } else {
+                    setMaterials(res.curriculum);
+                }
+                return;
+            }
+            const all = db.getAllCurriculum();
+            setMaterials(filterCategory ? all.filter(m => m.category === filterCategory) : all);
+        } catch {
+            const all = db.getAllCurriculum();
+            setMaterials(filterCategory ? all.filter(m => m.category === filterCategory) : all);
         }
+    };
+
+    useEffect(() => {
+        loadMaterials();
     }, [filterCategory]);
 
     useEffect(() => {
@@ -981,13 +854,33 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
         URL.revokeObjectURL(url);
     };
 
-    const handleAdd = (e: React.FormEvent) => {
+    const handleAdd = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
             const displayTitle = title || (category === ResourceCategory.ANNOUNCEMENT ? 'Official Announcement' : 'Academic Assignment');
             const displaySubject = category === ResourceCategory.ANNOUNCEMENT ? 'Campus Wide' : subject;
 
+            let createdItem: CurriculumResource | null = null;
+            try {
+                const apiRes = await apiAddCurriculum({
+                    title: displayTitle,
+                    subject: displaySubject,
+                    gradeLevel,
+                    description,
+                    category,
+                    fileName: fileName || undefined,
+                    fileType: fileType || undefined,
+                    fileData: fileData || undefined
+                });
+                if (apiRes && apiRes.resource) {
+                    createdItem = apiRes.resource;
+                }
+            } catch (apiErr) {
+                console.error('Failed to add curriculum via API:', apiErr);
+            }
+
             const newItem = db.addCurriculum({ 
+                id: createdItem?.id,
                 title: displayTitle, 
                 subject: displaySubject, 
                 gradeLevel, 
@@ -1000,7 +893,7 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
                 fileType: fileType || undefined,
                 fileData: fileData || undefined
             });
-            setMaterials([newItem, ...materials]);
+            setMaterials([createdItem || newItem, ...materials]);
             setIsAdding(false);
             setTitle(''); setDescription(''); setFileName(''); setFileType(''); setFileData('');
             if (onUpdate) onUpdate();
@@ -1009,8 +902,13 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
         }
     };
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (window.confirm('Are you sure you want to delete this official curriculum material?')) {
+            try {
+                await apiDeleteCurriculum(id);
+            } catch (err) {
+                console.error('Failed to delete curriculum via API:', err);
+            }
             db.deleteCurriculum(id);
             setMaterials(materials.filter(m => m.id !== id));
             if (onUpdate) onUpdate();
@@ -1204,7 +1102,7 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
 };
 
 
-type MetricType = 'STUDENTS' | 'TEACHERS' | 'ADMINS' | 'SECURITY' | 'DOCUMENTS';
+type MetricType = 'STUDENTS' | 'TEACHERS' | 'ADMINS' | 'DOCUMENTS';
 
 interface MetricTrackerModalProps {
   metric: MetricType | null;
@@ -1240,14 +1138,6 @@ const MetricTrackerModal: React.FC<MetricTrackerModalProps> = ({ metric, onClose
           subtitle: 'Manage administrative users and verify system level controls.',
           icon: ShieldCheck,
           color: 'text-rose-400',
-          tabName: 'overview',
-        };
-      case 'SECURITY':
-        return {
-          title: 'Security Audit & Threat Logs',
-          subtitle: '1,240 Automated on-chain and system cryptographic integrity verifications.',
-          icon: ShieldCheck,
-          color: 'text-amber-400',
           tabName: 'overview',
         };
       case 'DOCUMENTS':
@@ -1304,7 +1194,6 @@ const MetricTrackerModal: React.FC<MetricTrackerModalProps> = ({ metric, onClose
           {metric === 'STUDENTS' && <UserManager role={UserRole.STUDENT} title="Student Directory" onDelete={onDeleteUser} />}
           {metric === 'TEACHERS' && <UserManager role={UserRole.TEACHER} title="Faculty Members" onDelete={onDeleteUser} />}
           {metric === 'ADMINS' && <UserManager role={UserRole.ADMIN} title="System Administrators" onDelete={onDeleteUser} />}
-          {metric === 'SECURITY' && <SecurityTracker />}
           {metric === 'DOCUMENTS' && <DocumentTracker />}
         </div>
 
@@ -1341,15 +1230,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
   const [staffRole, setStaffRole] = useState<UserRole>(UserRole.TEACHER);
   const [staffMsg, setStaffMsg] = useState<{type: 'success'|'error', text: string} | null>(null);
 
-  const refreshCounts = () => {
+  const refreshCounts = async () => {
     setTotalStudents(db.getTotalUsersByRole(UserRole.STUDENT));
     setTotalTeachers(db.getTotalUsersByRole(UserRole.TEACHER));
     setTotalAdmins(db.getTotalUsersByRole(UserRole.ADMIN));
-    setTotalDocuments(db.getAllCurriculum().length);
-    setTotalVaultDocs(db.getVaultDocuments().length);
+    try {
+      const [currRes, vaultRes] = await Promise.all([
+        getCurriculum().catch(() => null),
+        getVaultDocuments().catch(() => null),
+      ]);
+      if (currRes && currRes.success && Array.isArray(currRes.curriculum)) {
+        setTotalDocuments(currRes.curriculum.length);
+      } else {
+        setTotalDocuments(db.getAllCurriculum().length);
+      }
+      if (vaultRes && vaultRes.success && Array.isArray(vaultRes.documents)) {
+        setTotalVaultDocs(vaultRes.documents.length);
+      } else {
+        setTotalVaultDocs(db.getVaultDocuments().length);
+      }
+    } catch {
+      setTotalDocuments(db.getAllCurriculum().length);
+      setTotalVaultDocs(db.getVaultDocuments().length);
+    }
   };
-
-  const totalSecurityLogs = useMemo(() => getSystemSecurityEvents().length, [totalStudents, totalTeachers, totalAdmins, totalVaultDocs]);
 
   useEffect(() => {
     // Refresh to ensure counts are current when switching tabs
@@ -1376,7 +1280,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
           // Ignore if local registration fails or already exists
         }
 
-        setStaffMsg({type: 'success', text: `${staffRole === UserRole.ADMIN ? 'Administrator' : 'Faculty'} credentials successfully provisioned.`});
+        setStaffMsg({type: 'success', text: `${staffRole === UserRole.ADMIN ? 'Administrator' : 'Faculty'} account created successfully.`});
         setStaffName(''); setStaffEmail(''); setStaffPassword('');
         refreshCounts();
     } catch (err: any) { 
@@ -1465,12 +1369,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
       
       {activeTab === 'overview' && (
         <div className="space-y-8 animate-in fade-in">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { id: 'STUDENTS', label: 'Students', value: totalStudents, change: 'Live Growth', icon: GraduationCap, color: 'text-primary-400', bg: 'bg-primary-950/40' },
               { id: 'TEACHERS', label: 'Teachers', value: totalTeachers, change: 'Staffing', icon: Briefcase, color: 'text-emerald-400', bg: 'bg-emerald-950/40' }, 
               { id: 'ADMINS', label: 'Admins', value: `${totalAdmins}/2`, change: 'Limit Control', icon: ShieldCheck, color: 'text-rose-400', bg: 'bg-rose-950/40' },
-              { id: 'SECURITY', label: 'Security', value: totalSecurityLogs, change: totalSecurityLogs > 0 ? 'Active' : 'Empty', icon: ShieldCheck, color: 'text-amber-400', bg: 'bg-amber-950/40' },
               { id: 'DOCUMENTS', label: 'Documents', value: totalVaultDocs, change: 'Live Repo', icon: FileText, color: 'text-primary-400', bg: 'bg-primary-950/40' },
             ].map((kpi, i) => (
               <button
@@ -1584,7 +1487,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
       {activeTab === 'students' && <UserManager role={UserRole.STUDENT} title="Student Directory" onDelete={refreshCounts} />}
       {activeTab === 'profile' && <ProfileSection user={user} onUpdateUser={onUpdateUser} />}
       {activeTab === 'vault' && <VaultApprovals />}
-      {(activeTab === 'explorer' || activeTab === 'ledger') && <TransactionExplorer />}
 
       <MetricTrackerModal 
         metric={selectedMetricTracker} 

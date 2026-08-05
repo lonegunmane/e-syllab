@@ -8,7 +8,7 @@ services:
     rootDir: google-drive-main
     buildCommand: npm install
     startCommand: npm run start
-    healthCheckPath: /health
+    healthCheckPath: /api/blockchain/status
     envVars:
       - key: NODE_ENV
         value: production

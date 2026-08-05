@@ -113,7 +113,6 @@ export const Layout: React.FC<LayoutProps> = ({
       case UserRole.ADMIN:
         return [
           { id: 'overview',       icon: LayoutDashboard, label: 'Home'                                                       },
-          { id: 'explorer',       icon: Database,        label: 'Transaction History'                                        },
           { id: 'timetable',      icon: Calendar,        label: 'Timetable'                                                  },
           { id: 'announcements',  icon: BookOpen,        label: 'Notices'                                                    },
           { id: 'vault',          icon: ShieldCheck,     label: 'Approvals',  badge: pendingVaultCount > 0 ? pendingVaultCount : undefined },

@@ -1,4 +1,4 @@
-import { UserRole } from '../types';
+import { UserRole, GradeRecord, Message, CurriculumResource, VaultDocument, DocumentStatus, ResourceCategory } from '../types';
 
 const API_BASE_URL = "/api";
 
@@ -105,7 +105,7 @@ export async function sendTwoFactorOtp(email: string, purpose: 'LOGIN' | 'REGIST
 
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || "Failed to send 2FA verification code");
+    throw new Error(data.error || "Could not send verification code, please try again.");
   }
 
   return data;
@@ -124,7 +124,7 @@ export async function register(
 
   if (!response.ok) {
     const data = await response.json();
-    throw new Error(data.error || "Registration failed");
+    throw new Error(data.error || "Could not create account, please try again.");
   }
 
   const data = await response.json();
@@ -148,7 +148,7 @@ export async function createUserByAdmin(
 
   if (!response.ok) {
     const data = await response.json();
-    throw new Error(data.error || "User creation failed");
+    throw new Error(data.error || "Could not create user account, please try again.");
   }
 
   return await response.json();
@@ -163,7 +163,7 @@ export async function login(email: string, password: string) {
 
   if (!response.ok) {
     const data = await response.json();
-    throw new Error(data.error || "Login failed");
+    throw new Error(data.error || "That username or password doesn’t look right");
   }
 
   const data = await response.json();
@@ -186,7 +186,7 @@ export async function verifyLoginTwoFactor(email: string, twoFactorCode: string)
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.error || "2FA verification failed");
+    throw new Error(data.error || "That security code isn't right, please try again.");
   }
 
   if (data.token) {
@@ -203,7 +203,7 @@ export async function logout() {
   });
 
   if (!response.ok) {
-    throw new Error("Logout failed");
+    throw new Error("Could not sign out, please try again.");
   }
 
   // Clear the token from localStorage
@@ -223,14 +223,14 @@ export async function getProfile() {
     if (!response.ok) {
       if (response.status === 401) {
         clearToken();
-        return { success: false, error: "Session expired" };
+        return { success: false, error: "Your login has ended, please sign in again" };
       }
-      return { success: false, error: "Failed to load profile" };
+      return { success: false, error: "Could not load profile" };
     }
 
     return response.json();
   } catch (err: any) {
-    return { success: false, error: err?.message || "Failed to fetch" };
+    return { success: false, error: err?.message || "Something went wrong, please try again" };
   }
 }
 
@@ -244,10 +244,10 @@ export async function updateProfile(updates: Record<string, any>) {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
     const data = await response.json();
-    throw new Error(data.error || "Failed to update profile");
+    throw new Error(data.error || "Could not update profile, please try again.");
   }
 
   return response.json();
@@ -263,10 +263,10 @@ export async function resetPassword(newPassword: string) {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
     const data = await response.json();
-    throw new Error(data.error || "Failed to reset password");
+    throw new Error(data.error || "Could not update password, please try again.");
   }
 
   return response.json();
@@ -282,9 +282,9 @@ export async function getBlockchainStatus() {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
-    throw new Error("Failed to get blockchain status");
+    throw new Error("Could not check secure sync status");
   }
 
   return response.json();
@@ -299,9 +299,9 @@ export async function getBlockchainBlockhash() {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
-    throw new Error("Failed to get blockhash");
+    throw new Error("Could not connect to secure network");
   }
 
   return response.json();
@@ -316,9 +316,9 @@ export async function getBlockchainBalance(pubkey: string) {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
-    throw new Error("Failed to get balance");
+    throw new Error("Could not check balance");
   }
 
   return response.json();
@@ -333,13 +333,13 @@ export async function recordAttendanceOnline(data: Record<string, any>) {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
     const errData = await response.json();
-    throw new Error(errData.error || "Failed to record attendance");
+    throw new Error(errData.error || "Could not record attendance, please try again.");
   }
 
   return response.json();
@@ -355,13 +355,13 @@ export async function prepareAttendanceTransaction(data: Record<string, any>) {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
     const data = await response.json();
-    throw new Error(data.error || "Failed to prepare transaction");
+    throw new Error(data.error || "Could not prepare attendance record");
   }
 
   return response.json();
@@ -377,13 +377,13 @@ export async function confirmAttendanceTransaction(data: Record<string, any>) {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
     const data = await response.json();
-    throw new Error(data.error || "Failed to confirm transaction");
+    throw new Error(data.error || "Could not confirm attendance record");
   }
 
   return response.json();
@@ -399,13 +399,13 @@ export async function queueAttendanceRecord(data: Record<string, any>) {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
     const data = await response.json();
-    throw new Error(data.error || "Failed to queue attendance");
+    throw new Error(data.error || "Could not save attendance for later");
   }
 
   return response.json();
@@ -420,9 +420,9 @@ export async function getAttendanceQueue() {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
-    throw new Error("Failed to get attendance queue");
+    throw new Error("Could not load pending attendance");
   }
 
   return response.json();
@@ -437,13 +437,13 @@ export async function removeFromAttendanceQueue(queueId: string) {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
     const data = await response.json();
-    throw new Error(data.error || "Failed to remove from queue");
+    throw new Error(data.error || "Could not remove pending record");
   }
 
   return response.json();
@@ -458,13 +458,13 @@ export async function syncAllAttendance() {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
     const data = await response.json();
-    throw new Error(data.error || "Failed to sync attendance");
+    throw new Error(data.error || "Could not sync attendance records");
   }
 
   return response.json();
@@ -480,10 +480,10 @@ export async function verifyAttendanceHash(data: Record<string, any>) {
   if (!response.ok) {
     if (response.status === 401) {
       clearToken();
-      throw new Error("Session expired. Please login again.");
+      throw new Error("Your login has ended, please sign in again.");
     }
     const data = await response.json();
-    throw new Error(data.error || "Failed to verify hash");
+    throw new Error(data.error || "Could not verify attendance record");
   }
 
   return response.json();
@@ -619,6 +619,179 @@ export async function createSystemNotification(data: {
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Failed to create notification");
+  }
+  return response.json();
+}
+
+// ─── Academic Grades API Methods ─────────────────────────────────────────────
+export async function getGrades(): Promise<{ success: boolean; count: number; grades: GradeRecord[] }> {
+  const response = await authFetch(`${API_BASE_URL}/grades`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch grades");
+  }
+  return response.json();
+}
+
+export async function recordGrade(gradeData: {
+  studentId: string;
+  subject: string;
+  score?: number;
+  grade?: string;
+  feedback?: string;
+  comment?: string;
+  recordedAt?: string;
+}): Promise<{ success: boolean; grade: GradeRecord; message?: string }> {
+  const response = await authFetch(`${API_BASE_URL}/grades`, {
+    method: "POST",
+    body: JSON.stringify(gradeData),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to record grade");
+  }
+  return response.json();
+}
+
+// ─── Messaging API Methods ───────────────────────────────────────────────────
+export async function getMessages(): Promise<{ success: boolean; count: number; messages: Message[] }> {
+  const response = await authFetch(`${API_BASE_URL}/messages`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch messages");
+  }
+  return response.json();
+}
+
+export async function sendMessage(messageData: {
+  recipientId?: string;
+  recipientName?: string;
+  subject?: string;
+  content: string;
+  file?: { name: string; type: string; data: string; size: number };
+}): Promise<{ success: boolean; message: Message }> {
+  const response = await authFetch(`${API_BASE_URL}/messages`, {
+    method: "POST",
+    body: JSON.stringify(messageData),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to send message");
+  }
+  return response.json();
+}
+
+export async function clearMessages(): Promise<{ success: boolean; message?: string }> {
+  const response = await authFetch(`${API_BASE_URL}/messages`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to clear messages");
+  }
+  return response.json();
+}
+
+// ─── Curriculum API Methods ──────────────────────────────────────────────────
+export async function getCurriculum(): Promise<{ success: boolean; count: number; curriculum: CurriculumResource[] }> {
+  const response = await authFetch(`${API_BASE_URL}/curriculum`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch curriculum");
+  }
+  return response.json();
+}
+
+export async function addCurriculum(resourceData: {
+  title: string;
+  subject: string;
+  gradeLevel: string;
+  description?: string;
+  category: ResourceCategory;
+  fileName?: string;
+  fileType?: string;
+  fileData?: string;
+}): Promise<{ success: boolean; resource: CurriculumResource }> {
+  const response = await authFetch(`${API_BASE_URL}/curriculum`, {
+    method: "POST",
+    body: JSON.stringify(resourceData),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to add curriculum material");
+  }
+  return response.json();
+}
+
+export async function deleteCurriculum(id: string): Promise<{ success: boolean; message?: string }> {
+  const response = await authFetch(`${API_BASE_URL}/curriculum/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to delete curriculum material");
+  }
+  return response.json();
+}
+
+// ─── Vault Documents API Methods ─────────────────────────────────────────────
+export async function getVaultDocuments(): Promise<{ success: boolean; count: number; documents: VaultDocument[] }> {
+  const response = await authFetch(`${API_BASE_URL}/vault`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch vault documents");
+  }
+  return response.json();
+}
+
+export async function addVaultDocument(docData: {
+  title: string;
+  type: string;
+  fileName?: string;
+  fileType?: string;
+  fileData?: string;
+}): Promise<{ success: boolean; document: VaultDocument }> {
+  const response = await authFetch(`${API_BASE_URL}/vault`, {
+    method: "POST",
+    body: JSON.stringify(docData),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to submit document to vault");
+  }
+  return response.json();
+}
+
+export async function approveVaultDocument(id: string): Promise<{ success: boolean; document: VaultDocument }> {
+  const response = await authFetch(`${API_BASE_URL}/vault/${encodeURIComponent(id)}/approve`, {
+    method: "PUT",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to approve vault document");
+  }
+  return response.json();
+}
+
+export async function rejectVaultDocument(id: string): Promise<{ success: boolean; document: VaultDocument }> {
+  const response = await authFetch(`${API_BASE_URL}/vault/${encodeURIComponent(id)}/reject`, {
+    method: "PUT",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to reject vault document");
+  }
+  return response.json();
+}
+
+export async function updateVaultDocumentStatus(id: string, status: DocumentStatus): Promise<{ success: boolean; document: VaultDocument }> {
+  const response = await authFetch(`${API_BASE_URL}/vault/${encodeURIComponent(id)}/status`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to update vault document status");
   }
   return response.json();
 }

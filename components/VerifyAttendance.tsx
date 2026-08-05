@@ -52,7 +52,7 @@ export const VerifyAttendance: React.FC = () => {
       } else {
         // If user provided a hash, we'd need to query the DB to find the signature
         // For now, show a message
-        throw new Error('Hash lookup requires backend database query. Please use the transaction signature instead.');
+        throw new Error('Please enter the transaction reference ID to verify.');
       }
 
       // Fetch transaction from Solana
@@ -62,7 +62,7 @@ export const VerifyAttendance: React.FC = () => {
       });
 
       if (!tx) {
-        throw new Error('Transaction not found on Solana Devnet. It may be too old or the signature is invalid.');
+        throw new Error('Record not found. It may be too recent or the ID is incorrect.');
       }
 
       // Extract memo data from transaction logs
@@ -71,7 +71,7 @@ export const VerifyAttendance: React.FC = () => {
       );
 
       if (!memoLog) {
-        throw new Error('No E-SYLLAB attendance memo found in this transaction.');
+        throw new Error('No attendance record found in this entry.');
       }
 
       // Parse memo JSON from log
@@ -129,10 +129,10 @@ export const VerifyAttendance: React.FC = () => {
       <div>
         <h2 className="text-xl font-bold text-white flex items-center gap-2">
           <Shield className="w-5 h-5 text-primary-400" />
-          Verify On-Chain Integrity
+          Verify Record Integrity
         </h2>
         <p className="text-slate-400 text-sm mt-0.5">
-          Independently verify any attendance record against the Solana blockchain.
+          Independently check and verify any attendance record on the secure network.
         </p>
       </div>
 
@@ -147,7 +147,7 @@ export const VerifyAttendance: React.FC = () => {
                 : 'bg-white/5 text-slate-400 hover:text-white'
             }`}
           >
-            Transaction Signature
+            Record Reference ID
           </button>
           <button
             onClick={() => setInputType('hash')}
@@ -157,14 +157,14 @@ export const VerifyAttendance: React.FC = () => {
                 : 'bg-white/5 text-slate-400 hover:text-white'
             }`}
           >
-            Offline Hash
+            Record Security Code
           </button>
         </div>
 
         <div className="space-y-4">
           <div>
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
-              {inputType === 'signature' ? 'Solana Transaction Signature' : 'SHA-256 Offline Hash'}
+              {inputType === 'signature' ? 'Transaction Reference ID' : 'Security Record Code'}
             </label>
             <div className="relative mt-1">
               <input
@@ -173,8 +173,8 @@ export const VerifyAttendance: React.FC = () => {
                 onChange={e => setInputValue(e.target.value)}
                 placeholder={
                   inputType === 'signature'
-                    ? '5xV... (base58 encoded signature)'
-                    : '7ab5c8e... (64-character hex hash)'
+                    ? '5xV... (reference ID)'
+                    : '7ab5c8e... (security code)'
                 }
                 className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono outline-none focus:border-primary-500 transition-colors placeholder:text-slate-600"
               />
@@ -187,13 +187,13 @@ export const VerifyAttendance: React.FC = () => {
           {inputType === 'signature' && (
             <div>
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
-                Expected Offline Hash (optional — for integrity check)
+                Expected Security Code (optional — for extra verification)
               </label>
               <input
                 type="text"
                 value={expectedHash}
                 onChange={e => setExpectedHash(e.target.value)}
-                placeholder="Paste the offline hash to verify it matches the on-chain record"
+                placeholder="Paste the security code to confirm matching record"
                 className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono outline-none focus:border-primary-500 transition-colors placeholder:text-slate-600 mt-1"
               />
             </div>
@@ -205,9 +205,9 @@ export const VerifyAttendance: React.FC = () => {
             className="w-full py-3 bg-primary-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary-700 transition-all active:scale-95 shadow-lg shadow-primary-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isVerifying ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Querying Solana Devnet…</>
+              <><Loader2 className="w-4 h-4 animate-spin" /> Checking secure network…</>
             ) : (
-              <><Search className="w-4 h-4" /> Verify on Blockchain</>
+              <><Search className="w-4 h-4" /> Verify Record</>
             )}
           </button>
         </div>
@@ -228,7 +228,7 @@ export const VerifyAttendance: React.FC = () => {
             )}
             <div className="flex-1 min-w-0">
               <p className={`font-bold text-sm ${result.valid ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {result.valid ? '✅ Record Verified on Solana Devnet!' : '❌ Verification Failed'}
+                {result.valid ? '✅ Record Verified Successfully!' : '❌ Verification Failed'}
               </p>
 
               {result.error && (
