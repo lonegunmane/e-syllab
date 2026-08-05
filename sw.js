@@ -1,8 +1,8 @@
 /**
- * E-SYLLAB Service Worker — sw.js (v6 — bulletproof)
+ * E-SYLLAB Service Worker — sw.js (v7 — PWA Active & Verifiable)
  */
 
-const CACHE_NAME = 'esyllab-v6';
+const CACHE_NAME = 'esyllab-v7';
 const SYNC_TAG   = 'esyllab-attendance-sync';
 const MAX_RETRIES = 5;
 const DB_NAME    = 'esyllab-sync-db';
@@ -58,8 +58,7 @@ async function dbCount() {
 // ─── Install ──────────────────────────────────────────────────────────────────
 
 self.addEventListener('install', event => {
-  console.log('[SW v6] Installing');
-  self.skipWaiting();
+  console.log('[SW v7] Installing new version');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => cache.addAll(['./', './index.html']).catch(() => {}))
@@ -69,7 +68,7 @@ self.addEventListener('install', event => {
 // ─── Activate ─────────────────────────────────────────────────────────────────
 
 self.addEventListener('activate', event => {
-  console.log('[SW v6] Activating — clearing old caches');
+  console.log('[SW v7] Activating — clearing old caches');
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
@@ -119,23 +118,23 @@ self.addEventListener('fetch', event => {
 // ─── Background Sync ──────────────────────────────────────────────────────────
 
 self.addEventListener('sync', event => {
-  console.log('[SW v6] Sync event:', event.tag);
+  console.log('[SW v7] Sync event:', event.tag);
   if (event.tag === SYNC_TAG) event.waitUntil(runSync());
 });
 
 async function runSync() {
   let records;
   try { records = await dbGetAll(); }
-  catch (e) { console.error('[SW v6] IndexedDB read failed:', e); return; }
+  catch (e) { console.error('[SW v7] IndexedDB read failed:', e); return; }
 
-  if (!records.length) { console.log('[SW v6] Nothing to sync'); return; }
+  if (!records.length) { console.log('[SW v7] Nothing to sync'); return; }
 
-  console.log(`[SW v6] Syncing ${records.length} record(s)...`);
+  console.log(`[SW v7] Syncing ${records.length} record(s)...`);
   let synced = 0;
 
   for (const item of records) {
     if ((item.retries || 0) >= MAX_RETRIES) {
-      console.warn('[SW v6] Giving up on', item.id);
+      console.warn('[SW v7] Giving up on', item.id);
       await dbDelete(item.id).catch(() => {});
       continue;
     }
@@ -149,7 +148,7 @@ async function runSync() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Server error');
 
-      console.log('[SW v6] ✓ Synced:', item.staffId, item.date);
+      console.log('[SW v7] ✓ Synced:', item.staffId, item.date);
       await dbDelete(item.id);
       synced++;
       notifyClients({
@@ -158,7 +157,7 @@ async function runSync() {
         signature: data.signature, slot: data.slot, explorerUrl: data.explorerUrl,
       });
     } catch (err) {
-      console.warn('[SW v6] ✗ Failed:', item.id, err.message);
+      console.warn('[SW v7] ✗ Failed:', item.id, err.message);
       await dbPut({ ...item, retries: (item.retries||0)+1, lastAttempt: new Date().toISOString() }).catch(()=>{});
       throw err; // rethrow → browser will retry
     }
@@ -180,7 +179,13 @@ async function notifyClients(msg) {
 
 self.addEventListener('message', async event => {
   const { type, payload } = event.data || {};
-  console.log('[SW v6] Message:', type);
+  console.log('[SW v7] Message:', type);
+
+  if (type === 'SKIP_WAITING') {
+    console.log('[SW v7] Received SKIP_WAITING signal — taking control');
+    self.skipWaiting();
+    return;
+  }
 
   if (type === 'QUEUE_ATTENDANCE') {
     try {
@@ -193,14 +198,14 @@ self.addEventListener('message', async event => {
       });
       if ('sync' in self.registration) {
         await self.registration.sync.register(SYNC_TAG);
-        console.log('[SW v6] Background sync registered');
+        console.log('[SW v7] Background sync registered');
       } else {
         // Older browser fallback
-        runSync().catch(e => console.warn('[SW v6] Fallback sync failed:', e.message));
+        runSync().catch(e => console.warn('[SW v7] Fallback sync failed:', e.message));
       }
       event.ports[0]?.postMessage({ success: true });
     } catch (err) {
-      console.error('[SW v6] Queue failed:', err);
+      console.error('[SW v7] Queue failed:', err);
       event.ports[0]?.postMessage({ success: false, error: err.message });
     }
     return;
@@ -213,7 +218,7 @@ self.addEventListener('message', async event => {
   }
 
   if (type === 'FORCE_SYNC') {
-    runSync().catch(e => console.warn('[SW v6] Force sync error:', e.message));
+    runSync().catch(e => console.warn('[SW v7] Force sync error:', e.message));
     event.ports[0]?.postMessage({ triggered: true });
     return;
   }

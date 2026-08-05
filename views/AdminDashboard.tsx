@@ -16,6 +16,7 @@ import {
   getCurriculum, addCurriculum as apiAddCurriculum, deleteCurriculum as apiDeleteCurriculum,
   getVaultDocuments, updateVaultDocumentStatus as apiUpdateVaultStatus
 } from '../services/api';
+import { SettingsView } from '../components/SettingsView';
 import { ProfileSection } from '../components/ProfileSection';
 import { TimetableView } from '../components/TimetableView';
 import { StaffPerformanceDashboard } from '../components/StaffPerformanceDashboard';
@@ -38,6 +39,7 @@ interface AdminDashboardProps {
   onUpdateUser: (user: User) => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  onLogout?: () => void;
 }
 
 const AnimatedCounter: React.FC<{ value: number }> = ({ value }) => {
@@ -1216,7 +1218,7 @@ const MetricTrackerModal: React.FC<MetricTrackerModalProps> = ({ metric, onClose
 };
 
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUser, activeTab, setActiveTab }) => {
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUser, activeTab, setActiveTab, onLogout }) => {
   const [totalStudents, setTotalStudents] = useState(0);
   const [totalTeachers, setTotalTeachers] = useState(0);
   const [totalAdmins, setTotalAdmins] = useState(0);
@@ -1485,7 +1487,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
         </div>
       )}
       {activeTab === 'students' && <UserManager role={UserRole.STUDENT} title="Student Directory" onDelete={refreshCounts} />}
-      {activeTab === 'profile' && <ProfileSection user={user} onUpdateUser={onUpdateUser} />}
+      {(activeTab === 'profile' || activeTab === 'settings') && <SettingsView user={user} onUpdateUser={onUpdateUser} onLogout={onLogout} />}
       {activeTab === 'vault' && <VaultApprovals />}
 
       <MetricTrackerModal 

@@ -6,8 +6,10 @@ import bcrypt from 'bcryptjs';
 import { encryptField, decryptField } from './encryption';
 import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential, TimetableEntry, Assessment, AssessmentScore, SystemNotification } from '../types';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const dbPath = path.join(process.cwd(), 'data', 'esylab.db');
+const dbPath = path.join(__dirname, '..', 'data', 'esylab.db');
 
 // Ensure data directory exists
 const dataDir = path.dirname(dbPath);
@@ -230,6 +232,21 @@ export const serverDb = {
         relatedId TEXT,
         read INTEGER DEFAULT 0,
         createdAt TEXT NOT NULL,
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Sessions table
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        userId TEXT NOT NULL,
+        token TEXT,
+        deviceInfo TEXT NOT NULL,
+        ipAddress TEXT NOT NULL,
+        loginAt TEXT NOT NULL,
+        lastActiveAt TEXT NOT NULL,
+        revoked INTEGER DEFAULT 0,
         FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
@@ -500,11 +517,25 @@ export const serverDb = {
   },
 
   deleteUser(userId: string): void {
-    const stmt = sqlDb.prepare('DELETE FROM users WHERE id = ?');
-    stmt.bind([userId]);
-    stmt.step();
-    stmt.free();
-    this.save();
+    try {
+      const credStmt = sqlDb.prepare('DELETE FROM auth_credentials WHERE userId = ?');
+      credStmt.bind([userId]);
+      credStmt.step();
+      credStmt.free();
+
+      const sessStmt = sqlDb.prepare('DELETE FROM sessions WHERE userId = ?');
+      sessStmt.bind([userId]);
+      sessStmt.step();
+      sessStmt.free();
+
+      const stmt = sqlDb.prepare('DELETE FROM users WHERE id = ?');
+      stmt.bind([userId]);
+      stmt.step();
+      stmt.free();
+      this.save();
+    } catch (e) {
+      console.error('[serverDb] Error deleting user:', e);
+    }
   },
 
   // ─── Authentication ────────────────────────────────────────────────────────
@@ -1545,10 +1576,107 @@ export const serverDb = {
     return true;
   },
 
+  // ─── Sessions Management ───────────────────────────────────────────────────
+  createSession(userId: string, deviceInfo: string, ipAddress: string, token?: string): any {
+    const id = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const now = new Date().toISOString();
+    const stmt = sqlDb.prepare(`
+      INSERT INTO sessions (id, userId, token, deviceInfo, ipAddress, loginAt, lastActiveAt, revoked)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+    `);
+    stmt.bind([id, userId, token || null, deviceInfo, ipAddress, now, now]);
+    stmt.step();
+    stmt.free();
+    this.save();
+
+    return {
+      id,
+      userId,
+      token,
+      deviceInfo,
+      ipAddress,
+      loginAt: now,
+      lastActiveAt: now,
+      revoked: false
+    };
+  },
+
+  getUserSessions(userId: string): any[] {
+    const stmt = sqlDb.prepare('SELECT * FROM sessions WHERE userId = ? AND revoked = 0 ORDER BY lastActiveAt DESC');
+    stmt.bind([userId]);
+    const sessions: any[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      sessions.push({
+        id: row.id as string,
+        userId: row.userId as string,
+        token: (row.token as string) || undefined,
+        deviceInfo: row.deviceInfo as string,
+        ipAddress: row.ipAddress as string,
+        loginAt: row.loginAt as string,
+        lastActiveAt: row.lastActiveAt as string,
+        revoked: Boolean(row.revoked)
+      });
+    }
+    stmt.free();
+    return sessions;
+  },
+
+  getSessionById(sessionId: string): any | null {
+    const stmt = sqlDb.prepare('SELECT * FROM sessions WHERE id = ?');
+    stmt.bind([sessionId]);
+    if (!stmt.step()) {
+      stmt.free();
+      return null;
+    }
+    const row = stmt.getAsObject();
+    stmt.free();
+    return {
+      id: row.id as string,
+      userId: row.userId as string,
+      token: (row.token as string) || undefined,
+      deviceInfo: row.deviceInfo as string,
+      ipAddress: row.ipAddress as string,
+      loginAt: row.loginAt as string,
+      lastActiveAt: row.lastActiveAt as string,
+      revoked: Boolean(row.revoked)
+    };
+  },
+
+  revokeSession(sessionId: string, userId?: string): any | null {
+    const session = this.getSessionById(sessionId);
+    if (!session) return null;
+    if (userId && session.userId !== userId) return null;
+
+    const stmt = sqlDb.prepare('UPDATE sessions SET revoked = 1 WHERE id = ?');
+    stmt.bind([sessionId]);
+    stmt.step();
+    stmt.free();
+    this.save();
+
+    return session;
+  },
+
+  revokeAllUserSessions(userId: string): void {
+    const stmt = sqlDb.prepare('UPDATE sessions SET revoked = 1 WHERE userId = ?');
+    stmt.bind([userId]);
+    stmt.step();
+    stmt.free();
+    this.save();
+  },
+
+  updateSessionActivity(sessionId: string): void {
+    const now = new Date().toISOString();
+    const stmt = sqlDb.prepare('UPDATE sessions SET lastActiveAt = ? WHERE id = ?');
+    stmt.bind([now, sessionId]);
+    stmt.step();
+    stmt.free();
+    this.save();
+  },
+
   // ─── Database Cleanup ──────────────────────────────────────────────────────
   close(): void {
     // sql.js doesn't need explicit closing, but save final state
     this.save();
   },
 };
-

@@ -12,6 +12,7 @@ import {
   getCurriculum, addCurriculum as apiAddCurriculum, deleteCurriculum as apiDeleteCurriculum,
   getVaultDocuments, addVaultDocument as apiAddVaultDocument 
 } from '../services/api';
+import { SettingsView } from '../components/SettingsView';
 import { ProfileSection } from '../components/ProfileSection';
 import { BlockchainAttendance } from '../components/BlockchainAttendance';
 import { TimetableView } from '../components/TimetableView';
@@ -23,6 +24,7 @@ interface TeacherDashboardProps {
   onUpdateUser: (user: User) => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  onLogout?: () => void;
 }
 
 const DetailedStudentList: React.FC = () => {
@@ -447,7 +449,7 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
 
 
 
-export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onUpdateUser, activeTab, setActiveTab }) => {
+export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onUpdateUser, activeTab, setActiveTab, onLogout }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [vaultDocs, setVaultDocs] = useState<VaultDocument[]>([]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -655,7 +657,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onUpda
       {activeTab === 'assessments' && <AssessmentView currentUser={user} />}
       {activeTab === 'students' && <DetailedStudentList />}
       {activeTab === 'attendance' && <BlockchainAttendance user={user} />}
-      {activeTab === 'profile' && <ProfileSection user={user} onUpdateUser={onUpdateUser} />}
+      {(activeTab === 'profile' || activeTab === 'settings') && <SettingsView user={user} onUpdateUser={onUpdateUser} onLogout={onLogout} />}
     </div>
   );
 };

@@ -7,6 +7,7 @@ import { User, LocalNotification, Assignment, UserRole, SystemNotification } fro
 import { notificationService } from '../services/notificationService';
 import { db } from '../services/database';
 import { getSystemNotifications, markSystemNotificationRead } from '../services/api';
+import { getNotificationPreferences, NotificationPreferences } from '../services/settingsService';
 
 interface NotificationCenterProps {
   user: User;
@@ -27,6 +28,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   const [filter, setFilter] = useState<'ALL' | 'UNREAD' | 'DEADLINES'>('ALL');
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [showCreateAssignment, setShowCreateAssignment] = useState(false);
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>(() => getNotificationPreferences(user.id));
 
   // New assignment form state (for teachers/admins)
   const [title, setTitle] = useState('');
@@ -38,6 +40,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   const [creationStatus, setCreationStatus] = useState<string | null>(null);
 
   const loadData = () => {
+    setNotifPrefs(getNotificationPreferences(user.id));
     // Check deadlines first
     notificationService.checkUpcomingDeadlines(user);
     const notifs = notificationService.getNotifications(user.id);
@@ -62,6 +65,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   useEffect(() => {
     const handleUpdate = () => {
+      setNotifPrefs(getNotificationPreferences(user.id));
       const notifs = notificationService.getNotifications(user.id);
       setNotifications(notifs);
       getSystemNotifications().then(res => {
@@ -72,7 +76,11 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     };
 
     window.addEventListener('esylab_notification_update', handleUpdate);
-    return () => window.removeEventListener('esylab_notification_update', handleUpdate);
+    window.addEventListener('esyllab_preferences_update', handleUpdate);
+    return () => {
+      window.removeEventListener('esylab_notification_update', handleUpdate);
+      window.removeEventListener('esyllab_preferences_update', handleUpdate);
+    };
   }, [user.id]);
 
   const handleRequestPermission = async () => {
@@ -159,20 +167,39 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   if (!isOpen) return null;
 
-  const filteredNotifications = notifications.filter(n => {
+  // Filter based on user preferences and view filter
+  const allowedNotifications = notifications.filter(n => {
+    if (n.type === 'ASSIGNMENT_DUE' || n.type === 'ASSIGNMENT_NEW' || n.type === 'OVERDUE_ALERT') {
+      return notifPrefs.deadlines;
+    }
+    if (n.type === 'SYSTEM_ALERT') {
+      return notifPrefs.general;
+    }
+    return true;
+  });
+
+  const allowedSystemNotifications = systemNotifications.filter(n => {
+    if (n.type === 'deadline') return notifPrefs.deadlines;
+    if (n.type === 'meeting') return notifPrefs.meetings;
+    if (n.type === 'misconduct') return notifPrefs.misconduct;
+    if (n.type === 'general') return notifPrefs.general;
+    return true;
+  });
+
+  const filteredNotifications = allowedNotifications.filter(n => {
     if (filter === 'UNREAD') return !n.read;
     if (filter === 'DEADLINES') return n.type === 'ASSIGNMENT_DUE' || n.type === 'OVERDUE_ALERT';
     return true;
   });
 
-  const filteredSystemNotifications = systemNotifications.filter(n => {
+  const filteredSystemNotifications = allowedSystemNotifications.filter(n => {
     if (filter === 'UNREAD') return !n.read;
     if (filter === 'DEADLINES') return n.type === 'deadline';
     return true;
   });
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-  const unreadSystemCount = systemNotifications.filter(n => !n.read).length;
+  const unreadCount = allowedNotifications.filter(n => !n.read).length;
+  const unreadSystemCount = allowedSystemNotifications.filter(n => !n.read).length;
   const totalUnreadCount = unreadCount + unreadSystemCount;
 
   return (

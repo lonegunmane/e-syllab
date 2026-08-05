@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard, BookOpen, FileText, Settings,
   LogOut, Bell, Menu, X, Users, CheckSquare,
-  TrendingUp, Camera, Pencil, Loader2, CheckCircle,
+  TrendingUp, Loader2, CheckCircle,
   XCircle, MessageSquare, ShieldCheck, Save, Calendar, Database,
   BarChart2,
 } from 'lucide-react';
@@ -11,6 +11,7 @@ import { db } from '../services/database';
 import { notificationService } from '../services/notificationService';
 import { NotificationCenter } from './NotificationCenter';
 import { getSystemNotifications } from '../services/api';
+import { getNotificationPreferences } from '../services/settingsService';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -33,12 +34,6 @@ export const Layout: React.FC<LayoutProps> = ({
   children, user, onLogout, onUpdateUser, activeTab, onTabChange,
 }) => {
   const [sidebarOpen, setSidebarOpen]           = useState(false);
-  const [isAvatarEditing, setIsAvatarEditing]   = useState(false);
-  const [avatarPreview, setAvatarPreview]       = useState<string | null>(user.avatar);
-  const [avatarFile, setAvatarFile]             = useState<File | null>(null);
-  const [avatarUploadLoading, setAvatarUploadLoading] = useState(false);
-  const [avatarUploadMessage, setAvatarUploadMessage] = useState<{type:'success'|'error';text:string}|null>(null);
-
   const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
   const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
   const [unreadServerNotifsCount, setUnreadServerNotifsCount] = useState(0);
@@ -46,15 +41,37 @@ export const Layout: React.FC<LayoutProps> = ({
   const unreadCurriculumCount = db.getUnreadCurriculumCount(user);
 
   const updateNotifCount = () => {
+    const prefs = getNotificationPreferences(user.id);
     notificationService.checkUpcomingDeadlines(user);
     const notifs = notificationService.getNotifications(user.id);
-    setUnreadNotifsCount(notifs.filter(n => !n.read).length);
+    const filteredLocal = notifs.filter(n => {
+      if (!n.read) {
+        if (n.type === 'ASSIGNMENT_DUE' || n.type === 'ASSIGNMENT_NEW' || n.type === 'OVERDUE_ALERT') {
+          return prefs.deadlines;
+        }
+        if (n.type === 'SYSTEM_ALERT') {
+          return prefs.general;
+        }
+        return true;
+      }
+      return false;
+    });
+    setUnreadNotifsCount(filteredLocal.length);
 
     getSystemNotifications()
       .then(res => {
         if (res.success && Array.isArray(res.notifications)) {
-          const unreadCount = res.notifications.filter((n: any) => !n.read).length;
-          setUnreadServerNotifsCount(unreadCount);
+          const filteredServer = res.notifications.filter((n: any) => {
+            if (!n.read) {
+              if (n.type === 'deadline') return prefs.deadlines;
+              if (n.type === 'meeting') return prefs.meetings;
+              if (n.type === 'misconduct') return prefs.misconduct;
+              if (n.type === 'general') return prefs.general;
+              return true;
+            }
+            return false;
+          });
+          setUnreadServerNotifsCount(filteredServer.length);
         }
       })
       .catch(() => {});
@@ -68,10 +85,12 @@ export const Layout: React.FC<LayoutProps> = ({
 
     const handleUpdate = () => updateNotifCount();
     window.addEventListener('esylab_notification_update', handleUpdate);
+    window.addEventListener('esyllab_preferences_update', handleUpdate);
 
     return () => {
       clearInterval(timer);
       window.removeEventListener('esylab_notification_update', handleUpdate);
+      window.removeEventListener('esyllab_preferences_update', handleUpdate);
     };
   }, [user]);
 
@@ -132,39 +151,6 @@ export const Layout: React.FC<LayoutProps> = ({
 
   // Bottom nav shows the first 5 most important items on mobile
   const bottomNavItems = navItems.slice(0, 5);
-
-  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      const file = e.target.files[0];
-      setAvatarFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => setAvatarPreview(reader.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSaveAvatar = async () => {
-    if (!avatarFile || !user) return;
-    setAvatarUploadLoading(true);
-    setAvatarUploadMessage(null);
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      try {
-        const base64 = reader.result as string;
-        await new Promise(r => setTimeout(r, 500));
-        const updated = db.updateUserProfile(user.id, { avatar: base64 });
-        if (updated) {
-          onUpdateUser(updated);
-          setAvatarUploadMessage({ type: 'success', text: 'Profile picture updated!' });
-          setIsAvatarEditing(false);
-          setAvatarFile(null);
-        } else throw new Error('User not found.');
-      } catch (err: any) {
-        setAvatarUploadMessage({ type: 'error', text: err.message || 'Failed to update.' });
-      } finally { setAvatarUploadLoading(false); }
-    };
-    reader.readAsDataURL(avatarFile);
-  };
 
   return (
     <div className="min-h-screen flex">
@@ -275,55 +261,17 @@ export const Layout: React.FC<LayoutProps> = ({
                 <p className="text-sm font-semibold text-white leading-none">{user.name}</p>
                 <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mt-0.5 capitalize">{user.role}</p>
               </div>
-              <button onClick={() => setIsAvatarEditing(!isAvatarEditing)} className="relative block rounded-full bg-slate-950/90 border border-white/10 p-0.5 focus:outline-none group">
+              <button 
+                onClick={() => onTabChange('profile')} 
+                className="relative block rounded-full bg-slate-950/90 border border-white/10 p-0.5 focus:outline-none group cursor-pointer hover:border-primary-500 transition-all"
+                title="Go to Profile & Settings"
+              >
                 <img
                   src={user.avatar}
                   className="w-9 h-9 rounded-full object-cover border-2 border-white/10 group-hover:border-primary-500 transition-all shadow-lg"
-                  alt="Avatar"
+                  alt={user.name}
                 />
-                <div className="absolute -bottom-1 -right-1 p-1 bg-primary-600 rounded-full text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Pencil className="w-2.5 h-2.5" />
-                </div>
               </button>
-
-              {/* Avatar edit dropdown */}
-              {isAvatarEditing && (
-                <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900/95 border border-white/10 shadow-lg p-4 rounded-xl z-40 animate-in fade-in slide-in-from-top-1">
-                  <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
-                    <Camera className="w-4 h-4 text-primary-400" /> Change Profile Picture
-                  </h3>
-                  {avatarUploadMessage && (
-                    <div className={`text-xs p-2 rounded-lg mb-3 border ${
-                      avatarUploadMessage.type === 'success'
-                        ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/20'
-                        : 'bg-rose-950/40 text-rose-400 border-rose-500/20'
-                    }`}>
-                      {avatarUploadMessage.text}
-                    </div>
-                  )}
-                  <div className="flex flex-col items-center gap-3 mb-4">
-                    <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-white/10 shadow-xl">
-                      <img src={avatarPreview || user.avatar} className="w-full h-full object-cover" alt="preview" />
-                    </div>
-                    <input
-                      type="file" accept="image/*" onChange={handleAvatarFileChange}
-                      className="text-[10px] w-full text-slate-400 file:bg-white/5 file:border-white/10 file:text-slate-300 file:rounded-lg file:px-2 file:py-1 file:mr-2 hover:file:bg-white/10 cursor-pointer"
-                    />
-                  </div>
-                  <div className="flex gap-2 justify-end pt-3 border-t border-white/5">
-                    <button onClick={() => setIsAvatarEditing(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:bg-white/5 rounded-lg transition-colors">
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveAvatar}
-                      disabled={avatarUploadLoading || !avatarFile}
-                      className="px-4 py-1.5 bg-primary-600 text-white text-xs font-bold rounded-lg hover:bg-primary-700 disabled:opacity-50 shadow-lg transition-all active:scale-95"
-                    >
-                      {avatarUploadLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </header>

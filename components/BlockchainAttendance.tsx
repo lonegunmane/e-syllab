@@ -63,10 +63,10 @@ function friendlyError(err: any): string {
   console.error('[Attendance] Error:', err);
 
   if (msg.includes('faucet') || msg.toLowerCase().includes('lamport') || msg.toLowerCase().includes('insufficient'))
-    return 'The school signing account needs to be funded. Please contact your IT administrator.';
+    return 'The school record system needs a quick check by your administrator.';
   if (msg.toLowerCase().includes('fetch') || msg.toLowerCase().includes('network') || msg.includes('ECONNREFUSED'))
-    return 'Cannot reach the server. Check your internet connection and try again.';
-  return msg || 'Something went wrong. Please try again or contact your IT support if it keeps failing.';
+    return 'Cannot reach the server. Please check your internet connection and try again.';
+  return 'Something went wrong saving this — please try again or check with your teacher or admin.';
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
       if (!queueData.success || queueData.count === 0) return;
 
       setSyncStatus('syncing');
-      setSyncMessage(`Syncing ${queueData.count} offline record${queueData.count > 1 ? 's' : ''} to blockchain…`);
+      setSyncMessage(`Syncing ${queueData.count} offline record${queueData.count > 1 ? 's' : ''} securely…`);
 
       const syncRes = await syncAllAttendance();
       if (syncRes.success && syncRes.synced > 0) {
@@ -322,8 +322,8 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
             <p className="text-sm font-bold text-white">{user.name}</p>
           </div>
         </div>
-        <span className="px-2 py-0.5 bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-full">
-          School Keypair Active
+        <span className="px-2.5 py-1 bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold rounded-full">
+          Secure &amp; Ready
         </span>
       </div>
 

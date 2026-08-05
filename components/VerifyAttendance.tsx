@@ -129,10 +129,10 @@ export const VerifyAttendance: React.FC = () => {
       <div>
         <h2 className="text-xl font-bold text-white flex items-center gap-2">
           <Shield className="w-5 h-5 text-primary-400" />
-          Verify Record Integrity
+          Check Record Authenticity
         </h2>
         <p className="text-slate-400 text-sm mt-0.5">
-          Independently check and verify any attendance record on the secure network.
+          Confirm that an attendance record is genuine and has not been altered.
         </p>
       </div>
 
@@ -147,7 +147,7 @@ export const VerifyAttendance: React.FC = () => {
                 : 'bg-white/5 text-slate-400 hover:text-white'
             }`}
           >
-            Record Reference ID
+            Record Reference Number
           </button>
           <button
             onClick={() => setInputType('hash')}
@@ -164,7 +164,7 @@ export const VerifyAttendance: React.FC = () => {
         <div className="space-y-4">
           <div>
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
-              {inputType === 'signature' ? 'Transaction Reference ID' : 'Security Record Code'}
+              {inputType === 'signature' ? 'Record Reference Number' : 'Security Record Code'}
             </label>
             <div className="relative mt-1">
               <input
@@ -173,7 +173,7 @@ export const VerifyAttendance: React.FC = () => {
                 onChange={e => setInputValue(e.target.value)}
                 placeholder={
                   inputType === 'signature'
-                    ? '5xV... (reference ID)'
+                    ? '5xV... (reference number)'
                     : '7ab5c8e... (security code)'
                 }
                 className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono outline-none focus:border-primary-500 transition-colors placeholder:text-slate-600"
@@ -187,13 +187,13 @@ export const VerifyAttendance: React.FC = () => {
           {inputType === 'signature' && (
             <div>
               <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
-                Expected Security Code (optional — for extra verification)
+                Security Code to Check (optional)
               </label>
               <input
                 type="text"
                 value={expectedHash}
                 onChange={e => setExpectedHash(e.target.value)}
-                placeholder="Paste the security code to confirm matching record"
+                placeholder="Paste the security code to confirm this record matches"
                 className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono outline-none focus:border-primary-500 transition-colors placeholder:text-slate-600 mt-1"
               />
             </div>
@@ -205,9 +205,9 @@ export const VerifyAttendance: React.FC = () => {
             className="w-full py-3 bg-primary-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary-700 transition-all active:scale-95 shadow-lg shadow-primary-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isVerifying ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /> Checking secure network…</>
+              <><Loader2 className="w-4 h-4 animate-spin" /> Checking record authenticity…</>
             ) : (
-              <><Search className="w-4 h-4" /> Verify Record</>
+              <><Search className="w-4 h-4" /> Confirm Record is Authentic</>
             )}
           </button>
         </div>
@@ -228,7 +228,7 @@ export const VerifyAttendance: React.FC = () => {
             )}
             <div className="flex-1 min-w-0">
               <p className={`font-bold text-sm ${result.valid ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {result.valid ? '✅ Record Verified Successfully!' : '❌ Verification Failed'}
+                {result.valid ? '✅ Record Confirmed Authentic!' : '❌ Could Not Verify Record'}
               </p>
 
               {result.error && (
@@ -243,14 +243,14 @@ export const VerifyAttendance: React.FC = () => {
                   {/* Signature */}
                   <div className="flex items-center gap-2 text-xs">
                     <Hash className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="text-slate-400">Signature:</span>
+                    <span className="text-slate-400">Record ID:</span>
                     <span className="font-mono text-emerald-300 truncate">{result.signature}</span>
                   </div>
 
                   {/* Slot */}
                   <div className="flex items-center gap-2 text-xs">
                     <Database className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="text-slate-400">PoH Slot:</span>
+                    <span className="text-slate-400">Record Slot:</span>
                     <span className="font-mono text-emerald-300">{result.slot.toLocaleString()}</span>
                   </div>
 
@@ -258,7 +258,7 @@ export const VerifyAttendance: React.FC = () => {
                   {result.blockTime && (
                     <div className="flex items-center gap-2 text-xs">
                       <Clock className="w-3.5 h-3.5 text-slate-500" />
-                      <span className="text-slate-400">Timestamp:</span>
+                      <span className="text-slate-400">Recorded On:</span>
                       <span className="text-emerald-300">
                         {new Date(result.blockTime * 1000).toLocaleString()}
                       </span>
@@ -271,14 +271,14 @@ export const VerifyAttendance: React.FC = () => {
                       {result.hashMatch ? (
                         <>
                           <CheckCircle className="w-4 h-4 text-emerald-400" />
-                          <span className="text-emerald-400 font-bold">Hash Match Confirmed</span>
-                          <span className="text-slate-500">— The on-chain record matches your expected hash.</span>
+                          <span className="text-emerald-400 font-bold">Record Match Confirmed</span>
+                          <span className="text-slate-500">— The secure record matches your security code perfectly.</span>
                         </>
                       ) : (
                         <>
                           <XCircle className="w-4 h-4 text-rose-400" />
-                          <span className="text-rose-400 font-bold">Hash Mismatch!</span>
-                          <span className="text-slate-500">— The on-chain data does not match your hash.</span>
+                          <span className="text-rose-400 font-bold">Security Code Mismatch</span>
+                          <span className="text-slate-500">— The saved record does not match the provided security code.</span>
                         </>
                       )}
                     </div>
@@ -286,7 +286,7 @@ export const VerifyAttendance: React.FC = () => {
 
                   {/* Memo Data */}
                   <div className="mt-3">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">On-Chain Memo Data</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Saved Record Details</p>
                     <pre className="bg-black/30 rounded-lg p-3 text-[10px] font-mono text-emerald-300 overflow-x-auto border border-emerald-500/10">
                       {result.memoData}
                     </pre>
@@ -300,7 +300,7 @@ export const VerifyAttendance: React.FC = () => {
                     className="mt-3 inline-flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 hover:underline font-medium"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    View Full Transaction on Solana Explorer
+                    View Public Record on Explorer
                   </a>
                 </div>
               )}
@@ -313,7 +313,7 @@ export const VerifyAttendance: React.FC = () => {
       {recentVerifications.length > 0 && (
         <div className="glass-card rounded-2xl overflow-hidden">
           <div className="p-4 border-b border-white/5">
-            <h3 className="font-bold text-white text-sm">Recent Verifications</h3>
+            <h3 className="font-bold text-white text-sm">Recent Checks</h3>
           </div>
           <div className="divide-y divide-white/5">
             {recentVerifications.map((v, i) => (
@@ -326,13 +326,13 @@ export const VerifyAttendance: React.FC = () => {
                   )}
                   <div className="min-w-0">
                     <p className="text-xs font-mono text-slate-300 truncate">{v.signature.slice(0, 20)}…</p>
-                    <p className="text-[10px] text-slate-500">Slot {v.slot.toLocaleString()}</p>
+                    <p className="text-[10px] text-slate-500">Record #{v.slot.toLocaleString()}</p>
                   </div>
                 </div>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                   v.valid ? 'text-emerald-400 bg-emerald-950/40' : 'text-rose-400 bg-rose-950/40'
                 }`}>
-                  {v.valid ? 'Valid' : 'Invalid'}
+                  {v.valid ? 'Authentic' : 'Unverified'}
                 </span>
               </div>
             ))}

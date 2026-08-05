@@ -237,7 +237,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
       <div className="w-72 border-r border-white/10 bg-white/5 flex flex-col hidden lg:flex">
         <div className="p-6 border-b border-white/10">
           <h3 className="text-sm font-bold text-white uppercase tracking-widest">Contacts</h3>
-          <p className="text-[10px] text-slate-500 mt-1">Select a recipient for direct link</p>
+          <p className="text-[10px] text-slate-500 mt-1">Select a person to message</p>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           <button 
@@ -252,8 +252,8 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
               <MessageSquare className="w-5 h-5 text-white" />
             </div>
             <div className="text-left">
-              <p className="text-xs font-bold uppercase tracking-wider">Broadcast</p>
-              <p className="text-[10px] opacity-60">Common Channel</p>
+              <p className="text-xs font-bold uppercase tracking-wider">All Teachers</p>
+              <p className="text-[10px] opacity-60">Group announcement</p>
             </div>
           </button>
 
@@ -291,23 +291,23 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
               <h2 className="text-xl font-bold text-white tracking-tight">
                 {selectedRecipientId 
                   ? recipients.find(r => r.id === selectedRecipientId)?.name 
-                  : 'Secure Communication'}
+                  : 'Messages'}
               </h2>
               <p className="text-slate-400 text-xs flex items-center gap-2">
                 <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]"></span>
-                Encrypted Direct Link
+                Private &amp; Protected
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:block">Channel:</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:block">Send to:</span>
               <select 
                 className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-primary-500 transition-all cursor-pointer hover:bg-white/10"
                 value={selectedRecipientId || ''}
                 onChange={(e) => setSelectedRecipientId(e.target.value || null)}
               >
-                <option value="" className="bg-[#0a0a1a]">Broadcast Channel</option>
+                <option value="" className="bg-[#0a0a1a]">All Teachers (Group)</option>
                 {recipients.map(r => (
                   <option key={r.id} value={r.id} className="bg-[#0a0a1a]">{r.name} ({r.role})</option>
                 ))}
@@ -401,7 +401,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
             </div>
             <div>
               <p className="text-white font-medium">No messages yet</p>
-              <p className="text-xs text-slate-500">History will be preserved on the blockchain.</p>
+              <p className="text-xs text-slate-500">Your messages will appear here.</p>
             </div>
           </div>
         )}

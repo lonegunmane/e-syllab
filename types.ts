@@ -24,7 +24,7 @@ export interface User {
   blockchainId?: string;
   contact?: string;
   school?: string;
-  gender?: 'Male' | 'Female' | 'Other' | 'Prefer not to say';
+  gender?: 'Male' | 'Female' | string;
   residentialAddress?: string;
   // Teacher specific fields
   teachingGrades?: string[];
@@ -211,4 +211,15 @@ export interface SystemNotification {
   read: boolean;
   createdAt: string;
 }
+
+export interface UserSession {
+  id: string;
+  userId: string;
+  deviceInfo: string;
+  ipAddress: string;
+  loginAt: string;
+  lastActiveAt: string;
+  isCurrent?: boolean;
+}
+
 

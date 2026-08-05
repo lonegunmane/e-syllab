@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { Resend } from "resend";
 import { PublicKey, Keypair, Transaction, TransactionInstruction } from "@solana/web3.js";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import { db } from "./services/database.js";
 import { serverDb } from "./services/serverDatabase.js";
 import { UserRole, DocumentStatus } from "./types.js";
@@ -16,6 +17,8 @@ import {
   getConnection,
 } from "./services/blockchain.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ─── School signing keypair (used to auto-sync offline records) ──────────────
 // Generate once with: node generate-keypair.js
@@ -139,6 +142,29 @@ function authorizeRole(...allowedRoles: UserRole[]) {
   };
 }
 
+// ─── Device Information Parser ────────────────────────────────────────────────
+function parseDevice(userAgent: string): string {
+  if (!userAgent || userAgent === 'Unknown') return 'Web Browser';
+  if (/mobile|android|iphone|ipad|ipod/i.test(userAgent)) {
+    if (/iphone/i.test(userAgent)) return 'iPhone (Mobile Safari)';
+    if (/ipad/i.test(userAgent)) return 'iPad (Tablet)';
+    if (/android/i.test(userAgent)) return 'Android Device (Mobile)';
+    return 'Mobile Browser';
+  }
+  if (/macintosh|mac os x/i.test(userAgent)) {
+    if (/chrome/i.test(userAgent) && !/edg/i.test(userAgent)) return 'Mac (Chrome)';
+    if (/safari/i.test(userAgent) && !/chrome/i.test(userAgent)) return 'Mac (Safari)';
+    return 'Mac (Desktop)';
+  }
+  if (/windows/i.test(userAgent)) {
+    if (/edg/i.test(userAgent)) return 'Windows (Edge)';
+    if (/chrome/i.test(userAgent)) return 'Windows (Chrome)';
+    if (/firefox/i.test(userAgent)) return 'Windows (Firefox)';
+    return 'Windows PC (Desktop)';
+  }
+  if (/linux/i.test(userAgent)) return 'Linux (Desktop)';
+  return 'Desktop Browser';
+}
 
 // ─── Server ───────────────────────────────────────────────────────────────────
 async function startServer() {
@@ -626,6 +652,11 @@ async function startServer() {
         { expiresIn: JWT_EXPIRY }
       );
 
+      // Record session
+      const userAgent = (req.headers['user-agent'] as string) || '';
+      const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+      serverDb.createSession(createdUser.id, parseDevice(userAgent), ipAddress, token);
+
       res.json({
         success: true,
         user: createdUser,
@@ -802,6 +833,11 @@ async function startServer() {
       { expiresIn: JWT_EXPIRY }
     );
 
+    // Record session
+    const userAgent = (req.headers['user-agent'] as string) || '';
+    const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+    serverDb.createSession(user.id, parseDevice(userAgent), ipAddress, token);
+
     res.json({
       success: true,
       user,
@@ -833,6 +869,11 @@ async function startServer() {
         { expiresIn: JWT_EXPIRY }
       );
 
+      // Record session
+      const userAgent = (req.headers['user-agent'] as string) || '';
+      const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+      serverDb.createSession(activeUser.id, parseDevice(userAgent), ipAddress, token);
+
       res.json({
         success: true,
         token,
@@ -854,6 +895,104 @@ async function startServer() {
     }
 
     res.json({ success: true, message: "Logout successful" });
+  });
+
+  // GET /api/sessions - List active user sessions
+  app.get("/api/sessions", authenticateToken, (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: "Please sign in to continue" });
+    }
+
+    const authHeader = req.headers['authorization'];
+    const currentToken = authHeader && authHeader.split(' ')[1];
+
+    const rawSessions = serverDb.getUserSessions(req.user.userId);
+    const sessions = rawSessions.map((s: any) => ({
+      id: s.id,
+      userId: s.userId,
+      deviceInfo: s.deviceInfo,
+      ipAddress: s.ipAddress,
+      loginAt: s.loginAt,
+      lastActiveAt: s.lastActiveAt,
+      isCurrent: Boolean(currentToken && s.token === currentToken),
+    }));
+
+    res.json({ success: true, sessions });
+  });
+
+  // POST /api/sessions/:id/revoke - Revoke a specific session
+  app.post("/api/sessions/:id/revoke", authenticateToken, (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: "Please sign in to continue" });
+    }
+
+    const sessionId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const session = serverDb.getSessionById(sessionId);
+
+    if (!session || session.userId !== req.user.userId) {
+      return res.status(404).json({ success: false, error: "Session not found" });
+    }
+
+    serverDb.revokeSession(sessionId, req.user.userId);
+
+    if (session.token) {
+      tokenBlacklist.add(session.token);
+    }
+
+    res.json({ success: true, message: "Device session has been logged out." });
+  });
+
+  // DELETE /api/users/me - Delete own account with password confirmation & admin safeguard
+  app.delete("/api/users/me", authenticateToken, async (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: "Please sign in to continue" });
+    }
+
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ success: false, error: "Password confirmation is required to delete your account." });
+    }
+
+    const userId = req.user.userId;
+    const user = serverDb.findUserById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User account not found." });
+    }
+
+    // Verify password against auth credentials
+    const cred = serverDb.getCredentialByUserId(userId);
+    if (!cred) {
+      return res.status(400).json({ success: false, error: "Security credentials not found for this account." });
+    }
+
+    const isMatch = await bcrypt.compare(password, cred.passwordHash);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, error: "Incorrect password. Please verify and try again." });
+    }
+
+    // Critical safeguard: if requesting user is Admin, ensure not the last remaining Admin account
+    if (user.role === UserRole.ADMIN) {
+      const adminUsers = serverDb.getUsersByRole(UserRole.ADMIN);
+      if (adminUsers.length <= 1) {
+        return res.status(400).json({
+          success: false,
+          error: "Cannot delete the last remaining administrator account. Another admin must exist first."
+        });
+      }
+    }
+
+    // Revoke all sessions and blacklist current token
+    serverDb.revokeAllUserSessions(userId);
+    const authHeader = req.headers['authorization'];
+    const currentToken = authHeader && authHeader.split(' ')[1];
+    if (currentToken) {
+      tokenBlacklist.add(currentToken);
+    }
+
+    // Delete user
+    serverDb.deleteUser(userId);
+
+    res.json({ success: true, message: "Your account and data have been permanently deleted." });
   });
 
   // GET /api/profile - Get current user profile (requires authentication)
@@ -2063,13 +2202,24 @@ async function startServer() {
     }
   });
 
+  // ── Service Worker & PWA Manifest routes ────────────────────────────────────
+  app.get("/sw.js", (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Content-Type", "application/javascript");
+    res.sendFile(path.join(__dirname, "sw.js"));
+  });
+
+  app.get("/manifest.json", (_req, res) => {
+    res.setHeader("Content-Type", "application/manifest+json");
+    res.sendFile(path.join(__dirname, "manifest.json"));
+  });
 
   // ── Vite middleware ─────────────────────────────────────────────────────────
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.join(__dirname, "dist");
     app.use(express.static(distPath));
     app.get("*all", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
@@ -2087,4 +2237,3 @@ async function startServer() {
 }
 
 startServer();
-

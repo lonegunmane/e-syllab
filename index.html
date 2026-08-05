@@ -24,6 +24,20 @@
     globalThis.Buffer = Buffer;
   </script>
 
+  <!-- Prevent Theme Flash / Early Initialize Theme -->
+  <script>
+    (function() {
+      try {
+        var savedTheme = localStorage.getItem('esyllab-theme') || localStorage.getItem('theme');
+        var theme = (savedTheme === 'light' || savedTheme === 'dark') ? savedTheme : 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.classList.remove('light', 'dark', 'theme-light', 'theme-dark');
+        document.documentElement.classList.add(theme);
+        document.documentElement.classList.add('theme-' + theme);
+      } catch (e) {}
+    })();
+  </script>
+
   <!-- Core meta -->
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -60,6 +74,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
+      darkMode: 'class',
       theme: {
         extend: {
           colors: {
@@ -93,50 +108,279 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 
   <style>
+    /* ── CSS Custom Properties / Theme Variables ───────────────────────────── */
+    :root, html.dark, [data-theme="dark"] {
+      --bg-primary: #0c0a1f;
+      --bg-secondary: #120f26;
+      --bg-surface: #1a1635;
+      --bg-surface-elevated: #221d45;
+      --card-bg: rgba(255, 255, 255, 0.03);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --input-bg: rgba(255, 255, 255, 0.05);
+      --input-border: rgba(255, 255, 255, 0.12);
+      --header-bg: rgba(26, 22, 53, 0.75);
+      --sidebar-bg: #161230;
+      --sidebar-border: rgba(255, 255, 255, 0.06);
+      --scrollbar-track: #1a1635;
+      --scrollbar-thumb: #4c1d95;
+    }
+
+    html.light, [data-theme="light"] {
+      --bg-primary: #f8fafc;
+      --bg-secondary: #f1f5f9;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #ffffff;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+      --input-bg: #ffffff;
+      --input-border: #cbd5e1;
+      --header-bg: rgba(255, 255, 255, 0.90);
+      --sidebar-bg: #ffffff;
+      --sidebar-border: #e2e8f0;
+      --scrollbar-track: #f1f5f9;
+      --scrollbar-thumb: #cbd5e1;
+    }
+
     /* ── Base ──────────────────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; }
 
     html, body {
       height: 100%;
-      /* Prevent iOS bounce scroll on the body */
       overscroll-behavior: none;
     }
 
     body {
       font-family: 'Inter', sans-serif;
-      background-color: #0c0a1f;
+      background-color: var(--bg-primary);
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    html.dark body {
       background-image:
         radial-gradient(at 0% 0%, rgba(124,58,237,0.15) 0px, transparent 50%),
         radial-gradient(at 100% 0%, rgba(139,92,246,0.10) 0px, transparent 50%),
         radial-gradient(at 50% 100%, rgba(167,139,250,0.05) 0px, transparent 50%);
-      min-height: 100vh;
-      /* Fill the safe area on notched phones */
-      min-height: -webkit-fill-available;
-      color: #f8fafc;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
+    }
+
+    html.light body {
+      background-image:
+        radial-gradient(at 0% 0%, rgba(124,58,237,0.05) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(139,92,246,0.03) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(203,213,225,0.3) 0px, transparent 50%);
     }
 
     #root {
       min-height: 100vh;
       min-height: -webkit-fill-available;
-      /* Push content below the iOS status bar */
       padding-top: env(safe-area-inset-top);
     }
 
     /* ── Scrollbars ─────────────────────────────────────────────────────────── */
     ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: #1a1635; }
-    ::-webkit-scrollbar-thumb { background: #4c1d95; border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: #6d28d9; }
+    ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+    ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #7c3aed; }
 
     /* ── Glass card ─────────────────────────────────────────────────────────── */
     .glass-card {
-      background: rgba(255,255,255,0.03);
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+
+    html.dark .glass-card {
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,0.08);
       box-shadow: 0 8px 32px 0 rgba(0,0,0,0.37);
+    }
+
+    html.light .glass-card {
+      box-shadow: 0 4px 24px 0 rgba(15, 23, 42, 0.05);
+    }
+
+    /* ── Light Mode App-Wide Rules ─────────────────────────────────────────── */
+    html.light aside {
+      background-color: #ffffff !important;
+      border-right-color: #e2e8f0 !important;
+    }
+
+    html.light header {
+      background-color: rgba(255, 255, 255, 0.9) !important;
+      border-bottom-color: #e2e8f0 !important;
+    }
+
+    html.light .bottom-nav {
+      background-color: rgba(255, 255, 255, 0.95) !important;
+      border-top-color: #e2e8f0 !important;
+    }
+
+    html.light .bg-white\/5 {
+      background-color: #f1f5f9;
+    }
+    html.light .hover\:bg-white\/5:hover {
+      background-color: #f1f5f9;
+    }
+    html.light .bg-white\/10 {
+      background-color: #e2e8f0;
+    }
+    html.light .hover\:bg-white\/10:hover {
+      background-color: #e2e8f0;
+    }
+    html.light .bg-black\/20, html.light .bg-black\/40 {
+      background-color: #f8fafc;
+    }
+    html.light .border-white\/5,
+    html.light .border-white\/10,
+    html.light .border-white\/20 {
+      border-color: #e2e8f0;
+    }
+
+    /* Light mode typography & contrast */
+    html.light {
+      color: #0f172a;
+    }
+
+    html.light h1,
+    html.light h2,
+    html.light h3,
+    html.light h4,
+    html.light h5,
+    html.light h6 {
+      color: #0f172a;
+    }
+
+    /* Keep text white on solid colored badges/buttons */
+    html.light button.bg-primary-600,
+    html.light button.bg-primary-700,
+    html.light button.bg-rose-600,
+    html.light button.bg-rose-700,
+    html.light button.bg-emerald-600,
+    html.light button.bg-emerald-700,
+    html.light .bg-primary-600,
+    html.light .bg-primary-700,
+    html.light .bg-rose-600,
+    html.light .bg-emerald-600,
+    html.light [class*="bg-gradient-to-br from-primary"] {
+      color: #ffffff !important;
+    }
+
+    html.light [class*="bg-gradient-to-br from-primary"] h1,
+    html.light [class*="bg-gradient-to-br from-primary"] h2,
+    html.light [class*="bg-gradient-to-br from-primary"] h3,
+    html.light [class*="bg-gradient-to-br from-primary"] p,
+    html.light [class*="bg-gradient-to-br from-primary"] span {
+      color: #ffffff !important;
+    }
+
+    html.light .text-white:not(button.bg-primary-600 *):not(button.bg-rose-600 *):not(button.bg-emerald-600 *):not(.bg-primary-600 *):not(.bg-rose-600 *):not(.bg-emerald-600 *):not([class*="bg-gradient-to-br from-primary"] *) {
+      color: #0f172a;
+    }
+
+    html.light .text-slate-100,
+    html.light .text-slate-200 {
+      color: #0f172a;
+    }
+
+    html.light .text-slate-300 {
+      color: #334155;
+    }
+
+    html.light .text-slate-400 {
+      color: #475569;
+    }
+
+    html.light .text-slate-500 {
+      color: #64748b;
+    }
+
+    html.light input:not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]),
+    html.light select,
+    html.light textarea {
+      background-color: #ffffff !important;
+      border-color: #cbd5e1 !important;
+      color: #0f172a !important;
+    }
+
+    html.light input::placeholder,
+    html.light textarea::placeholder {
+      color: #94a3b8 !important;
+    }
+
+    html.light input:disabled,
+    html.light select:disabled,
+    html.light textarea:disabled {
+      background-color: #f1f5f9 !important;
+      color: #64748b !important;
+      border-color: #e2e8f0 !important;
+    }
+
+    html.light .text-slate-400 {
+      color: #64748b;
+    }
+    html.light .text-slate-300 {
+      color: #334155;
+    }
+
+    /* Accent Badges in Light Mode */
+    html.light .bg-primary-950\/20,
+    html.light .bg-primary-950\/30,
+    html.light .bg-primary-950\/40,
+    html.light .bg-primary-950\/60 {
+      background-color: #f5f3ff;
+      border-color: #ddd6fe;
+    }
+    html.light .text-primary-300,
+    html.light .text-primary-400 {
+      color: #7c3aed;
+    }
+
+    html.light .bg-emerald-950\/40 {
+      background-color: #ecfdf5;
+      border-color: #a7f3d0;
+    }
+    html.light .text-emerald-400,
+    html.light .text-emerald-300 {
+      color: #059669;
+    }
+
+    html.light .bg-amber-950\/40 {
+      background-color: #fffbeb;
+      border-color: #fde68a;
+    }
+    html.light .text-amber-400,
+    html.light .text-amber-300 {
+      color: #d97706;
+    }
+
+    html.light .bg-rose-950\/40 {
+      background-color: #fff1f2;
+      border-color: #fecdd3;
+    }
+    html.light .text-rose-400,
+    html.light .text-rose-300 {
+      color: #e11d48;
+    }
+
+    html.light .bg-blue-950\/40 {
+      background-color: #eff6ff;
+      border-color: #bfdbfe;
+    }
+    html.light .text-blue-400,
+    html.light .text-blue-300 {
+      color: #2563eb;
     }
 
     /* ── Animations ─────────────────────────────────────────────────────────── */
@@ -158,6 +402,52 @@
       padding-bottom: env(safe-area-inset-bottom);
     }
 
+    /* ── PWA update notification banner ────────────────────────────────────── */
+    #update-banner {
+      display: none;
+      position: fixed;
+      top: calc(env(safe-area-inset-top) + 1rem);
+      left: 1rem;
+      right: 1rem;
+      max-width: 480px;
+      margin: 0 auto;
+      z-index: 10000;
+      background: rgba(26, 22, 53, 0.96);
+      border: 1px solid rgba(139, 92, 246, 0.6);
+      border-radius: 1rem;
+      padding: 0.875rem 1.125rem;
+      backdrop-filter: blur(24px);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.6), 0 0 20px rgba(124, 58, 237, 0.25);
+      animation: slideTop 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+    }
+    #update-banner.show { display: flex; align-items: center; gap: 0.875rem; }
+    #update-banner .ub-icon { font-size: 1.5rem; flex-shrink: 0; line-height: 1; }
+    #update-banner .ub-text { flex: 1; min-width: 0; }
+    #update-banner .ub-title { font-weight: 700; color: #ffffff; font-size: 0.875rem; }
+    #update-banner .ub-sub   { font-size: 0.75rem; color: #c4b5fd; margin-top: 2px; }
+    #update-banner .ub-btn   {
+      padding: 0.45rem 0.95rem;
+      background: #7c3aed;
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 0.625rem;
+      font-weight: 700;
+      font-size: 0.775rem;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: all 0.2s ease;
+    }
+    #update-banner .ub-btn:hover { background: #6d28d9; transform: translateY(-1px); }
+    #update-banner .ub-close {
+      background: none; border: none; color: #94a3b8;
+      cursor: pointer; font-size: 1.15rem; flex-shrink: 0; padding: 0.25rem;
+      display: flex; align-items: center; justify-content: center;
+      transition: color 0.2s;
+    }
+    #update-banner .ub-close:hover { color: #ffffff; }
+
     /* ── PWA install banner ─────────────────────────────────────────────────── */
     #install-banner {
       display: none;
@@ -165,14 +455,16 @@
       bottom: calc(env(safe-area-inset-bottom) + 1rem);
       left: 1rem;
       right: 1rem;
+      max-width: 480px;
+      margin: 0 auto;
       z-index: 9999;
-      background: rgba(26,22,53,0.95);
-      border: 1px solid rgba(124,58,237,0.4);
+      background: rgba(26,22,53,0.96);
+      border: 1px solid rgba(124,58,237,0.5);
       border-radius: 1rem;
       padding: 1rem 1.25rem;
-      backdrop-filter: blur(20px);
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-      animation: slideBot 0.4s ease-out;
+      backdrop-filter: blur(24px);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 20px rgba(124, 58, 237, 0.2);
+      animation: slideBot 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     }
     #install-banner.show { display: flex; align-items: center; gap: 1rem; }
     #install-banner .ib-icon { font-size: 2rem; flex-shrink: 0; }
@@ -190,16 +482,31 @@
       cursor: pointer;
       white-space: nowrap;
       flex-shrink: 0;
+      transition: all 0.2s ease;
     }
+    #install-banner .ib-btn:hover { background: #6d28d9; }
     #install-banner .ib-close {
       background: none; border: none; color: #64748b;
       cursor: pointer; font-size: 1.2rem; flex-shrink: 0; padding: 0.25rem;
+      transition: color 0.2s;
     }
+    #install-banner .ib-close:hover { color: #ffffff; }
   </style>
 </head>
 
 <body>
   <div id="root"></div>
+
+  <!-- PWA Update Notification Banner -->
+  <div id="update-banner" role="alert">
+    <span class="ub-icon">🔄</span>
+    <div class="ub-text">
+      <div class="ub-title">A new version is available</div>
+      <div class="ub-sub">Tap to refresh and get the latest updates</div>
+    </div>
+    <button class="ub-btn" id="update-btn">Refresh</button>
+    <button class="ub-close" id="update-dismiss-btn" aria-label="Dismiss update notification">✕</button>
+  </div>
 
   <!-- PWA install prompt banner -->
   <div id="install-banner">
@@ -209,49 +516,10 @@
       <div class="ib-sub">Works offline · No app store needed</div>
     </div>
     <button class="ib-btn" id="install-btn">Install</button>
-    <button class="ib-close" id="dismiss-btn">✕</button>
+    <button class="ib-close" id="dismiss-btn" aria-label="Dismiss install banner">✕</button>
   </div>
 
   <!-- App entry point -->
   <script type="module" src="/index.tsx"></script>
-
-  <!-- PWA install prompt logic -->
-  <script>
-    let deferredPrompt = null;
-    const banner      = document.getElementById('install-banner');
-    const installBtn  = document.getElementById('install-btn');
-    const dismissBtn  = document.getElementById('dismiss-btn');
-
-    // Capture the browser's install prompt
-    window.addEventListener('beforeinstallprompt', e => {
-      e.preventDefault();
-      deferredPrompt = e;
-      // Only show if not already installed and user hasn't dismissed before
-      if (!localStorage.getItem('pwa-dismissed')) {
-        setTimeout(() => banner.classList.add('show'), 3000);
-      }
-    });
-
-    installBtn?.addEventListener('click', async () => {
-      if (!deferredPrompt) return;
-      banner.classList.remove('show');
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      console.log('[PWA] Install outcome:', outcome);
-      deferredPrompt = null;
-    });
-
-    dismissBtn?.addEventListener('click', () => {
-      banner.classList.remove('show');
-      localStorage.setItem('pwa-dismissed', '1');
-    });
-
-    // Hide banner if already installed
-    window.addEventListener('appinstalled', () => {
-      banner.classList.remove('show');
-      deferredPrompt = null;
-      console.log('[PWA] App installed successfully');
-    });
-  </script>
 </body>
 </html>

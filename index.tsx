@@ -2,6 +2,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { initPwa } from './services/pwa';
+
+// Initialize Service Worker, Install Prompt, and Update Detection flows
+initPwa();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

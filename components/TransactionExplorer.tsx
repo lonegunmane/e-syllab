@@ -52,10 +52,10 @@ export interface LedgerEvent {
 }
 
 const TYPE_COLORS: Record<string, { bg: string; text: string; border: string; label: string }> = {
-  GRADE: { bg: 'bg-purple-950/50', text: 'text-purple-400', border: 'border-purple-500/30', label: 'Score Submission' },
-  CREDENTIAL: { bg: 'bg-emerald-950/50', text: 'text-emerald-400', border: 'border-emerald-500/30', label: 'Academic Record' },
-  ATTENDANCE: { bg: 'bg-blue-950/50', text: 'text-blue-400', border: 'border-blue-500/30', label: 'Attendance Attestation' },
-  SYSTEM_ANCHOR: { bg: 'bg-amber-950/50', text: 'text-amber-400', border: 'border-amber-500/30', label: 'System Governance' },
+  GRADE: { bg: 'bg-purple-950/50', text: 'text-purple-400', border: 'border-purple-500/30', label: 'Grade Entry' },
+  CREDENTIAL: { bg: 'bg-emerald-950/50', text: 'text-emerald-400', border: 'border-emerald-500/30', label: 'Academic Certificate' },
+  ATTENDANCE: { bg: 'bg-blue-950/50', text: 'text-blue-400', border: 'border-blue-500/30', label: 'Attendance Record' },
+  SYSTEM_ANCHOR: { bg: 'bg-amber-950/50', text: 'text-amber-400', border: 'border-amber-500/30', label: 'System Update' },
 };
 
 export const TransactionExplorer: React.FC = () => {
@@ -150,10 +150,10 @@ export const TransactionExplorer: React.FC = () => {
   // Chart Data
   const chartData = useMemo(() => {
     return [
-      { name: 'Score Submissions', count: metrics.grades, color: '#a855f7' },
+      { name: 'Grade Entries', count: metrics.grades, color: '#a855f7' },
       { name: 'Academic Records', count: metrics.credentials, color: '#10b981' },
-      { name: 'Attendance Attestations', count: metrics.attendance, color: '#3b82f6' },
-      { name: 'System Governance', count: metrics.system, color: '#f59e0b' },
+      { name: 'Attendance Records', count: metrics.attendance, color: '#3b82f6' },
+      { name: 'System Updates', count: metrics.system, color: '#f59e0b' },
     ];
   }, [metrics]);
 
@@ -171,7 +171,7 @@ export const TransactionExplorer: React.FC = () => {
     } catch (err: any) {
       setVerifyResult({
         isValid: false,
-        message: err.message || 'Verification service error.',
+        message: err.message || 'Could not verify record.',
       });
     } finally {
       setVerifying(false);
@@ -187,18 +187,18 @@ export const TransactionExplorer: React.FC = () => {
             <div className="flex items-center gap-2 mb-1">
               <span className="px-2.5 py-0.5 rounded-full bg-primary-500/20 text-primary-300 border border-primary-500/30 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
                 <Cpu className="w-3 h-3 text-primary-400 animate-pulse" />
-                Backend Ledger & Solana Devnet
+                Verified School Records
               </span>
               <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold uppercase">
-                100% Immutable
+                Protected &amp; Permanent
               </span>
             </div>
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
               <Database className="w-6 h-6 text-primary-400" />
-              Transaction Explorer
+              Verified Record History
             </h1>
             <p className="text-slate-300 text-xs mt-1 max-w-2xl leading-relaxed">
-              Auditing all blockchain-anchored events including academic score submissions, transcript updates, faculty attendance attestations, and governance hashes.
+              View and audit all tamper-proof school records, including grade submissions, certificates, attendance logs, and system updates.
             </p>
           </div>
 
@@ -209,7 +209,7 @@ export const TransactionExplorer: React.FC = () => {
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 border border-white/15 text-xs text-white hover:bg-primary-600 hover:border-primary-500 transition-all shadow-md active:scale-95 disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-primary-300' : ''}`} />
-              Refresh Explorer
+              Refresh Records
             </button>
           </div>
         </div>
@@ -221,25 +221,25 @@ export const TransactionExplorer: React.FC = () => {
       {/* Metric Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="glass-card p-4 rounded-2xl border border-white/5">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Events</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Records</p>
           <p className="text-2xl font-bold text-white mt-1">{metrics.total}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Anchored in backend</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Securely logged</p>
         </div>
 
         <div className="glass-card p-4 rounded-2xl border border-white/5">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1 text-purple-400">
-            <GraduationCap className="w-3 h-3" /> Scores
+            <GraduationCap className="w-3 h-3" /> Grades
           </p>
           <p className="text-2xl font-bold text-purple-300 mt-1">{metrics.grades}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Grade submissions</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Recorded grades</p>
         </div>
 
         <div className="glass-card p-4 rounded-2xl border border-white/5">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1 text-emerald-400">
-            <Award className="w-3 h-3" /> Credentials
+            <Award className="w-3 h-3" /> Certificates
           </p>
           <p className="text-2xl font-bold text-emerald-300 mt-1">{metrics.credentials}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Academic updates</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Issued credentials</p>
         </div>
 
         <div className="glass-card p-4 rounded-2xl border border-white/5">
@@ -247,23 +247,23 @@ export const TransactionExplorer: React.FC = () => {
             <CheckSquare className="w-3 h-3" /> Attendance
           </p>
           <p className="text-2xl font-bold text-blue-300 mt-1">{metrics.attendance}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Staff attestations</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Verified entries</p>
         </div>
 
         <div className="glass-card p-4 rounded-2xl border border-white/5">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1 text-amber-400">
-            <ShieldCheck className="w-3 h-3" /> Governance
+            <ShieldCheck className="w-3 h-3" /> Updates
           </p>
           <p className="text-2xl font-bold text-amber-300 mt-1">{metrics.system}</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">System anchors</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">System updates</p>
         </div>
 
         <div className="glass-card p-4 rounded-2xl border border-white/5">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-primary-400">Latest Slot</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest text-primary-400">Latest Record #</p>
           <p className="text-lg font-mono font-bold text-white mt-1 truncate">
             {metrics.maxSlot > 0 ? `#${metrics.maxSlot.toLocaleString()}` : '—'}
           </p>
-          <p className="text-[10px] text-slate-500 mt-0.5">Solana Devnet</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Verified network</p>
         </div>
       </div>
 
@@ -275,12 +275,12 @@ export const TransactionExplorer: React.FC = () => {
             <div>
               <h3 className="font-bold text-white text-sm flex items-center gap-2">
                 <BarChart className="w-4 h-4 text-primary-400" />
-                Event Distribution Breakdown
+                Record Distribution
               </h3>
-              <p className="text-slate-400 text-xs">Proportion of event types recorded on the blockchain ledger</p>
+              <p className="text-slate-400 text-xs">Breakdown of all saved record types</p>
             </div>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-300 border border-white/10">
-              Live Aggregate
+              Live Overview
             </span>
           </div>
 
@@ -309,16 +309,16 @@ export const TransactionExplorer: React.FC = () => {
           <div>
             <h3 className="font-bold text-white text-sm flex items-center gap-2 mb-1">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              Proof Hash Verifier
+              Security Code Checker
             </h3>
             <p className="text-slate-400 text-xs mb-4">
-              Cryptographically test any SHA-256 ledger hash to verify untampered academic authenticity.
+              Enter any record's digital fingerprint security code to confirm it is genuine and untouched.
             </p>
 
             <div className="space-y-3">
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">
-                  SHA-256 Hash Digest
+                  Security Code
                 </label>
                 <div className="relative">
                   <input
@@ -345,7 +345,7 @@ export const TransactionExplorer: React.FC = () => {
                 className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-all shadow-lg shadow-emerald-950/40 disabled:opacity-40 flex items-center justify-center gap-2"
               >
                 {verifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                Verify Cryptographic Integrity
+                Check Record Authenticity
               </button>
             </div>
           </div>
@@ -365,11 +365,11 @@ export const TransactionExplorer: React.FC = () => {
                   <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                 )}
                 <div>
-                  <p className="font-bold">{verifyResult.isValid ? 'Authentic Record Verified' : 'Verification Failed'}</p>
+                  <p className="font-bold">{verifyResult.isValid ? 'Record Confirmed Authentic' : 'Verification Failed'}</p>
                   <p className="text-[11px] mt-0.5 opacity-90">{verifyResult.message}</p>
                   {verifyResult.isValid && verifyResult.slot ? (
                     <p className="text-[10px] font-mono mt-1 opacity-75">
-                      Slot: #{verifyResult.slot} | Sig: {verifyResult.signature?.slice(0, 16)}…
+                      Record: #{verifyResult.slot} | Ref: {verifyResult.signature?.slice(0, 16)}…
                     </p>
                   ) : null}
                 </div>
@@ -385,7 +385,7 @@ export const TransactionExplorer: React.FC = () => {
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search SHA-256 hash, signature, student, teacher, subject..."
+            placeholder="Search by security code, student, teacher, or subject..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-8 py-2 bg-black/30 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-primary-500 transition-all"
@@ -403,11 +403,11 @@ export const TransactionExplorer: React.FC = () => {
             onChange={(e) => setTypeFilter(e.target.value)}
             className="px-3 py-2 bg-black/30 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
           >
-            <option value="ALL" className="bg-[#1a1635]">All Event Types</option>
-            <option value="GRADE" className="bg-[#1a1635]">Score Submissions</option>
-            <option value="CREDENTIAL" className="bg-[#1a1635]">Academic Records</option>
-            <option value="ATTENDANCE" className="bg-[#1a1635]">Attendance Attestations</option>
-            <option value="SYSTEM_ANCHOR" className="bg-[#1a1635]">Governance & Vault</option>
+            <option value="ALL" className="bg-[#1a1635]">All Types</option>
+            <option value="GRADE" className="bg-[#1a1635]">Grade Entries</option>
+            <option value="CREDENTIAL" className="bg-[#1a1635]">Certificates &amp; Diplomas</option>
+            <option value="ATTENDANCE" className="bg-[#1a1635]">Attendance Records</option>
+            <option value="SYSTEM_ANCHOR" className="bg-[#1a1635]">System Updates</option>
           </select>
 
           <select
@@ -416,8 +416,8 @@ export const TransactionExplorer: React.FC = () => {
             className="px-3 py-2 bg-black/30 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
           >
             <option value="ALL" className="bg-[#1a1635]">All Statuses</option>
-            <option value="CONFIRMED" className="bg-[#1a1635]">Confirmed On-Chain</option>
-            <option value="PENDING_SYNC" className="bg-[#1a1635]">Pending Offline Queue</option>
+            <option value="CONFIRMED" className="bg-[#1a1635]">Verified &amp; Saved</option>
+            <option value="PENDING_SYNC" className="bg-[#1a1635]">Pending Connection</option>
           </select>
         </div>
       </div>
@@ -427,37 +427,37 @@ export const TransactionExplorer: React.FC = () => {
         <div className="p-4 border-b border-white/5 flex justify-between items-center">
           <h3 className="font-bold text-white text-sm flex items-center gap-2">
             <Layers className="w-4 h-4 text-primary-400" />
-            Anchored Ledger Stream
+            Recent Saved Records
           </h3>
           <span className="px-2.5 py-0.5 bg-primary-950/40 text-primary-300 text-[10px] font-bold rounded-full border border-primary-500/20">
-            {filteredEvents.length} Recorded Events
+            {filteredEvents.length} Saved Records
           </span>
         </div>
 
         {isLoading ? (
           <div className="p-12 text-center">
             <Loader2 className="w-8 h-8 text-primary-400 animate-spin mx-auto mb-3" />
-            <p className="text-slate-400 text-sm">Querying backend ledger database…</p>
+            <p className="text-slate-400 text-sm">Loading verified school records…</p>
           </div>
         ) : error ? (
           <div className="p-8 text-center text-rose-400 text-sm">{error}</div>
         ) : filteredEvents.length === 0 ? (
           <div className="p-12 text-center text-slate-500 italic text-sm">
             <Database className="w-10 h-10 mx-auto mb-3 opacity-20" />
-            No ledger transactions found matching search filter.
+            No records found matching your search.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-white/5 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
                 <tr>
-                  <th className="px-4 py-3.5">Event Type</th>
-                  <th className="px-4 py-3.5">SHA-256 Digest & Signature</th>
-                  <th className="px-4 py-3.5">Academic Payload / Actor</th>
-                  <th className="px-4 py-3.5">Slot / Date</th>
+                  <th className="px-4 py-3.5">Record Type</th>
+                  <th className="px-4 py-3.5">Security Code &amp; Reference ID</th>
+                  <th className="px-4 py-3.5">Details &amp; Author</th>
+                  <th className="px-4 py-3.5">Record # / Date</th>
                   <th className="px-4 py-3.5">Status</th>
-                  <th className="px-4 py-3.5">Verifiable Link</th>
-                  <th className="px-4 py-3.5 text-right">Inspect</th>
+                  <th className="px-4 py-3.5">Public Record</th>
+                  <th className="px-4 py-3.5 text-right">Details</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -488,7 +488,7 @@ export const TransactionExplorer: React.FC = () => {
                             <button
                               onClick={() => handleCopy(evt.offlineHash)}
                               className="text-slate-500 hover:text-white transition-colors"
-                              title="Copy SHA-256 Hash"
+                              title="Copy Security Code"
                             >
                               {copiedHash === evt.offlineHash ? (
                                 <Check className="w-3 h-3 text-emerald-400" />
@@ -498,7 +498,7 @@ export const TransactionExplorer: React.FC = () => {
                             </button>
                           </div>
                           <span className="font-mono text-[9px] text-slate-500">
-                            Sig: {evt.signature ? `${evt.signature.slice(0, 12)}…` : 'N/A'}
+                            Ref: {evt.signature ? `${evt.signature.slice(0, 12)}…` : 'N/A'}
                           </span>
                         </div>
                       </td>
@@ -509,7 +509,7 @@ export const TransactionExplorer: React.FC = () => {
                           <div>
                             <p className="font-bold text-slate-200">{evt.studentName || evt.studentId} — <span className="text-purple-300">{evt.subject}</span></p>
                             <p className="text-[10px] text-slate-400 mt-0.5">
-                              Score: <strong className="text-white">{evt.score}</strong> ({evt.grade}) | By {evt.teacherName || 'Faculty'}
+                              Score: <strong className="text-white">{evt.score}</strong> ({evt.grade}) | By {evt.teacherName || 'Teacher'}
                             </p>
                           </div>
                         )}
@@ -517,13 +517,13 @@ export const TransactionExplorer: React.FC = () => {
                           <div>
                             <p className="font-bold text-emerald-300">{evt.credentialType || 'Academic Certificate'}</p>
                             <p className="text-[10px] text-slate-400 mt-0.5">
-                              Recipient: <strong className="text-slate-200">{evt.studentName}</strong> | Issued by {evt.issuedBy || 'Admin'}
+                              Recipient: <strong className="text-slate-200">{evt.studentName}</strong> | Issued by {evt.issuedBy || 'School Admin'}
                             </p>
                           </div>
                         )}
                         {evt.type === 'ATTENDANCE' && (
                           <div>
-                            <p className="font-bold text-blue-300">Faculty Attestation: {evt.staffName || evt.staffId}</p>
+                            <p className="font-bold text-blue-300">Staff: {evt.staffName || evt.staffId}</p>
                             <p className="text-[10px] text-slate-400 mt-0.5">
                               Status: <strong className="text-emerald-400">{evt.attendanceStatus || 'PRESENT'}</strong> | Class: {evt.className || 'General'}
                             </p>
@@ -531,8 +531,8 @@ export const TransactionExplorer: React.FC = () => {
                         )}
                         {evt.type === 'SYSTEM_ANCHOR' && (
                           <div>
-                            <p className="font-bold text-amber-300">{evt.title || 'Governance Record'}</p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">{evt.details || 'Vault Document Approval'}</p>
+                            <p className="font-bold text-amber-300">{evt.title || 'System Record'}</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{evt.details || 'Document Approval'}</p>
                           </div>
                         )}
                       </td>
@@ -555,7 +555,7 @@ export const TransactionExplorer: React.FC = () => {
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded">
-                            <CheckCircle2 className="w-2.5 h-2.5" /> Confirmed
+                            <CheckCircle2 className="w-2.5 h-2.5" /> Verified
                           </span>
                         )}
                       </td>
@@ -568,13 +568,13 @@ export const TransactionExplorer: React.FC = () => {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-800 border border-emerald-500/30 text-emerald-300 hover:text-white text-[10px] font-bold transition-all shadow-sm"
-                            title="Verify on Solana Devnet Explorer"
+                            title="View public verification record"
                           >
                             <ExternalLink className="w-3 h-3" />
-                            Verify on Solana
+                            View Proof
                           </a>
                         ) : (
-                          <span className="text-[10px] text-slate-500 italic">Off-chain queue</span>
+                          <span className="text-[10px] text-slate-500 italic">Saved on device</span>
                         )}
                       </td>
 
@@ -585,7 +585,7 @@ export const TransactionExplorer: React.FC = () => {
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-primary-600 hover:text-white text-slate-300 text-[10px] font-bold transition-all border border-white/10"
                         >
                           <Eye className="w-3 h-3" />
-                          Inspect
+                          View
                         </button>
                       </td>
                     </tr>
@@ -615,12 +615,12 @@ export const TransactionExplorer: React.FC = () => {
                       {selectedEvent.type}
                     </span>
                     <span className="text-xs text-slate-400 font-mono">
-                      Slot #{selectedEvent.slot || 'N/A'}
+                      Record #{selectedEvent.slot || 'N/A'}
                     </span>
                   </div>
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     <FileCode className="w-5 h-5 text-primary-400" />
-                    Ledger Event Inspection
+                    Record Details &amp; Verification
                   </h2>
                 </div>
 
@@ -635,12 +635,13 @@ export const TransactionExplorer: React.FC = () => {
               {/* Cryptographic Hashes Card */}
               <div className="bg-black/40 p-4 rounded-xl border border-white/10 space-y-3 font-mono text-xs">
                 <div>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">SHA-256 Offline Digest Hash</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Record Security Code (Digital Fingerprint)</p>
                   <div className="flex items-center justify-between mt-1 p-2 bg-white/5 rounded border border-white/5">
                     <span className="text-emerald-400 break-all">{selectedEvent.offlineHash}</span>
                     <button
                       onClick={() => handleCopy(selectedEvent.offlineHash)}
                       className="text-slate-400 hover:text-white ml-2 shrink-0"
+                      title="Copy Security Code"
                     >
                       {copiedHash === selectedEvent.offlineHash ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
@@ -648,13 +649,14 @@ export const TransactionExplorer: React.FC = () => {
                 </div>
 
                 <div>
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Solana Transaction Signature</p>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Network Record Reference ID</p>
                   <div className="flex items-center justify-between mt-1 p-2 bg-white/5 rounded border border-white/5">
-                    <span className="text-primary-300 break-all">{selectedEvent.signature || 'Queued Off-chain'}</span>
+                    <span className="text-primary-300 break-all">{selectedEvent.signature || 'Queued on device'}</span>
                     {selectedEvent.signature && (
                       <button
                         onClick={() => handleCopy(selectedEvent.signature)}
                         className="text-slate-400 hover:text-white ml-2 shrink-0"
+                        title="Copy Reference ID"
                       >
                         {copiedHash === selectedEvent.signature ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
@@ -665,23 +667,23 @@ export const TransactionExplorer: React.FC = () => {
 
               {/* Payload Breakdown */}
               <div className="space-y-3">
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider">Payload Attributes</h4>
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">Record Information</h4>
 
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-[10px] text-slate-500 uppercase font-bold">Student / Target</p>
+                    <p className="text-[10px] text-slate-500 uppercase font-bold">Student / Recipient</p>
                     <p className="text-white font-medium mt-0.5">{selectedEvent.studentName || selectedEvent.staffName || 'N/A'}</p>
                     {selectedEvent.studentId && <p className="text-[10px] text-slate-500 font-mono">ID: {selectedEvent.studentId}</p>}
                   </div>
 
                   <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-[10px] text-slate-500 uppercase font-bold">Teacher / Issuer</p>
-                    <p className="text-white font-medium mt-0.5">{selectedEvent.teacherName || selectedEvent.issuedBy || 'System Admin'}</p>
+                    <p className="text-[10px] text-slate-500 uppercase font-bold">Teacher / Recorded By</p>
+                    <p className="text-white font-medium mt-0.5">{selectedEvent.teacherName || selectedEvent.issuedBy || 'School Admin'}</p>
                   </div>
 
                   {selectedEvent.subject && (
                     <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-                      <p className="text-[10px] text-slate-500 uppercase font-bold">Subject & Score</p>
+                      <p className="text-[10px] text-slate-500 uppercase font-bold">Subject &amp; Score</p>
                       <p className="text-purple-300 font-bold mt-0.5">
                         {selectedEvent.subject}: {selectedEvent.score} ({selectedEvent.grade})
                       </p>
@@ -690,14 +692,14 @@ export const TransactionExplorer: React.FC = () => {
 
                   {selectedEvent.academicYear && (
                     <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-                      <p className="text-[10px] text-slate-500 uppercase font-bold">Term & Year</p>
+                      <p className="text-[10px] text-slate-500 uppercase font-bold">Term &amp; Year</p>
                       <p className="text-white font-medium mt-0.5">{selectedEvent.term || 'Term 1'} ({selectedEvent.academicYear})</p>
                     </div>
                   )}
 
                   <div className="col-span-2 p-3 bg-white/5 rounded-xl border border-white/5">
-                    <p className="text-[10px] text-slate-500 uppercase font-bold">Event Log Description</p>
-                    <p className="text-slate-300 mt-0.5">{selectedEvent.details || 'Blockchain anchored transaction record.'}</p>
+                    <p className="text-[10px] text-slate-500 uppercase font-bold">Notes</p>
+                    <p className="text-slate-300 mt-0.5">{selectedEvent.details || 'Permanent school record.'}</p>
                   </div>
                 </div>
               </div>
@@ -712,7 +714,7 @@ export const TransactionExplorer: React.FC = () => {
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-md"
                 >
                   <ShieldCheck className="w-4 h-4" />
-                  Run Audit Check
+                  Check Record Authenticity
                 </button>
 
                 {selectedEvent.explorerUrl && (
@@ -723,7 +725,7 @@ export const TransactionExplorer: React.FC = () => {
                     className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold rounded-xl transition-all shadow-md"
                   >
                     <ExternalLink className="w-4 h-4" />
-                    Open Solana Explorer
+                    View Public Record
                   </a>
                 )}
               </div>

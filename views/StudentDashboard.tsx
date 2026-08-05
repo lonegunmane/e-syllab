@@ -12,6 +12,7 @@ import { User, CurriculumResource, ResourceCategory, UserRole, GradeRecord, Assi
 import { db } from '../services/database';
 import { getCurriculum, getGrades } from '../services/api';
 import { notificationService } from '../services/notificationService';
+import { SettingsView } from '../components/SettingsView';
 import { ProfileSection } from '../components/ProfileSection';
 import { TimetableView } from '../components/TimetableView';
 import { AssessmentView } from '../components/AssessmentView';
@@ -21,6 +22,7 @@ interface StudentDashboardProps {
   onUpdateUser: (user: User) => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  onLogout?: () => void;
 }
 
 const CurriculumViewer: React.FC<{ userGrade?: string }> = ({ userGrade }) => {
@@ -346,7 +348,7 @@ const AssignmentsView: React.FC<{ userGrade?: string }> = ({ userGrade }) => {
     );
 };
 
-export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onUpdateUser, activeTab, setActiveTab }) => {
+export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onUpdateUser, activeTab, setActiveTab, onLogout }) => {
   const subjectsList = [
     'Mathematics', 
     'Science Physics', 
@@ -578,7 +580,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, onUpda
       {activeTab === 'timetable' && <TimetableView currentUser={user} />}
       {activeTab === 'assignments' && <AssignmentsView userGrade={user.grade} />}
       {activeTab === 'assessments' && <AssessmentView currentUser={user} />}
-      {activeTab === 'profile' && <ProfileSection user={user} onUpdateUser={onUpdateUser} />}
+      {(activeTab === 'profile' || activeTab === 'settings') && <SettingsView user={user} onUpdateUser={onUpdateUser} onLogout={onLogout} />}
     </div>
   );
 };

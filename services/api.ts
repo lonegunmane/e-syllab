@@ -272,6 +272,66 @@ export async function resetPassword(newPassword: string) {
   return response.json();
 }
 
+// ─── Sessions & Device Management ─────────────────────────────────────────────
+export async function getSessions() {
+  const response = await fetch(`${API_BASE_URL}/sessions`, {
+    method: "GET",
+    headers: getAuthHeaders(false)
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearToken();
+      throw new Error("Your login has ended, please sign in again.");
+    }
+    const data = await response.json();
+    throw new Error(data.error || "Could not fetch connected devices.");
+  }
+
+  return response.json();
+}
+
+export async function revokeSession(sessionId: string) {
+  const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/revoke`, {
+    method: "POST",
+    headers: getAuthHeaders()
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearToken();
+      throw new Error("Your login has ended, please sign in again.");
+    }
+    const data = await response.json();
+    throw new Error(data.error || "Could not log out device.");
+  }
+
+  return response.json();
+}
+
+// ─── Account Deletion ─────────────────────────────────────────────────────────
+export async function deleteAccount(password: string) {
+  const response = await fetch(`${API_BASE_URL}/users/me`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ password })
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearToken();
+      throw new Error("Your login has ended, please sign in again.");
+    }
+    const data = await response.json();
+    throw new Error(data.error || "Could not delete account.");
+  }
+
+  // Clear local session storage
+  clearToken();
+
+  return response.json();
+}
+
 // ─── Blockchain APIs (all require authentication) ─────────────────────────────
 export async function getBlockchainStatus() {
   const response = await fetch(`${API_BASE_URL}/blockchain/status`, {

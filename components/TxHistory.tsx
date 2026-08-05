@@ -161,10 +161,10 @@ export const TxHistory: React.FC<Props> = ({ walletAddress }) => {
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <History className="w-5 h-5 text-primary-400" />
-            Blockchain Transaction History
+            Account Activity &amp; Record History
           </h2>
           <p className="text-slate-400 text-sm mt-0.5">
-            All on-chain attendance records for your wallet.
+            All verified school records associated with your account.
           </p>
         </div>
         <button
@@ -181,24 +181,24 @@ export const TxHistory: React.FC<Props> = ({ walletAddress }) => {
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="glass-card p-4 rounded-2xl">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Balance</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Network Credits</p>
             <p className="text-lg font-bold text-white mt-1">{stats.balance.toFixed(4)} SOL</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Devnet</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Secure Network</p>
           </div>
           <div className="glass-card p-4 rounded-2xl">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Txs</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Records</p>
             <p className="text-lg font-bold text-white mt-1">{stats.totalTxs}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">On-chain records</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Permanent records</p>
           </div>
           <div className="glass-card p-4 rounded-2xl">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Fees</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Network Usage</p>
             <p className="text-lg font-bold text-emerald-400 mt-1">{stats.totalFees.toFixed(6)}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">SOL spent</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Activity cost</p>
           </div>
           <div className="glass-card p-4 rounded-2xl">
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Success Rate</p>
             <p className="text-lg font-bold text-emerald-400 mt-1">{stats.successRate.toFixed(1)}%</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Transactions</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Verified entries</p>
           </div>
         </div>
       )}
@@ -206,7 +206,7 @@ export const TxHistory: React.FC<Props> = ({ walletAddress }) => {
       {/* Fee Trend Mini-Chart */}
       {records.length > 1 && (
         <div className="glass-card p-4 rounded-2xl">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Fee Trend (Last {Math.min(records.length, 20)} Transactions)</p>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Activity Trend (Last {Math.min(records.length, 20)} Records)</p>
           <div className="flex items-end gap-1 h-16">
             {records.slice(0, 20).reverse().map((tx, i) => {
               const maxFee = Math.max(...records.map(r => r.fee)) || 1;
@@ -218,7 +218,7 @@ export const TxHistory: React.FC<Props> = ({ walletAddress }) => {
                     tx.status === 'success' ? 'bg-emerald-500/60' : 'bg-rose-500/60'
                   }`}
                   style={{ height: `${Math.max(height, 5)}%` }}
-                  title={`Fee: ${formatFee(tx.fee)} | ${formatDate(tx.blockTime)}`}
+                  title={`Cost: ${formatFee(tx.fee)} | ${formatDate(tx.blockTime)}`}
                 />
               );
             })}
@@ -229,7 +229,7 @@ export const TxHistory: React.FC<Props> = ({ walletAddress }) => {
       {/* Transaction Table */}
       <div className="glass-card rounded-2xl overflow-hidden">
         <div className="p-4 border-b border-white/5 flex justify-between items-center">
-          <h3 className="font-bold text-white text-sm">Recent Transactions</h3>
+          <h3 className="font-bold text-white text-sm">Recent Activity</h3>
           <span className="px-2 py-0.5 bg-primary-950/40 text-primary-400 text-[10px] font-bold rounded-full border border-primary-500/20">
             {records.length} Records
           </span>
@@ -238,14 +238,14 @@ export const TxHistory: React.FC<Props> = ({ walletAddress }) => {
         {isLoading ? (
           <div className="p-12 text-center">
             <Loader2 className="w-8 h-8 text-primary-400 animate-spin mx-auto mb-3" />
-            <p className="text-slate-500 text-sm">Fetching from Solana Devnet…</p>
+            <p className="text-slate-500 text-sm">Loading activity records…</p>
           </div>
         ) : error ? (
           <div className="p-8 text-center text-rose-400 text-sm">{error}</div>
         ) : records.length === 0 ? (
           <div className="p-12 text-center text-slate-500 italic text-sm">
             <History className="w-10 h-10 mx-auto mb-3 opacity-10" />
-            No transactions found for this wallet on Devnet.
+            No saved records found for your account yet.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -253,12 +253,12 @@ export const TxHistory: React.FC<Props> = ({ walletAddress }) => {
               <thead className="bg-white/5 text-slate-500 font-bold uppercase text-[10px] tracking-widest">
                 <tr>
                   <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Signature</th>
-                  <th className="px-4 py-3">Slot</th>
+                  <th className="px-4 py-3">Record Reference</th>
+                  <th className="px-4 py-3">Record #</th>
                   <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Fee</th>
+                  <th className="px-4 py-3">Cost</th>
                   <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Explorer</th>
+                  <th className="px-4 py-3">Public Record</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -267,11 +267,11 @@ export const TxHistory: React.FC<Props> = ({ walletAddress }) => {
                     <td className="px-4 py-3">
                       {tx.status === 'success' ? (
                         <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400">
-                          <TrendingUp className="w-3 h-3" /> Success
+                          <TrendingUp className="w-3 h-3" /> Verified
                         </span>
                       ) : (
                         <span className="flex items-center gap-1 text-[10px] font-bold text-rose-400">
-                          <TrendingDown className="w-3 h-3" /> Failed
+                          <TrendingDown className="w-3 h-3" /> Unresolved
                         </span>
                       )}
                     </td>
@@ -308,7 +308,7 @@ export const TxHistory: React.FC<Props> = ({ walletAddress }) => {
                         className="inline-flex items-center gap-1 text-[10px] text-primary-400 hover:text-primary-300 transition-colors"
                       >
                         <ArrowUpRight className="w-3 h-3" />
-                        View
+                        View Proof
                       </a>
                     </td>
                   </tr>

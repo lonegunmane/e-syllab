@@ -166,9 +166,9 @@ const App: React.FC = () => {
     }
 
     switch (currentUser.role) {
-      case UserRole.STUDENT: return <StudentDashboard user={currentUser} onUpdateUser={handleUserUpdate} activeTab={activeTab} setActiveTab={setActiveTab} />;
-      case UserRole.TEACHER: return <TeacherDashboard user={currentUser} onUpdateUser={handleUserUpdate} activeTab={activeTab} setActiveTab={setActiveTab} />;
-      case UserRole.ADMIN: return <AdminDashboard user={currentUser} onUpdateUser={handleUserUpdate} activeTab={activeTab} setActiveTab={setActiveTab} />;
+      case UserRole.STUDENT: return <StudentDashboard user={currentUser} onUpdateUser={handleUserUpdate} activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} />;
+      case UserRole.TEACHER: return <TeacherDashboard user={currentUser} onUpdateUser={handleUserUpdate} activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} />;
+      case UserRole.ADMIN: return <AdminDashboard user={currentUser} onUpdateUser={handleUserUpdate} activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} />;
       default: return null;
     }
   };
