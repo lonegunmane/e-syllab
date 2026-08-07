@@ -15,8 +15,8 @@ import {
   getNetworkStatus,
   computeOfflineHash,
   getConnection,
-  buildAttendanceAnchorInstruction,
 } from "./services/blockchain.js";
+import { buildAttendanceAnchorInstruction } from "./services/serverBlockchain.js";
 
 const rootDir = process.cwd();
 

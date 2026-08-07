@@ -3,10 +3,7 @@ import {
   PublicKey,
   clusterApiUrl,
   Commitment,
-  TransactionInstruction,
-  SystemProgram,
 } from "@solana/web3.js";
-import { createHash } from "crypto";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -16,99 +13,12 @@ export const SOLANA_ENDPOINT = clusterApiUrl(SOLANA_NETWORK);
 // Real deployed E-SYLLAB Attendance Anchor program (Devnet).
 // Deployed via Solana Playground — see program-keypair.json (kept private,
 // not committed) for the upgrade authority.
+// NOTE: the actual instruction-building logic for this program lives in
+// services/serverBlockchain.ts (Node-only, uses `crypto`) — NOT here,
+// since this file is shared with the browser build.
 export const PROGRAM_ID = new PublicKey("EPnBSBVvrAkFtnXH7CMkck2EAQXjV6LtwxkMiVkJpMpw");
 
-// 8-byte Anchor instruction discriminator for `record_attendance`,
-// computed as the first 8 bytes of SHA-256("global:record_attendance").
-// This is a fixed value tied to the deployed program — do not change it
-// unless the Rust program's instruction name changes and is redeployed.
-const RECORD_ATTENDANCE_DISCRIMINATOR = Buffer.from([79, 87, 96, 24, 25, 169, 16, 201]);
 
-function borshEncodeString(str: string): Buffer {
-  const strBytes = Buffer.from(str, "utf8");
-  const lenBuf = Buffer.alloc(4);
-  lenBuf.writeUInt32LE(strBytes.length, 0);
-  return Buffer.concat([lenBuf, strBytes]);
-}
-
-/**
- * Derives a short, PDA-safe representation of a staff ID.
- * Raw staffId values in this app (UUIDs, ~36 chars) can exceed Solana's
- * 32-byte-per-seed limit, so this hashes it down to a fixed 16-byte-safe
- * hex string. This SAME value must be used both to derive the PDA and as
- * the staff_id_hash instruction argument — the Rust program derives the
- * PDA from the argument values themselves.
- */
-export function shortStaffIdHash(staffId: string): string {
-  return createHash("sha256").update(staffId).digest("hex").slice(0, 16);
-}
-
-/**
- * Builds the on-chain "record_attendance" instruction against the real
- * deployed Anchor program — this is what satisfies the proposal's
- * "Automated Verification: Smart contracts must automatically validate
- * and record synced attendance data" requirement. The program itself
- * rejects invalid status values and duplicate same-day entries on-chain;
- * this is not just client-side validation.
- *
- * @param authorityPublicKey - the school's signing keypair public key (payer + signer)
- * @param staffId - the raw staff/teacher ID from the app's user records
- * @param date - the attendance date, e.g. "2026-08-05"
- * @param status - one of PRESENT | ABSENT | LATE | ON_LEAVE (must match Rust's require! check exactly)
- * @param recordHash - the existing offlineHash/record hash already computed elsewhere (max 64 chars)
- */
-/**
- * Normalizes this app's status strings ("Present", "Absent", "Late",
- * "OnLeave") to the exact uppercase, underscore-separated values the
- * deployed Rust program validates against ("PRESENT", "ABSENT", "LATE",
- * "ON_LEAVE"). This must match services/blockchain.ts's Rust require!
- * check exactly, or the on-chain transaction will fail.
- */
-function normalizeStatusForChain(status: string): string {
-  const map: Record<string, string> = {
-    Present: "PRESENT",
-    Absent: "ABSENT",
-    Late: "LATE",
-    OnLeave: "ON_LEAVE",
-  };
-  return map[status] || status.toUpperCase();
-}
-
-export function buildAttendanceAnchorInstruction(
-  authorityPublicKey: PublicKey,
-  staffId: string,
-  date: string,
-  status: string,
-  recordHash: string
-): { instruction: TransactionInstruction; pda: PublicKey } {
-  const staffIdHash = shortStaffIdHash(staffId);
-  const normalizedStatus = normalizeStatusForChain(status);
-
-  const [pda] = PublicKey.findProgramAddressSync(
-    [Buffer.from("attendance"), Buffer.from(staffIdHash, "utf8"), Buffer.from(date, "utf8")],
-    PROGRAM_ID
-  );
-
-  const data = Buffer.concat([
-    RECORD_ATTENDANCE_DISCRIMINATOR,
-    borshEncodeString(staffIdHash),
-    borshEncodeString(date),
-    borshEncodeString(normalizedStatus),
-    borshEncodeString(recordHash.slice(0, 64)),
-  ]);
-
-  const instruction = new TransactionInstruction({
-    keys: [
-      { pubkey: pda, isSigner: false, isWritable: true },
-      { pubkey: authorityPublicKey, isSigner: true, isWritable: true },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    ],
-    programId: PROGRAM_ID,
-    data,
-  });
-
-  return { instruction, pda };
-}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
