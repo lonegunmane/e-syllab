@@ -11,7 +11,10 @@ import {
   KeyRound,
   RefreshCw,
   ArrowLeft,
-  Sparkles
+  Sparkles,
+  X,
+  FileText,
+  Check
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { db } from '../services/database';
@@ -49,6 +52,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [consentAgreed, setConsentAgreed] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   const handleSendOtp = async () => {
     if (!resetEmail) {
@@ -268,11 +273,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
     setError(null);
 
     try {
+      const consentTimestamp = new Date().toISOString();
       const newUserPayload = {
         name,
         email: pendingEmail,
         role,
-        avatar: `https://picsum.photos/seed/${name.replace(/\s/g, '')}/100/100`
+        avatar: `https://picsum.photos/seed/${name.replace(/\s/g, '')}/100/100`,
+        consentGivenAt: consentTimestamp,
       };
 
       try {
@@ -334,6 +341,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
     setGeneratedOtp('');
     setTwoFactorCode('');
     setDevCodeNotice(null);
+    setConsentAgreed(false);
   };
 
   return (
@@ -466,9 +474,39 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                 </div>
               </div>
 
+              {!isLogin && (
+                <div className="pt-2 pb-1 animate-in fade-in">
+                  <label className="flex items-start gap-3 cursor-pointer group select-none">
+                    <input
+                      id="registration-consent-checkbox"
+                      type="checkbox"
+                      required
+                      checked={consentAgreed}
+                      onChange={(e) => setConsentAgreed(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded border-white/20 bg-white/5 text-primary-600 focus:ring-primary-500 focus:ring-offset-0 cursor-pointer accent-primary-600 shrink-0"
+                    />
+                    <span className="text-xs text-slate-300 leading-relaxed group-hover:text-white transition-colors">
+                      I have read and agree to the{' '}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setShowPrivacyModal(true);
+                        }}
+                        className="text-primary-400 font-bold hover:underline inline underline-offset-2 cursor-pointer"
+                      >
+                        Privacy Policy
+                      </button>{' '}
+                      and consent to my personal data being processed as described.
+                    </span>
+                  </label>
+                </div>
+              )}
+
               <button
-                disabled={loading}
-                className="w-full bg-primary-600 hover:bg-primary-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 text-sm"
+                disabled={loading || (!isLogin && !consentAgreed)}
+                className="w-full bg-primary-600 hover:bg-primary-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {loading ? (
                   <>
@@ -782,6 +820,94 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
         </div>
       </div>
+
+      {/* ── Privacy Policy Modal for Registration ── */}
+      {showPrivacyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
+          <div className="bg-slate-900 border border-white/10 max-w-2xl w-full max-h-[85vh] rounded-3xl p-6 md:p-8 flex flex-col shadow-2xl space-y-5 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-4 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-primary-600 text-white rounded-xl shadow-lg">
+                  <Shield className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">E-SYLLAB Privacy Policy</h2>
+                  <p className="text-xs text-primary-400">Data Protection Act No. 3 of 2021 (Republic of Zambia)</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPrivacyModal(false)}
+                className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/5 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto space-y-4 pr-2 text-xs text-slate-300 leading-relaxed">
+              <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2">
+                <h3 className="text-sm font-bold text-white">1. Commitment to Informed Consent &amp; Data Protection</h3>
+                <p>
+                  E-SYLLAB strictly respects the rights of students, teachers, and guardians under the <strong>Data Protection Act No. 3 of 2021</strong> of Zambia. We process personal data solely for educational management, academic progression, and attendance verification.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-bold text-white text-xs uppercase tracking-wider">2. What Information Is Collected</h4>
+                <ul className="list-disc pl-5 space-y-1 text-slate-400">
+                  <li><strong>Account Identity:</strong> Full name, institutional email address, student role, profile avatar, contact number, and residential details.</li>
+                  <li><strong>Academic Records:</strong> Attendance registers, lesson marks, coursework submissions, and report cards.</li>
+                  <li><strong>Security Logs:</strong> Active sign-in timestamps, device types, and session tokens to secure your account.</li>
+                </ul>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-bold text-white text-xs uppercase tracking-wider">3. Your Rights as a Data Subject</h4>
+                <p className="text-slate-400">
+                  Under the Act, you are granted complete control over your personal records:
+                </p>
+                <ul className="list-disc pl-5 space-y-1 text-slate-400">
+                  <li><strong className="text-slate-200">Right of Access (Download My Data):</strong> You can export a full copy of all your records at any time from your Profile settings.</li>
+                  <li><strong className="text-slate-200">Right to Rectification (Edit Profile):</strong> You can modify and update inaccurate details in your settings.</li>
+                  <li><strong className="text-slate-200">Right to Erasure (Delete Account):</strong> You can permanently deactivate and erase your account data.</li>
+                </ul>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-bold text-white text-xs uppercase tracking-wider">4. Safeguards &amp; Minors Protection</h4>
+                <p className="text-slate-400">
+                  All passwords and sensitive contact fields are encrypted with industry-standard cryptographic algorithms (bcrypt, AES-256-GCM). Educational records of minor students are strictly protected and never shared with third-party advertisers.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-white/10 flex items-center justify-between gap-3">
+              <span className="text-[11px] text-slate-500">
+                Timestamp of consent is recorded upon account registration.
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPrivacyModal(false)}
+                  className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-xs font-bold transition-colors border border-white/10"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConsentAgreed(true);
+                    setShowPrivacyModal(false);
+                  }}
+                  className="px-5 py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-primary-900/40 flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" /> I Agree &amp; Accept
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

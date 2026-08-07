@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Send, Paperclip, File, Film, Music, Image as ImageIcon, 
   Download, Search, User as UserIcon, MessageSquare, MoreVertical,
-  X, Trash2, Check, CheckCheck
+  X, Trash2, Check, CheckCheck, Info
 } from 'lucide-react';
 import { User, UserRole, Message } from '../types';
 import { db } from '../services/database';
@@ -21,8 +21,42 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
   const [selectedFile, setSelectedFile] = useState<{ name: string, type: string, data: string, size: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    if (showDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDropdown]);
+
+  const handleClearCurrentThread = () => {
+    setShowDropdown(false);
+    if (!selectedRecipientId) {
+      // Clear broadcast thread from local state
+      setMessages(prev => prev.filter(m => m.recipientId !== 'ALL_ADMINS' && m.recipientId !== 'TEACHER_BROADCAST'));
+    } else {
+      // Clear specific recipient thread from local state
+      setMessages(prev => prev.filter(m => 
+        !(
+          (m.senderId === currentUser.id && m.recipientId === selectedRecipientId) ||
+          (m.senderId === selectedRecipientId && m.recipientId === currentUser.id)
+        )
+      ));
+    }
+  };
 
   useEffect(() => {
     // Load potential recipients
@@ -331,9 +365,39 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
             >
               <Trash2 className="w-5 h-5" />
             </button>
-            <button className="p-2 text-slate-400 hover:text-white transition-colors">
-              <MoreVertical className="w-5 h-5" />
-            </button>
+            <div className="relative" ref={dropdownRef}>
+              <button 
+                onClick={() => setShowDropdown(prev => !prev)}
+                title="Conversation Options"
+                className="p-2 text-slate-400 hover:text-white transition-colors rounded-xl hover:bg-white/5 cursor-pointer"
+              >
+                <MoreVertical className="w-5 h-5" />
+              </button>
+
+              {showDropdown && (
+                <div className="absolute right-0 top-full mt-2 w-52 py-2 glass-card rounded-2xl border border-white/10 shadow-2xl z-30 space-y-1 animate-in fade-in zoom-in-95">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDropdown(false);
+                      setShowInfoModal(true);
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-xs text-slate-200 hover:text-white hover:bg-white/10 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Info className="w-4 h-4 text-primary-400" />
+                    <span>Conversation Info</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearCurrentThread}
+                    className="w-full px-4 py-2.5 text-left text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4 text-rose-400" />
+                    <span>Clear Conversation</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -472,6 +536,73 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
         </form>
       </div>
     </div>
+
+    {/* Conversation Info Modal */}
+    {showInfoModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
+        <div className="bg-slate-900 border border-white/10 max-w-md w-full rounded-3xl p-6 shadow-2xl space-y-5 animate-in zoom-in-95">
+          <div className="flex items-center justify-between pb-4 border-b border-white/10">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-primary-600/30 border border-primary-500/40 text-primary-400 rounded-xl">
+                <Info className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-white">Conversation Info</h2>
+                <p className="text-xs text-slate-400">Thread Details &amp; Summary</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowInfoModal(false)}
+              className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Participant:</span>
+                <span className="text-white font-bold">
+                  {selectedRecipientId 
+                    ? (recipients.find(r => r.id === selectedRecipientId)?.name || 'Direct Contact')
+                    : 'All Teachers (Group)'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Role:</span>
+                <span className="px-2 py-0.5 rounded bg-primary-950/40 border border-primary-500/20 text-primary-400 font-bold uppercase text-[10px]">
+                  {selectedRecipientId 
+                    ? (recipients.find(r => r.id === selectedRecipientId)?.role || 'User')
+                    : 'Broadcast Channel'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Total Messages:</span>
+                <span className="text-white font-mono font-bold">{currentChatMessages.length}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Encryption:</span>
+                <span className="text-emerald-400 font-medium flex items-center gap-1">
+                  <Check className="w-3.5 h-3.5" /> End-to-End Local / DB
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setShowInfoModal(false)}
+              className="px-5 py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-primary-900/40 cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </div>
   );
 };

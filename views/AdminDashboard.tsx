@@ -72,57 +72,31 @@ const AnimatedCounter: React.FC<{ value: number }> = ({ value }) => {
 
 const LiveNetworkActivity: React.FC = () => {
     const allUsers = [...db.getUsersByRole(UserRole.STUDENT), ...db.getUsersByRole(UserRole.TEACHER)];
-    
-    // Create random-looking but deterministic session info based on ID length or characters
-    const getSessionInfo = (user: User, index: number) => {
-        const statuses = ['Active', 'Idle', 'Validating'];
-        const times = ['1h 15m', '45m', '2h 10m', '30m', '10m', '55m'];
-        const grades = ['A-', 'B+', 'A', 'B', 'B-', 'A+'];
-        
-        return {
-            status: statuses[index % statuses.length],
-            timeLoggedIn: times[index % times.length],
-            avgGrade: grades[index % grades.length]
-        };
-    };
-
-    const onlineUsers = allUsers.slice(0, 6).map((u, i) => ({
-        ...u,
-        ...getSessionInfo(u, i)
-    }));
+    const onlineUsers = allUsers.slice(0, 6);
   
     return (
       <div className="lg:col-span-2 glass-card p-6 rounded-2xl flex flex-col h-[400px]">
           <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-white">Live Network Activity</h2>
+              <h2 className="font-bold text-white">Registered Users</h2>
               <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]"></span>
-                  <span className="text-xs text-emerald-400 font-bold tracking-wider uppercase">Live</span>
+                  <span className="text-xs text-emerald-400 font-bold tracking-wider uppercase">{allUsers.length} Total</span>
               </div>
           </div>
           <div className="overflow-y-auto flex-1 pr-2 -mr-2 space-y-3">
             {onlineUsers.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-slate-500 text-sm italic">
-                    No active sessions found.
+                    No registered users found.
                 </div>
             ) : (
                 onlineUsers.map((user) => (
                     <div key={user.id} className="p-3 rounded-xl border border-white/5 bg-white/5 flex items-center justify-between hover:bg-white/10 transition-all group">
                         <div className="flex items-center gap-3">
-                            <div className="relative">
-                                <img src={user.avatar} alt="" className="w-10 h-10 rounded-full border border-white/10" />
-                                <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-[#1a1635] rounded-full ${user.status === 'Active' ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]' : user.status === 'Idle' ? 'bg-amber-400 shadow-[0_0_5px_rgba(251,191,36,0.5)]' : 'bg-primary-400 shadow-[0_0_5px_rgba(167,139,250,0.5)]'}`}></div>
-                            </div>
+                            <img src={user.avatar} alt="" className="w-10 h-10 rounded-full border border-white/10" />
                             <div>
                                 <p className="text-sm font-bold text-white group-hover:text-primary-300 transition-colors">{user.name}</p>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{user.role}</p>
                             </div>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-xs font-mono text-slate-400">{user.timeLoggedIn} session</p>
-                            {user.role === UserRole.STUDENT && (
-                                <p className="text-[10px] font-bold text-primary-400 mt-0.5">Avg Grade: {user.avgGrade}</p>
-                            )}
                         </div>
                     </div>
                 ))

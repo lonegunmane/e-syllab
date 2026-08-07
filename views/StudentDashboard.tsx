@@ -224,6 +224,26 @@ const AssignmentsView: React.FC<{ userGrade?: string }> = ({ userGrade }) => {
         alert(`Push alert reminder set for "${asg.title}"!`);
     };
 
+    const handleDownload = (doc: CurriculumResource) => {
+        if (doc.fileData) {
+            const link = document.createElement('a');
+            link.href = doc.fileData;
+            link.download = doc.fileName || `${doc.title}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } else {
+            // Fallback download from description/subject content
+            const blob = new Blob([`${doc.title}\n\n${doc.description || ''}\n\nSubject: ${doc.subject}\nGrade: ${doc.gradeLevel}`], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${doc.title.toLowerCase().replace(/\s+/g, '_')}.txt`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
             <div className="flex items-center justify-between">
@@ -331,7 +351,12 @@ const AssignmentsView: React.FC<{ userGrade?: string }> = ({ userGrade }) => {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        <button className="text-[10px] font-bold text-primary-400 hover:text-primary-300 transition-all uppercase tracking-widest group-hover:mr-1">Open Portal</button>
+                                        <button 
+                                            onClick={() => handleDownload(item)}
+                                            className="text-[10px] font-bold text-primary-400 hover:text-primary-300 transition-all uppercase tracking-widest group-hover:mr-1 cursor-pointer"
+                                        >
+                                            Download
+                                        </button>
                                     </td>
                                 </tr>
                             ))}

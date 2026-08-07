@@ -5,7 +5,7 @@ import {
   Calendar, AlertTriangle, MessageSquare, Check, Sparkles, Smartphone,
   Layers, ChevronDown, ChevronUp, Code2, WifiOff, FileCheck, Shield,
   FileText, Trash2, LogOut, Upload, Laptop, Globe, Key, AlertCircle,
-  GraduationCap, BookOpen, Hash
+  GraduationCap, BookOpen, Hash, Download
 } from 'lucide-react';
 import { User, UserRole, UserSession } from '../types';
 import { db } from '../services/database';
@@ -13,7 +13,7 @@ import {
   getSavedTheme, applyTheme, ThemeMode,
   getNotificationPreferences, saveNotificationPreferences, NotificationPreferences
 } from '../services/settingsService';
-import { getSessions, revokeSession, deleteAccount, clearToken } from '../services/api';
+import { getSessions, revokeSession, deleteAccount, clearToken, exportPersonalData } from '../services/api';
 
 interface SettingsViewProps {
   user: User;
@@ -76,6 +76,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
   const [deletePassword, setDeletePassword] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // ── Data Export State (Data Protection Act 2021) ──────────────────────────
+  const [isExportingData, setIsExportingData] = useState(false);
+  const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
+  const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
 
   // Keep form data synchronized if user prop changes
   useEffect(() => {
@@ -246,6 +251,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
   const handleThemeChange = (newTheme: ThemeMode) => {
     setCurrentTheme(newTheme);
     applyTheme(newTheme);
+  };
+
+  // Handle Personal Data Export (Zambia Data Protection Act No. 3 of 2021)
+  const handleExportData = async () => {
+    setIsExportingData(true);
+    setExportSuccessMessage(null);
+    setExportErrorMessage(null);
+    try {
+      const { blob, filename } = await exportPersonalData();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      setExportSuccessMessage("Personal data archive downloaded successfully! This file contains your profile, grades, attendance logs, messages, and assessment scores.");
+      setTimeout(() => setExportSuccessMessage(null), 8000);
+    } catch (err: any) {
+      setExportErrorMessage(err.message || "Failed to export personal data. Please try again.");
+    } finally {
+      setIsExportingData(false);
+    }
   };
 
   // Handle Notification Toggle
@@ -792,7 +821,66 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
               </div>
 
               {/* ─────────────────────────────────────────────────────────────────
-                  CARD 3: DANGER ZONE / DESTRUCTIVE ACTION (DELETE ACCOUNT)
+                  CARD 3: DATA PORTABILITY & ACCESS (DOWNLOAD MY DATA)
+                  Zambia Data Protection Act No. 3 of 2021 Compliance
+                 ───────────────────────────────────────────────────────────────── */}
+              <div className="p-6 md:p-8 rounded-3xl border border-primary-500/30 bg-primary-950/20 backdrop-blur-md space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 bg-primary-600/30 border border-primary-500/40 text-primary-300 rounded-2xl shrink-0 shadow-lg shadow-primary-950/50">
+                      <Download className="w-6 h-6 text-primary-400" />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-bold text-white">
+                          Download My Data
+                        </h3>
+                        <span className="px-2 py-0.5 bg-primary-500/20 text-primary-300 border border-primary-500/30 rounded-lg text-[10px] font-extrabold uppercase tracking-wider">
+                          Data Portability
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
+                        In line with Zambia's <strong>Data Protection Act No. 3 of 2021</strong>, you can download a complete, machine-readable JSON copy of all your personal records held in E-SYLLAB — including your profile details, grades, attendance logs, direct messages, and assessment scores.
+                      </p>
+                      {exportSuccessMessage && (
+                        <div className="mt-2 text-xs text-emerald-400 font-medium flex items-center gap-1.5 animate-in fade-in">
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          <span>{exportSuccessMessage}</span>
+                        </div>
+                      )}
+                      {exportErrorMessage && (
+                        <div className="mt-2 text-xs text-rose-400 font-medium flex items-center gap-1.5 animate-in fade-in">
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>{exportErrorMessage}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    id="download-my-data-btn"
+                    type="button"
+                    disabled={isExportingData}
+                    onClick={handleExportData}
+                    className="px-6 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-2xl text-xs font-bold transition-all shadow-lg shadow-primary-950/60 hover:shadow-primary-900/80 flex items-center gap-2 cursor-pointer self-start sm:self-auto active:scale-95 shrink-0 disabled:opacity-50"
+                  >
+                    {isExportingData ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Exporting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4" />
+                        <span>Download My Data</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* ─────────────────────────────────────────────────────────────────
+                  CARD 4: DANGER ZONE / DESTRUCTIVE ACTION (DELETE ACCOUNT)
                   Only displayed in this Profile view
                  ───────────────────────────────────────────────────────────────── */}
               <div className="p-6 md:p-8 rounded-3xl border-2 border-rose-500/40 bg-rose-950/20 backdrop-blur-md space-y-4">
@@ -1367,10 +1455,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                   </p>
                 </section>
 
-                <section className="space-y-2">
+                <section className="space-y-3">
                   <h3 className="text-sm font-bold text-white">6. Your Rights as a Data Subject</h3>
                   <p>
-                    Under the Data Protection Act No. 3 of 2021, you have the right to request access to your personal records, request rectification of inaccurate information, manage active connected sessions, and request account deletion subject to institutional record retention policies.
+                    Under the <strong>Data Protection Act No. 3 of 2021 (Republic of Zambia)</strong>, you have full control over your personal data. E-SYLLAB provides accessible, direct controls for every user:
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                    <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-1.5">
+                      <div className="flex items-center gap-2 text-primary-400 font-bold text-xs">
+                        <Download className="w-4 h-4" /> Right of Access &amp; Data Portability
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        <strong>See &amp; Export Your Data:</strong> You have the right to obtain a full copy of all data held about you. Click <em>"Download My Data"</em> in your Profile settings to download a single structured JSON archive containing your profile, grades, attendance logs, messages, and assessment scores.
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-1.5">
+                      <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
+                        <Save className="w-4 h-4" /> Right to Rectification
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        <strong>Correct Inaccurate Information:</strong> You can edit and update your name, contact phone number, residential address, gender, and avatar picture at any time in the Profile section of Settings.
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-1.5">
+                      <div className="flex items-center gap-2 text-rose-400 font-bold text-xs">
+                        <Trash2 className="w-4 h-4" /> Right to Erasure &amp; Deactivation
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        <strong>Delete Your Account:</strong> You can request permanent erasure and deactivation of your account, credentials, and active device sessions from the Danger Zone in your Profile settings.
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-400 pt-1">
+                    Informed Consent: Data processing begins with your explicit, informed consent recorded during registration with an immutable timestamp in our secure database.
                   </p>
                 </section>
 
@@ -1414,6 +1533,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                 <p className="text-xs text-slate-300 leading-relaxed">
                   E-SYLLAB is a reliable, easy-to-use digital platform designed for Zambian secondary schools. It allows teachers to mark attendance even without internet, keeps school records secure and permanent, and helps students and teachers stay organized throughout the term.
                 </p>
+              </div>
+
+              {/* Data Protection & User Rights Card */}
+              <div className="p-6 bg-white/5 border border-white/10 rounded-2xl space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 rounded-2xl">
+                    <Shield className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Data Protection &amp; User Privacy Rights</h3>
+                    <p className="text-[11px] text-emerald-300">Zambia Data Protection Act No. 3 of 2021</p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  E-SYLLAB is built with user privacy and data sovereignty by design. As a registered user, you have full control over your personal records:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-300 pt-1">
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-1">
+                    <strong className="text-white block text-xs">1. Download My Data</strong>
+                    <p className="text-[11px] text-slate-400">Export a complete copy of all personal records, grades, attendance logs, and messages held about you.</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-1">
+                    <strong className="text-white block text-xs">2. Edit Profile</strong>
+                    <p className="text-[11px] text-slate-400">Correct and update your personal details, contact number, avatar, and residential address at any time.</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-1">
+                    <strong className="text-white block text-xs">3. Delete Account</strong>
+                    <p className="text-[11px] text-slate-400">Permanently erase and deactivate your credentials, profile, and active sessions from the school database.</p>
+                  </div>
+                </div>
               </div>
 
               {/* System Overview Grid */}

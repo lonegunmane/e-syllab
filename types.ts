@@ -26,6 +26,7 @@ export interface User {
   school?: string;
   gender?: 'Male' | 'Female' | string;
   residentialAddress?: string;
+  consentGivenAt?: string;
   // Teacher specific fields
   teachingGrades?: string[];
   teachingClasses?: string[];
@@ -38,6 +39,8 @@ export interface User {
   enrolledSubjects?: string[];
   lastViewedCurriculumAt?: string;
   active?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CurriculumResource {

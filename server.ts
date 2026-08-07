@@ -17,6 +17,7 @@ import {
   getConnection,
 } from "./services/blockchain.js";
 
+const rootDir = process.cwd();
 
 // ─── School signing keypair (used to auto-sync offline records) ──────────────
 // Generate once with: node generate-keypair.js
@@ -614,7 +615,7 @@ async function startServer() {
 
   // POST /api/register - Public registration with security code verification
   app.post("/api/register", async (req, res) => {
-    const { name, email, password, avatar, twoFactorCode } = req.body;
+    const { name, email, password, avatar, twoFactorCode, consentGivenAt } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ success: false, error: "Name, email, and password required" });
@@ -641,6 +642,7 @@ async function startServer() {
         email: trimmedEmail,
         role: UserRole.STUDENT, // Force STUDENT role for public registration
         avatar: avatar || `https://picsum.photos/seed/${name.replace(/\s/g, '')}/100/100`,
+        consentGivenAt: consentGivenAt || new Date().toISOString(),
       };
 
       const createdUser = await serverDb.registerUser(userPayload, password);
@@ -973,6 +975,74 @@ async function startServer() {
     serverDb.deleteUser(userId);
 
     res.json({ success: true, message: "Your account has been deactivated." });
+  });
+
+  // GET /api/users/me/export - Data Protection Act No. 3 of 2021 (Personal Data Portability & Access)
+  app.get("/api/users/me/export", authenticateToken, (req, res) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, error: "Please sign in to export your data." });
+    }
+
+    const userId = req.user.userId;
+    const user = serverDb.findUserById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User account not found." });
+    }
+
+    // 1. Profile information
+    const profile = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      avatar: user.avatar,
+      blockchainId: user.blockchainId,
+      contact: user.contact,
+      school: user.school,
+      gender: user.gender,
+      residentialAddress: user.residentialAddress,
+      grade: user.grade,
+      className: user.className,
+      enrolledSubjects: user.enrolledSubjects,
+      teachingGrades: user.teachingGrades,
+      teachingClasses: user.teachingClasses,
+      teachingSubjects: user.teachingSubjects,
+      isProfileComplete: user.isProfileComplete,
+      consentGivenAt: user.consentGivenAt,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+
+    // 2. Grades
+    const studentGrades = serverDb.getStudentGrades(userId);
+    const teacherGrades = user.role === UserRole.TEACHER ? serverDb.getGradesByTeacher(userId) : undefined;
+
+    // 3. Attendance records
+    const attendanceRecords = serverDb.getUserAttendanceRecords(userId);
+
+    // 4. Messages
+    const messages = serverDb.getUserMessages(userId, user.role);
+
+    // 5. Assessment scores
+    const assessmentScores = serverDb.getStudentAssessmentScores(userId);
+
+    const exportData = {
+      complianceNotice: "Exported in accordance with Zambia Data Protection Act No. 3 of 2021 (Right of Access and Data Portability).",
+      exportTimestamp: new Date().toISOString(),
+      user: profile,
+      grades: {
+        studentGrades,
+        ...(teacherGrades ? { submittedGrades: teacherGrades } : {}),
+      },
+      attendanceRecords,
+      messages,
+      assessmentScores,
+    };
+
+    const filename = `esylab-personal-data-${user.id}-${Date.now()}.json`;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(JSON.stringify(exportData, null, 2));
   });
 
   // GET /api/profile - Get current user profile (requires authentication)
@@ -2186,12 +2256,12 @@ async function startServer() {
   app.get("/sw.js", (_req, res) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Content-Type", "application/javascript");
-    res.sendFile(path.join(process.cwd(), "sw.js"));
+    res.sendFile(path.join(rootDir, "sw.js"));
   });
 
   app.get("/manifest.json", (_req, res) => {
     res.setHeader("Content-Type", "application/manifest+json");
-    res.sendFile(path.join(process.cwd(), "manifest.json"));
+    res.sendFile(path.join(rootDir, "manifest.json"));
   });
 
   // ── Vite middleware ─────────────────────────────────────────────────────────
@@ -2199,7 +2269,7 @@ async function startServer() {
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.join(rootDir, "dist");
     app.use(express.static(distPath));
     app.get("*all", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
   }

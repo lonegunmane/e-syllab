@@ -7,8 +7,7 @@ import bcrypt from 'bcryptjs';
 import { encryptField, decryptField } from './encryption';
 import { User, UserRole, CurriculumResource, ResourceCategory, Message, GradeRecord, VaultDocument, DocumentStatus, AuthCredential, TimetableEntry, Assessment, AssessmentScore, SystemNotification } from '../types';
 
-
-const dbPath = path.join(process.cwd(), '..', 'data', 'esylab.db');
+const dbPath = path.join(process.cwd(), 'data', 'esylab.db');
 
 // Ensure data directory exists
 const dataDir = path.dirname(dbPath);
@@ -31,18 +30,47 @@ export const serverDb = {
       SQL = await initSqlJs();
     }
 
-    // Load existing database or create new one
+    let loadedFromDisk = false;
+
+    // Load existing database if available and verify integrity
     if (fs.existsSync(dbPath)) {
-      const buf = fs.readFileSync(dbPath);
-      sqlDb = new SQL.Database(buf);
-    } else {
+      try {
+        const buf = fs.readFileSync(dbPath);
+        if (buf.length > 0) {
+          const tempDb = new SQL.Database(buf);
+          const check = tempDb.exec("PRAGMA integrity_check;");
+          if (check && check.length > 0 && check[0].values?.[0]?.[0] === "ok") {
+            sqlDb = tempDb;
+            loadedFromDisk = true;
+          } else {
+            throw new Error("Integrity check did not return ok");
+          }
+        }
+      } catch (err: any) {
+        console.warn("[Database] Corrupted or invalid database detected. Rebuilding a clean database...", err?.message || err);
+        try {
+          fs.renameSync(dbPath, `${dbPath}.bak-${Date.now()}`);
+        } catch {}
+      }
+    }
+
+    if (!loadedFromDisk) {
       sqlDb = new SQL.Database();
     }
 
-    this.createTables();
-    this.seedInitialData();
-    this.seedTimetables();
-    this.save();
+    try {
+      this.createTables();
+      this.seedInitialData();
+      this.seedTimetables();
+      this.save();
+    } catch (err: any) {
+      console.error("[Database] Error during schema initialization, recreating fresh database...", err);
+      sqlDb = new SQL.Database();
+      this.createTables();
+      this.seedInitialData();
+      this.seedTimetables();
+      this.save();
+    }
   },
 
   save(): void {
@@ -73,6 +101,7 @@ export const serverDb = {
         enrolledSubjects TEXT,
         isProfileComplete BOOLEAN DEFAULT 0,
         active BOOLEAN DEFAULT 1,
+        consentGivenAt TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       )
@@ -251,33 +280,69 @@ export const serverDb = {
       )
     `);
 
-    // Migration: ensure active column exists in users table for existing databases
+    // Migration: ensure active and consentGivenAt columns exist in users table for existing databases
     try {
       sqlDb.run(`ALTER TABLE users ADD COLUMN active BOOLEAN DEFAULT 1`);
+    } catch {}
+    try {
+      sqlDb.run(`ALTER TABLE users ADD COLUMN consentGivenAt TEXT`);
     } catch {}
   },
 
   seedInitialData(): void {
     try {
-      // Check if admin exists
-      const stmt = sqlDb.prepare('SELECT id FROM users WHERE email = ?');
-      stmt.bind(['admin@gmail.com']);
-      const hasAdmin = stmt.step();
-      stmt.free();
-
-      if (hasAdmin) {
-        return; // Already seeded
-      }
-
+      const adminEmail = process.env.ADMIN_SEED_EMAIL?.trim().toLowerCase() || 'admin@gmail.com';
       const adminId = '3';
       const now = new Date().toISOString();
+
+      // Check if admin or user with adminId, adminEmail, or role ADMIN already exists
+      const stmt = sqlDb.prepare('SELECT id, email, role FROM users WHERE id = ? OR email = ? OR role = "ADMIN"');
+      stmt.bind([adminId, adminEmail]);
+      let existingAdmin: { id: string; email: string; role: string } | null = null;
+      if (stmt.step()) {
+        existingAdmin = stmt.getAsObject() as any;
+      }
+      stmt.free();
+
+      if (existingAdmin) {
+        // If the seeded admin exists but email differs from ADMIN_SEED_EMAIL, sync it
+        if (existingAdmin.email !== adminEmail) {
+          const updateStmt = sqlDb.prepare('UPDATE users SET email = ?, updatedAt = ? WHERE id = ?');
+          updateStmt.bind([adminEmail, now, existingAdmin.id]);
+          updateStmt.step();
+          updateStmt.free();
+        }
+
+        // If ADMIN_SEED_PASSWORD is provided in environment, update the credentials
+        const envPassword = process.env.ADMIN_SEED_PASSWORD?.trim();
+        if (envPassword) {
+          const passwordHash = bcrypt.hashSync(envPassword, 10);
+          const credCheck = sqlDb.prepare('SELECT userId FROM auth_credentials WHERE userId = ?');
+          credCheck.bind([existingAdmin.id]);
+          const hasCreds = credCheck.step();
+          credCheck.free();
+
+          if (hasCreds) {
+            const updateCred = sqlDb.prepare('UPDATE auth_credentials SET passwordHash = ?, updatedAt = ? WHERE userId = ?');
+            updateCred.bind([passwordHash, now, existingAdmin.id]);
+            updateCred.step();
+            updateCred.free();
+          } else {
+            const insertCred = sqlDb.prepare('INSERT INTO auth_credentials (userId, passwordHash, passwordResetRequired, createdAt, updatedAt) VALUES (?, ?, 1, ?, ?)');
+            insertCred.bind([existingAdmin.id, passwordHash, now, now]);
+            insertCred.step();
+            insertCred.free();
+          }
+        }
+        return; // Existing admin handled successfully
+      }
 
       let adminPassword = process.env.ADMIN_SEED_PASSWORD?.trim();
       if (!adminPassword) {
         adminPassword = crypto.randomBytes(16).toString('hex');
         console.warn("================================================================================");
         console.warn("[Security] No ADMIN_SEED_PASSWORD set — generated a random one-time admin password, check server logs now, it will not be shown again.");
-        console.warn(`[Security] Admin Email: admin@gmail.com | Temporary One-Time Password: ${adminPassword}`);
+        console.warn(`[Security] Admin Email: ${adminEmail} | Temporary One-Time Password: ${adminPassword}`);
         console.warn("================================================================================");
       }
 
@@ -290,7 +355,7 @@ export const serverDb = {
       `);
       insertStmt.bind([
         adminId,
-        'admin@gmail.com',
+        adminEmail,
         encryptField('Primary Admin'),
         'ADMIN',
         'https://api.dicebear.com/7.x/avataaars/svg?seed=admin',
@@ -316,24 +381,31 @@ export const serverDb = {
       insertStmt.step();
       insertStmt.free();
 
-      // Insert sample curriculum
-      insertStmt = sqlDb.prepare(`
-        INSERT INTO curriculum_resources (id, title, subject, gradeLevel, description, category, authorRole, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      insertStmt.bind([
-        'curr-1',
-        'Mathematics Core Syllabus 2025',
-        'Mathematics',
-        'Grade 10',
-        'Official 2025 syllabus for Algebra and Geometry fundamentals. Includes learning objectives and required textbooks.',
-        'DOCUMENT',
-        'ADMIN',
-        now,
-        now,
-      ]);
-      insertStmt.step();
-      insertStmt.free();
+      // Insert sample curriculum if not exists
+      const currStmt = sqlDb.prepare('SELECT id FROM curriculum_resources WHERE id = ?');
+      currStmt.bind(['curr-1']);
+      const hasCurr = currStmt.step();
+      currStmt.free();
+
+      if (!hasCurr) {
+        insertStmt = sqlDb.prepare(`
+          INSERT INTO curriculum_resources (id, title, subject, gradeLevel, description, category, authorRole, createdAt, updatedAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        insertStmt.bind([
+          'curr-1',
+          'Mathematics Core Syllabus 2025',
+          'Mathematics',
+          'Grade 10',
+          'Official 2025 syllabus for Algebra and Geometry fundamentals. Includes learning objectives and required textbooks.',
+          'DOCUMENT',
+          'ADMIN',
+          now,
+          now,
+        ]);
+        insertStmt.step();
+        insertStmt.free();
+      }
 
       console.log('[Database] Seeded initial data');
     } catch (err) {
@@ -508,8 +580,8 @@ export const serverDb = {
     const residentialAddress = user.residentialAddress ? encryptField(user.residentialAddress) : null;
 
     const insertStmt = sqlDb.prepare(`
-      INSERT INTO users (id, email, name, role, avatar, contact, gender, residentialAddress, isProfileComplete, active, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, email, name, role, avatar, contact, gender, residentialAddress, isProfileComplete, active, consentGivenAt, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     insertStmt.bind([
       userId,
@@ -522,6 +594,7 @@ export const serverDb = {
       residentialAddress,
       user.role === UserRole.ADMIN ? 1 : 0,
       1,
+      user.consentGivenAt || now,
       now,
       now,
     ]);
@@ -1105,6 +1178,7 @@ export const serverDb = {
       enrolledSubjects: row.enrolledSubjects ? JSON.parse(row.enrolledSubjects) : undefined,
       isProfileComplete: Boolean(row.isProfileComplete),
       active: row.active !== undefined && row.active !== null ? Boolean(Number(row.active)) : true,
+      consentGivenAt: row.consentGivenAt || undefined,
     };
   },
 
@@ -1242,6 +1316,38 @@ export const serverDb = {
     } catch (err) {
       console.error('[Database] Attendance insert error:', err);
     }
+  },
+
+  getUserAttendanceRecords(userId: string): Array<{
+    id: string;
+    staffId: string;
+    staffName?: string;
+    date: string;
+    time?: string;
+    className?: string;
+    status: string;
+    schoolId?: string;
+    createdAt: string;
+  }> {
+    const stmt = sqlDb.prepare('SELECT * FROM attendance_records WHERE staffId = ? ORDER BY date DESC, createdAt DESC');
+    stmt.bind([userId]);
+    const records: any[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      records.push({
+        id: row.id,
+        staffId: row.staffId,
+        staffName: row.staffName || undefined,
+        date: row.date,
+        time: row.time || undefined,
+        className: row.className || undefined,
+        status: row.status,
+        schoolId: row.schoolId || undefined,
+        createdAt: row.createdAt,
+      });
+    }
+    stmt.free();
+    return records;
   },
 
   getStaffPerformanceMetrics(): Array<{

@@ -74,7 +74,7 @@ export async function sendTwoFactorOtp(email: string, purpose: 'LOGIN' | 'REGIST
 }
 
 export async function register(
-  userData: { name: string; email: string; avatar?: string; role?: UserRole }, 
+  userData: { name: string; email: string; avatar?: string; role?: UserRole; consentGivenAt?: string }, 
   password: string, 
   twoFactorCode?: string
 ) {
@@ -301,6 +301,42 @@ export async function deleteAccount(password: string) {
   clearToken();
 
   return response.json();
+}
+
+// ─── Data Portability & Export (Zambia Data Protection Act No. 3 of 2021) ─────
+export async function exportPersonalData(): Promise<{ blob: Blob; filename: string }> {
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/users/me/export`, {
+    method: "GET",
+    headers,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearToken();
+      throw new Error("Your login has ended, please sign in again.");
+    }
+    const data = await response.json().catch(() => ({ error: 'Export failed' }));
+    throw new Error(data.error || "Could not export personal data.");
+  }
+
+  // Extract filename from header if available
+  const disposition = response.headers.get('Content-Disposition');
+  let filename = 'esylab-personal-data.json';
+  if (disposition) {
+    const match = disposition.match(/filename="?([^";]+)"?/);
+    if (match && match[1]) {
+      filename = match[1];
+    }
+  }
+
+  const blob = await response.blob();
+  return { blob, filename };
 }
 
 // ─── Blockchain APIs (all require authentication) ─────────────────────────────
