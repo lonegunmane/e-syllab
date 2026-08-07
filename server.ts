@@ -454,9 +454,6 @@ async function startServer() {
         tx.add(instruction);
         tx.sign(schoolKeypair);
 
-        const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
-        tx.add(ix);
-        tx.sign(schoolKeypair);
 
         const signature = await connection.sendRawTransaction(tx.serialize());
         await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
