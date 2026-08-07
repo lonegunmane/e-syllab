@@ -15,6 +15,7 @@ import {
   getNetworkStatus,
   computeOfflineHash,
   getConnection,
+  buildAttendanceAnchorInstruction,
 } from "./services/blockchain.js";
 
 const rootDir = process.cwd();
@@ -252,7 +253,6 @@ async function startServer() {
       });
 
       const connection = getConnection();
-      const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
       let signature = "";
       let slot = 0;
@@ -260,14 +260,16 @@ async function startServer() {
 
       try {
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-        const ix = new TransactionInstruction({
-          keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
-          programId: MEMO_PROGRAM_ID,
-          data: new TextEncoder().encode(memoPayload) as any,
-        });
+        // Real on-chain program call — this is the "Automated Verification"
+        // requirement: the deployed Anchor program itself validates the
+        // status value and rejects duplicate same-day entries, not just
+        // this application's own logic.
+        const { instruction } = buildAttendanceAnchorInstruction(
+          schoolKeypair.publicKey, staffId, date, status, offlineHash
+        );
 
         const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
-        tx.add(ix);
+        tx.add(instruction);
         tx.sign(schoolKeypair);
 
         signature = await connection.sendRawTransaction(tx.serialize());
@@ -414,7 +416,6 @@ async function startServer() {
       });
     }
 
-    const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
     const connection = getConnection();
     const results: any[] = [];
 
@@ -440,22 +441,18 @@ async function startServer() {
 
     for (const [queueId, item] of syncQueue.entries()) {
       try {
-        const memoPayload = JSON.stringify({
-          app: "E-SYLLAB", version: "1.0", type: "ATTENDANCE",
-          staffId: item.staffId, staffName: item.staffName, schoolId: item.schoolId,
-          date: item.date, time: item.time || "", className: item.className || "",
-          status: item.status,
-          offlineHash: item.offlineHash, syncedFromOffline: true,
-          localTimestamp: item.localTimestamp, syncedAt: new Date().toISOString(),
-        });
-
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
-        const ix = new TransactionInstruction({
-          keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
-          programId: MEMO_PROGRAM_ID,
-          data: new TextEncoder().encode(memoPayload) as any,
-        });
+        // Real on-chain program call — same Anchor program used for online
+        // attendance, so offline-synced and online records are validated
+        // identically once they reach the chain.
+        const { instruction } = buildAttendanceAnchorInstruction(
+          schoolKeypair.publicKey, item.staffId, item.date, item.status, item.offlineHash
+        );
+
+        const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+        tx.add(instruction);
+        tx.sign(schoolKeypair);
 
         const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
         tx.add(ix);
@@ -744,6 +741,36 @@ async function startServer() {
       }
 
       const { user, needsPasswordReset } = authResult;
+
+      // The single seeded default admin account uses a deliberately fake
+      // email (it can't receive real mail), so it cannot go through the
+      // normal email-OTP 2FA step. This bypass is matched exactly against
+      // ADMIN_SEED_EMAIL (or the 'admin@gmail.com' fallback) — it does NOT
+      // apply to any other account, including additional admin accounts
+      // created later via /api/admin/create-user, which still require the
+      // full email-OTP flow below.
+      const seedAdminEmail = (process.env.ADMIN_SEED_EMAIL || "admin@gmail.com").trim().toLowerCase();
+      if (trimmedEmail === seedAdminEmail) {
+        const token = jwt.sign(
+          { userId: user.id, email: user.email, name: user.name, role: user.role } as JwtPayload,
+          JWT_SECRET,
+          { expiresIn: JWT_EXPIRY }
+        );
+        const userAgent = (req.headers['user-agent'] as string) || '';
+        const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+        serverDb.createSession(user.id, parseDevice(userAgent), ipAddress, token);
+
+        console.log(`[Security] Seed admin login — 2FA bypassed (fake seed email, matched ADMIN_SEED_EMAIL)`);
+
+        return res.json({
+          success: true,
+          user,
+          needsPasswordReset,
+          token,
+          requires2FA: false,
+          message: "Sign in successful.",
+        });
+      }
 
       // Credentials valid! Generate code for Login
       const code = Math.floor(100000 + Math.random() * 900000).toString();
