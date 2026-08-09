@@ -24,19 +24,5 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    server: {
-      port: 5173,
-      // Forward any /api/* request to the backend Express server.
-      // Without this, fetch('/api/...') from the React app would try
-      // to hit localhost:5173/api/... (Vite's own server), which has
-      // no such route and returns an empty response — causing
-      // "Unexpected end of JSON input" errors in the frontend.
-      proxy: {
-        '/api': {
-          target: 'http://localhost:3000',
-          changeOrigin: true,
-        },
-      },
-    },
   };
 });

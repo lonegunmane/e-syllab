@@ -1,4 +1,4 @@
-import { UserRole, GradeRecord, Message, CurriculumResource, VaultDocument, DocumentStatus, ResourceCategory } from '../types';
+import { UserRole, GradeRecord, Message, CurriculumResource, VaultDocument, DocumentStatus, ResourceCategory, SchoolLocationConfig, AttendanceRecordItem } from '../types';
 
 const API_BASE_URL = "/api";
 
@@ -49,8 +49,8 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
 
   const response = await fetch(url, { ...options, headers });
 
-  // If 401 Unauthorized or 403 Forbidden, session is expired or revoked
-  if (response.status === 401 || response.status === 403) {
+  // If 401 Unauthorized, session is expired or revoked
+  if (response.status === 401) {
     clearToken();
   }
 
@@ -206,18 +206,16 @@ export async function getProfile() {
 }
 
 export async function updateProfile(updates: Record<string, any>) {
-  const response = await fetch(`${API_BASE_URL}/profile`, {
+  const response = await authFetch(`${API_BASE_URL}/profile`, {
     method: "PUT",
-    headers: getAuthHeaders(),
     body: JSON.stringify(updates)
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not update profile, please try again.");
   }
 
@@ -225,18 +223,16 @@ export async function updateProfile(updates: Record<string, any>) {
 }
 
 export async function resetPassword(newPassword: string) {
-  const response = await fetch(`${API_BASE_URL}/reset-password`, {
+  const response = await authFetch(`${API_BASE_URL}/reset-password`, {
     method: "POST",
-    headers: getAuthHeaders(),
     body: JSON.stringify({ newPassword })
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not update password, please try again.");
   }
 
@@ -245,17 +241,15 @@ export async function resetPassword(newPassword: string) {
 
 // ─── Sessions & Device Management ─────────────────────────────────────────────
 export async function getSessions() {
-  const response = await fetch(`${API_BASE_URL}/sessions`, {
-    method: "GET",
-    headers: getAuthHeaders(false)
+  const response = await authFetch(`${API_BASE_URL}/sessions`, {
+    method: "GET"
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not fetch connected devices.");
   }
 
@@ -263,17 +257,15 @@ export async function getSessions() {
 }
 
 export async function revokeSession(sessionId: string) {
-  const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/revoke`, {
-    method: "POST",
-    headers: getAuthHeaders()
+  const response = await authFetch(`${API_BASE_URL}/sessions/${sessionId}/revoke`, {
+    method: "POST"
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not log out device.");
   }
 
@@ -282,22 +274,20 @@ export async function revokeSession(sessionId: string) {
 
 // ─── Account Deletion ─────────────────────────────────────────────────────────
 export async function deleteAccount(password: string) {
-  const response = await fetch(`${API_BASE_URL}/users/me`, {
+  const response = await authFetch(`${API_BASE_URL}/users/me`, {
     method: "DELETE",
-    headers: getAuthHeaders(),
     body: JSON.stringify({ password })
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not delete account.");
   }
 
-  // Clear local session storage
+  // Clear local session storage on explicit delete
   clearToken();
 
   return response.json();
@@ -305,20 +295,12 @@ export async function deleteAccount(password: string) {
 
 // ─── Data Portability & Export (Zambia Data Protection Act No. 3 of 2021) ─────
 export async function exportPersonalData(): Promise<{ blob: Blob; filename: string }> {
-  const token = getToken();
-  const headers: Record<string, string> = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const response = await fetch(`${API_BASE_URL}/users/me/export`, {
+  const response = await authFetch(`${API_BASE_URL}/users/me/export`, {
     method: "GET",
-    headers,
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
     const data = await response.json().catch(() => ({ error: 'Export failed' }));
@@ -341,14 +323,12 @@ export async function exportPersonalData(): Promise<{ blob: Blob; filename: stri
 
 // ─── Blockchain APIs (all require authentication) ─────────────────────────────
 export async function getBlockchainStatus() {
-  const response = await fetch(`${API_BASE_URL}/blockchain/status`, {
-    method: "GET",
-    headers: getAuthHeaders(false)
+  const response = await authFetch(`${API_BASE_URL}/blockchain/status`, {
+    method: "GET"
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
     throw new Error("Could not check secure sync status");
@@ -358,14 +338,12 @@ export async function getBlockchainStatus() {
 }
 
 export async function getBlockchainBlockhash() {
-  const response = await fetch(`${API_BASE_URL}/blockchain/blockhash`, {
-    method: "GET",
-    headers: getAuthHeaders(false)
+  const response = await authFetch(`${API_BASE_URL}/blockchain/blockhash`, {
+    method: "GET"
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
     throw new Error("Could not connect to secure network");
@@ -375,14 +353,12 @@ export async function getBlockchainBlockhash() {
 }
 
 export async function getBlockchainBalance(pubkey: string) {
-  const response = await fetch(`${API_BASE_URL}/blockchain/balance?pubkey=${encodeURIComponent(pubkey)}`, {
-    method: "GET",
-    headers: getAuthHeaders(false)
+  const response = await authFetch(`${API_BASE_URL}/blockchain/balance?pubkey=${encodeURIComponent(pubkey)}`, {
+    method: "GET"
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
     throw new Error("Could not check balance");
@@ -399,13 +375,12 @@ export async function recordAttendanceOnline(data: Record<string, any>) {
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
-    const errData = await response.json();
+    const errData = await response.json().catch(() => ({}));
     throw new Error(errData.error || "Could not record attendance, please try again.");
   }
 
@@ -413,21 +388,19 @@ export async function recordAttendanceOnline(data: Record<string, any>) {
 }
 
 export async function prepareAttendanceTransaction(data: Record<string, any>) {
-  const response = await fetch(`${API_BASE_URL}/blockchain/attendance/prepare`, {
+  const response = await authFetch(`${API_BASE_URL}/blockchain/attendance/prepare`, {
     method: "POST",
-    headers: getAuthHeaders(),
     body: JSON.stringify(data)
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not prepare attendance record");
   }
 
@@ -435,21 +408,19 @@ export async function prepareAttendanceTransaction(data: Record<string, any>) {
 }
 
 export async function confirmAttendanceTransaction(data: Record<string, any>) {
-  const response = await fetch(`${API_BASE_URL}/blockchain/attendance/confirm`, {
+  const response = await authFetch(`${API_BASE_URL}/blockchain/attendance/confirm`, {
     method: "POST",
-    headers: getAuthHeaders(),
     body: JSON.stringify(data)
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not confirm attendance record");
   }
 
@@ -457,21 +428,19 @@ export async function confirmAttendanceTransaction(data: Record<string, any>) {
 }
 
 export async function queueAttendanceRecord(data: Record<string, any>) {
-  const response = await fetch(`${API_BASE_URL}/blockchain/attendance/queue`, {
+  const response = await authFetch(`${API_BASE_URL}/blockchain/attendance/queue`, {
     method: "POST",
-    headers: getAuthHeaders(),
     body: JSON.stringify(data)
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not save attendance for later");
   }
 
@@ -479,14 +448,12 @@ export async function queueAttendanceRecord(data: Record<string, any>) {
 }
 
 export async function getAttendanceQueue() {
-  const response = await fetch(`${API_BASE_URL}/blockchain/attendance/queue`, {
-    method: "GET",
-    headers: getAuthHeaders(false)
+  const response = await authFetch(`${API_BASE_URL}/blockchain/attendance/queue`, {
+    method: "GET"
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
     throw new Error("Could not load pending attendance");
@@ -496,20 +463,18 @@ export async function getAttendanceQueue() {
 }
 
 export async function removeFromAttendanceQueue(queueId: string) {
-  const response = await fetch(`${API_BASE_URL}/blockchain/attendance/queue/${encodeURIComponent(queueId)}`, {
-    method: "DELETE",
-    headers: getAuthHeaders(false)
+  const response = await authFetch(`${API_BASE_URL}/blockchain/attendance/queue/${encodeURIComponent(queueId)}`, {
+    method: "DELETE"
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not remove pending record");
   }
 
@@ -517,20 +482,18 @@ export async function removeFromAttendanceQueue(queueId: string) {
 }
 
 export async function syncAllAttendance() {
-  const response = await fetch(`${API_BASE_URL}/blockchain/attendance/sync-all`, {
-    method: "POST",
-    headers: getAuthHeaders()
+  const response = await authFetch(`${API_BASE_URL}/blockchain/attendance/sync-all`, {
+    method: "POST"
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
     if (response.status === 403) {
       throw new Error("You don't have permission to perform this action");
     }
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not sync attendance records");
   }
 
@@ -538,18 +501,16 @@ export async function syncAllAttendance() {
 }
 
 export async function verifyAttendanceHash(data: Record<string, any>) {
-  const response = await fetch(`${API_BASE_URL}/blockchain/attendance/verify-hash`, {
+  const response = await authFetch(`${API_BASE_URL}/blockchain/attendance/verify-hash`, {
     method: "POST",
-    headers: getAuthHeaders(),
     body: JSON.stringify(data)
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      clearToken();
       throw new Error("Your login has ended, please sign in again.");
     }
-    const data = await response.json();
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Could not verify attendance record");
   }
 
@@ -862,5 +823,38 @@ export async function updateVaultDocumentStatus(id: string, status: DocumentStat
   }
   return response.json();
 }
+
+// ─── School Location & Geofencing Admin APIs ─────────────────────────────────
+
+export async function getSchoolLocation(): Promise<{ success: boolean; location: SchoolLocationConfig }> {
+  const response = await authFetch(`${API_BASE_URL}/admin/school-location`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch school location config");
+  }
+  return response.json();
+}
+
+export async function updateSchoolLocation(config: SchoolLocationConfig): Promise<{ success: boolean; location: SchoolLocationConfig; message?: string }> {
+  const response = await authFetch(`${API_BASE_URL}/admin/school-location`, {
+    method: "POST",
+    body: JSON.stringify(config),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to update school location config");
+  }
+  return response.json();
+}
+
+export async function getAdminAttendanceRecords(flaggedOnly = false): Promise<{ success: boolean; count: number; records: AttendanceRecordItem[] }> {
+  const response = await authFetch(`${API_BASE_URL}/admin/attendance/records${flaggedOnly ? '?flagged=true' : ''}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch attendance records");
+  }
+  return response.json();
+}
+
 
 

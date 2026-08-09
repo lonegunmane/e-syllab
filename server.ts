@@ -16,7 +16,6 @@ import {
   computeOfflineHash,
   getConnection,
 } from "./services/blockchain.js";
-import { buildAttendanceAnchorInstruction } from "./services/serverBlockchain.js";
 
 const rootDir = process.cwd();
 
@@ -52,6 +51,10 @@ interface SyncQueueItem {
   className?: string;
   status: string;
   schoolId: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationFlagged?: boolean;
+  distanceMeters?: number | null;
   syncedFromOffline: boolean;
   localTimestamp: string;
   retries: number;
@@ -231,28 +234,145 @@ async function startServer() {
     }
   });
 
+// ─── Haversine Distance & Location Evaluation ─────────────────────────
+function calculateHaversineDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371e3; // Earth's radius in meters
+  const toRad = (val: number) => (val * Math.PI) / 180;
+  const phi1 = toRad(lat1);
+  const phi2 = toRad(lat2);
+  const deltaPhi = toRad(lat2 - lat1);
+  const deltaLambda = toRad(lon2 - lon1);
+
+  const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+            Math.cos(phi1) * Math.cos(phi2) *
+            Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
+
+function evaluateAttendanceLocation(
+  latitude: number | null | undefined,
+  longitude: number | null | undefined,
+  schoolConfig: { latitude: number; longitude: number; radiusMeters: number }
+): {
+  latitude: number | null;
+  longitude: number | null;
+  distanceMeters: number | null;
+  locationFlagged: boolean;
+} {
+  const hasValidCoords =
+    latitude !== undefined &&
+    latitude !== null &&
+    longitude !== undefined &&
+    longitude !== null &&
+    !isNaN(Number(latitude)) &&
+    !isNaN(Number(longitude));
+
+  if (!hasValidCoords) {
+    return {
+      latitude: null,
+      longitude: null,
+      distanceMeters: null,
+      locationFlagged: true,
+    };
+  }
+
+  const latNum = Number(latitude);
+  const lonNum = Number(longitude);
+  const distanceMeters = calculateHaversineDistanceMeters(
+    latNum,
+    lonNum,
+    schoolConfig.latitude,
+    schoolConfig.longitude
+  );
+
+  const locationFlagged = distanceMeters > (schoolConfig.radiusMeters || 150);
+
+  return {
+    latitude: latNum,
+    longitude: lonNum,
+    distanceMeters: Math.round(distanceMeters * 10) / 10,
+    locationFlagged,
+  };
+}
+
+  // ─── Admin School Location & Geofencing Routes ─────────────────────────
+  // GET /api/admin/school-location - ADMIN only
+  app.get("/api/admin/school-location", authenticateToken, authorizeRole(UserRole.ADMIN), (_req, res) => {
+    try {
+      const location = serverDb.getSchoolLocation();
+      res.json({ success: true, location });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/admin/school-location - ADMIN only
+  app.post("/api/admin/school-location", authenticateToken, authorizeRole(UserRole.ADMIN), (req, res) => {
+    const { latitude, longitude, radiusMeters } = req.body;
+    if (
+      latitude === undefined || longitude === undefined || radiusMeters === undefined ||
+      isNaN(Number(latitude)) || isNaN(Number(longitude)) || isNaN(Number(radiusMeters))
+    ) {
+      return res.status(400).json({ success: false, error: "Please provide valid numeric coordinates and radius (meters)" });
+    }
+
+    try {
+      serverDb.setSchoolLocation({
+        latitude: Number(latitude),
+        longitude: Number(longitude),
+        radiusMeters: Math.max(10, Number(radiusMeters)),
+      });
+      const updated = serverDb.getSchoolLocation();
+      res.json({ success: true, location: updated, message: "School location & geofence updated successfully" });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/admin/attendance/records - ADMIN only
+  app.get("/api/admin/attendance/records", authenticateToken, authorizeRole(UserRole.ADMIN), (req, res) => {
+    try {
+      const flaggedOnly = req.query.flagged === 'true';
+      const records = serverDb.getAllAttendanceRecords(flaggedOnly);
+      res.json({ success: true, count: records.length, records });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // POST /api/blockchain/attendance/record - TEACHER/ADMIN only
   // Online submission — server signs transaction with SCHOOL_SIGNING_KEYPAIR
   app.post("/api/blockchain/attendance/record", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), async (req, res) => {
-    const { staffId, staffName, date, time, className, status, schoolId, localTimestamp } = req.body;
+    const { staffId, staffName, date, time, className, status, schoolId, localTimestamp, latitude, longitude } = req.body;
 
     if (!staffId || !date || !status || !schoolId) {
       return res.status(400).json({ success: false, error: "Missing required fields" });
     }
 
     try {
-      const offlineHash = await computeOfflineHash(staffId, date, status);
+      const schoolConfig = serverDb.getSchoolLocation();
+      const locEval = evaluateAttendanceLocation(latitude, longitude, schoolConfig);
+
+      const offlineHash = await computeOfflineHash(staffId, date, status, { latitude: locEval.latitude, longitude: locEval.longitude });
       const schoolKeypair = getSchoolKeypair();
       const memoPayload = JSON.stringify({
         app: "E-SYLLAB", version: "1.0", type: "ATTENDANCE",
         staffId, staffName: staffName || staffId, schoolId,
         date, time: time || "", className: className || "",
-        status, offlineHash, syncedFromOffline: false,
+        status,
+        latitude: locEval.latitude,
+        longitude: locEval.longitude,
+        locationFlagged: locEval.locationFlagged,
+        distanceMeters: locEval.distanceMeters,
+        offlineHash, syncedFromOffline: false,
         localTimestamp: localTimestamp || new Date().toISOString(),
         recordedAt: new Date().toISOString(),
       });
 
       const connection = getConnection();
+      const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
       let signature = "";
       let slot = 0;
@@ -260,16 +380,14 @@ async function startServer() {
 
       try {
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-        // Real on-chain program call — this is the "Automated Verification"
-        // requirement: the deployed Anchor program itself validates the
-        // status value and rejects duplicate same-day entries, not just
-        // this application's own logic.
-        const { instruction } = buildAttendanceAnchorInstruction(
-          schoolKeypair.publicKey, staffId, date, status, offlineHash
-        );
+        const ix = new TransactionInstruction({
+          keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+          programId: MEMO_PROGRAM_ID,
+          data: new TextEncoder().encode(memoPayload) as any,
+        });
 
         const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
-        tx.add(instruction);
+        tx.add(ix);
         tx.sign(schoolKeypair);
 
         signature = await connection.sendRawTransaction(tx.serialize());
@@ -282,10 +400,16 @@ async function startServer() {
         signature = `recorded-${Date.now()}`;
       }
 
-      console.log(`[Blockchain] Attendance Recorded | ${staffId} | ${className || "—"} | ${date} | status: ${status}`);
+      console.log(`[Blockchain] Attendance Recorded | ${staffId} | ${className || "—"} | ${date} | status: ${status} | flagged: ${locEval.locationFlagged}`);
 
       try {
-        serverDb.recordAttendance({ staffId, staffName, date, time, className, status, schoolId });
+        serverDb.recordAttendance({
+          staffId, staffName, date, time, className, status, schoolId,
+          latitude: locEval.latitude,
+          longitude: locEval.longitude,
+          locationFlagged: locEval.locationFlagged,
+          distanceMeters: locEval.distanceMeters,
+        });
       } catch (dbErr) {
         console.warn("[Blockchain] Saved to chain but DB record error:", dbErr);
       }
@@ -296,10 +420,31 @@ async function startServer() {
         slot,
         offlineHash,
         confirmedOnChain,
+        latitude: locEval.latitude,
+        longitude: locEval.longitude,
+        locationFlagged: locEval.locationFlagged,
+        distanceMeters: locEval.distanceMeters,
         explorerUrl: confirmedOnChain ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
       });
     } catch (err: any) {
       console.error("[Blockchain] Record error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/blockchain/attendance/hash - Compute offline SHA-256 hash
+  app.post("/api/blockchain/attendance/hash", authenticateToken, async (req, res) => {
+    const { staffId, date, status, latitude, longitude } = req.body;
+    if (!staffId || !date || !status) {
+      return res.status(400).json({ success: false, error: "Missing required fields" });
+    }
+    try {
+      const locData = (latitude !== undefined && longitude !== undefined && latitude !== null && longitude !== null)
+        ? { latitude: Number(latitude), longitude: Number(longitude) }
+        : null;
+      const offlineHash = await computeOfflineHash(staffId, date, status, locData);
+      res.json({ success: true, offlineHash });
+    } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
   });
@@ -310,7 +455,7 @@ async function startServer() {
   // /api/blockchain/blockhash — we no longer do it server-side to avoid
   // stale blockhash errors when the RPC call is slow.
   app.post("/api/blockchain/attendance/prepare", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), async (req, res) => {
-    const { staffId, staffName, date, time, className, status, schoolId, signerPublicKey, syncedFromOffline = false, localTimestamp } = req.body;
+    const { staffId, staffName, date, time, className, status, schoolId, signerPublicKey, syncedFromOffline = false, localTimestamp, latitude, longitude } = req.body;
 
     if (!staffId || !date || !status || !schoolId || !signerPublicKey) {
       return res.status(400).json({ success: false, error: "Missing required fields: staffId, date, status, schoolId, signerPublicKey" });
@@ -333,15 +478,22 @@ async function startServer() {
     }
 
     try {
+      const schoolConfig = serverDb.getSchoolLocation();
+      const locEval = evaluateAttendanceLocation(latitude, longitude, schoolConfig);
+
       const record = {
         staffId, staffName: staffName || staffId,
         date, time: time || "", className: className || "",
         status, schoolId,
+        latitude: locEval.latitude,
+        longitude: locEval.longitude,
+        locationFlagged: locEval.locationFlagged,
+        distanceMeters: locEval.distanceMeters,
         syncedFromOffline, localTimestamp: localTimestamp || new Date().toISOString(),
       };
-      const prepared = await buildAttendanceTransaction(record, phantomKey);
+      const prepared = await buildAttendanceTransaction(record as any, phantomKey);
       console.log(`[Blockchain] Prepared | ${staffId} | ${className || "—"} | ${date} ${time || ""} | ${status} | hash: ${prepared.offlineHash.slice(0, 16)}...`);
-      res.json({ success: true, ...prepared });
+      res.json({ success: true, ...prepared, locationFlagged: locEval.locationFlagged, distanceMeters: locEval.distanceMeters });
     } catch (err: any) {
       console.error("[Blockchain] Failed to prepare tx:", err);
       res.status(500).json({ success: false, error: err.message });
@@ -368,22 +520,49 @@ async function startServer() {
   // POST /api/blockchain/attendance/queue - TEACHER/ADMIN only
   // Saves offline attendance record to sync queue
   app.post("/api/blockchain/attendance/queue", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), async (req, res) => {
-    const { staffId, staffName, date, time, className, status, schoolId, localTimestamp } = req.body;
+    const { staffId, staffName, date, time, className, status, schoolId, localTimestamp, latitude, longitude } = req.body;
     if (!staffId || !date || !status || !schoolId) {
       return res.status(400).json({ success: false, error: "Missing required fields" });
     }
     try {
-      const offlineHash = await computeOfflineHash(staffId, date, status);
+      const schoolConfig = serverDb.getSchoolLocation();
+      const locEval = evaluateAttendanceLocation(latitude, longitude, schoolConfig);
+
+      const offlineHash = await computeOfflineHash(staffId, date, status, { latitude: locEval.latitude, longitude: locEval.longitude });
       const queueId = `${staffId}-${date}-${Date.now()}`;
       syncQueue.set(queueId, {
         id: queueId, staffId, staffName: staffName || staffId,
         date, time: time || "", className: className || "",
         status, schoolId, syncedFromOffline: true,
         localTimestamp: localTimestamp || new Date().toISOString(),
+        latitude: locEval.latitude,
+        longitude: locEval.longitude,
+        locationFlagged: locEval.locationFlagged,
+        distanceMeters: locEval.distanceMeters,
         retries: 0, queuedAt: new Date().toISOString(), offlineHash,
-      });
+      } as any);
+
+      try {
+        serverDb.recordAttendance({
+          staffId, staffName, date, time, className, status, schoolId,
+          latitude: locEval.latitude,
+          longitude: locEval.longitude,
+          locationFlagged: locEval.locationFlagged,
+          distanceMeters: locEval.distanceMeters,
+        });
+      } catch (dbErr) {
+        console.warn("[Queue] DB record error:", dbErr);
+      }
+
       console.log(`[Queue] Saved | ${staffId} | ${className || "—"} | ${date} | queue: ${syncQueue.size}`);
-      res.json({ success: true, queueId, offlineHash, message: `Queued for sync. Queue size: ${syncQueue.size}` });
+      res.json({
+        success: true,
+        queueId,
+        offlineHash,
+        locationFlagged: locEval.locationFlagged,
+        distanceMeters: locEval.distanceMeters,
+        message: `Queued for sync. Queue size: ${syncQueue.size}`,
+      });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -406,8 +585,8 @@ async function startServer() {
     }
   });
 
-  // POST /api/blockchain/attendance/sync-all - ADMIN only
-  app.post("/api/blockchain/attendance/sync-all", authenticateToken, authorizeRole(UserRole.ADMIN), async (_req, res) => {
+  // POST /api/blockchain/attendance/sync-all - TEACHER/ADMIN only
+  app.post("/api/blockchain/attendance/sync-all", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), async (_req, res) => {
     const schoolKeypair = getSchoolKeypair();
     if (!schoolKeypair) {
       return res.status(503).json({
@@ -416,6 +595,7 @@ async function startServer() {
       });
     }
 
+    const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
     const connection = getConnection();
     const results: any[] = [];
 
@@ -441,19 +621,30 @@ async function startServer() {
 
     for (const [queueId, item] of syncQueue.entries()) {
       try {
+        const memoPayload = JSON.stringify({
+          app: "E-SYLLAB", version: "1.0", type: "ATTENDANCE",
+          staffId: item.staffId, staffName: item.staffName, schoolId: item.schoolId,
+          date: item.date, time: item.time || "", className: item.className || "",
+          status: item.status,
+          latitude: item.latitude ?? null,
+          longitude: item.longitude ?? null,
+          locationFlagged: item.locationFlagged ?? false,
+          distanceMeters: item.distanceMeters ?? null,
+          offlineHash: item.offlineHash, syncedFromOffline: true,
+          localTimestamp: item.localTimestamp, syncedAt: new Date().toISOString(),
+        });
+
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
-        // Real on-chain program call — same Anchor program used for online
-        // attendance, so offline-synced and online records are validated
-        // identically once they reach the chain.
-        const { instruction } = buildAttendanceAnchorInstruction(
-          schoolKeypair.publicKey, item.staffId, item.date, item.status, item.offlineHash
-        );
+        const ix = new TransactionInstruction({
+          keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+          programId: MEMO_PROGRAM_ID,
+          data: new TextEncoder().encode(memoPayload) as any,
+        });
 
         const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
-        tx.add(instruction);
+        tx.add(ix);
         tx.sign(schoolKeypair);
-
 
         const signature = await connection.sendRawTransaction(tx.serialize());
         await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
@@ -482,12 +673,15 @@ async function startServer() {
 
   // POST /api/blockchain/attendance/verify-hash
   app.post("/api/blockchain/attendance/verify-hash", authenticateToken, async (req, res) => {
-    const { staffId, date, status, hashToVerify } = req.body;
+    const { staffId, date, status, hashToVerify, latitude, longitude } = req.body;
     if (!staffId || !date || !status || !hashToVerify) {
       return res.status(400).json({ success: false, error: "Missing fields" });
     }
     try {
-      const expectedHash = await computeOfflineHash(staffId, date, status);
+      const locData = (latitude !== undefined && longitude !== undefined && latitude !== null && longitude !== null)
+        ? { latitude: Number(latitude), longitude: Number(longitude) }
+        : null;
+      const expectedHash = await computeOfflineHash(staffId, date, status, locData);
       const isValid = expectedHash === hashToVerify;
       res.json({
         success: true, isValid, expectedHash, providedHash: hashToVerify,
@@ -738,36 +932,6 @@ async function startServer() {
       }
 
       const { user, needsPasswordReset } = authResult;
-
-      // The single seeded default admin account uses a deliberately fake
-      // email (it can't receive real mail), so it cannot go through the
-      // normal email-OTP 2FA step. This bypass is matched exactly against
-      // ADMIN_SEED_EMAIL (or the 'admin@gmail.com' fallback) — it does NOT
-      // apply to any other account, including additional admin accounts
-      // created later via /api/admin/create-user, which still require the
-      // full email-OTP flow below.
-      const seedAdminEmail = (process.env.ADMIN_SEED_EMAIL || "admin@gmail.com").trim().toLowerCase();
-      if (trimmedEmail === seedAdminEmail) {
-        const token = jwt.sign(
-          { userId: user.id, email: user.email, name: user.name, role: user.role } as JwtPayload,
-          JWT_SECRET,
-          { expiresIn: JWT_EXPIRY }
-        );
-        const userAgent = (req.headers['user-agent'] as string) || '';
-        const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
-        serverDb.createSession(user.id, parseDevice(userAgent), ipAddress, token);
-
-        console.log(`[Security] Seed admin login — 2FA bypassed (fake seed email, matched ADMIN_SEED_EMAIL)`);
-
-        return res.json({
-          success: true,
-          user,
-          needsPasswordReset,
-          token,
-          requires2FA: false,
-          message: "Sign in successful.",
-        });
-      }
 
       // Credentials valid! Generate code for Login
       const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -1141,6 +1305,16 @@ async function startServer() {
   // ════════════════════════════════════════════
   //  ADMIN ONLY ROUTES
   // ════════════════════════════════════════════
+
+  // GET /api/users - List active users for student/teacher pickers
+  app.get("/api/users", authenticateToken, (_req, res) => {
+    try {
+      const users = serverDb.getAllUsers().filter((u: any) => u.active !== false);
+      res.json({ success: true, users });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
 
   // GET /api/admin/users - List all users (admin only)
   app.get("/api/admin/users", authenticateToken, authorizeRole(UserRole.ADMIN), async (_req, res) => {

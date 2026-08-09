@@ -3,7 +3,7 @@ import {
   CheckCircle, XCircle, Clock, Loader2,
   ExternalLink, RefreshCw,
   UserCheck, BookOpen, CalendarCheck, Wifi, WifiOff,
-  ChevronDown,
+  ChevronDown, MapPin,
 } from 'lucide-react';
 import { User } from '../types';
 import { authFetch, recordAttendanceOnline, syncAllAttendance } from '../services/api';
@@ -27,6 +27,10 @@ interface AttendanceRecord {
   confirmedOnChain: boolean;
   timestamp: string;
   explorerUrl?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationFlagged?: boolean;
+  distanceMeters?: number | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -43,6 +47,51 @@ const STATUS_CONFIG: Record<AttendanceStatus, {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Non-blocking location capture with a strict 5-second timeout.
+ * Fails gracefully and silently returns null if denied or unavailable.
+ */
+async function getCurrentLocation(): Promise<{ latitude: number; longitude: number } | null> {
+  if (typeof window === 'undefined' || !navigator.geolocation) {
+    return null;
+  }
+  return new Promise((resolve) => {
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve(null);
+      }
+    }, 5000);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          resolve({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+        }
+      },
+      (err) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          console.warn('[Geolocation] Non-blocking coordinate capture note:', err.message);
+          resolve(null);
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 60000,
+      }
+    );
+  });
+}
 
 function loadRecords(): AttendanceRecord[] {
   try { return JSON.parse(localStorage.getItem(RECORDS_KEY) || '[]'); } catch { return []; }
@@ -167,6 +216,9 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
       const recordedDate = now.toISOString().slice(0, 10);
       const recordedTime = now.toTimeString().slice(0, 5);
 
+      // Attempt non-blocking location capture (5s max timeout)
+      const location = await getCurrentLocation();
+
       const data = await recordAttendanceOnline({
         staffId:        user.id,
         staffName:      user.name,
@@ -176,6 +228,8 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
         status,
         schoolId:       'ZMB-KAPASA-001',
         localTimestamp: now.toISOString(),
+        latitude:       location?.latitude ?? null,
+        longitude:      location?.longitude ?? null,
       });
 
       const rec: AttendanceRecord = {
@@ -193,6 +247,10 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
         confirmedOnChain:  data.confirmedOnChain ?? true,
         timestamp:         now.toISOString(),
         explorerUrl:       data.explorerUrl,
+        latitude:          data.latitude ?? location?.latitude ?? null,
+        longitude:         data.longitude ?? location?.longitude ?? null,
+        locationFlagged:   data.locationFlagged ?? false,
+        distanceMeters:    data.distanceMeters ?? null,
       };
 
       setRecords(prev => [rec, ...prev]);
@@ -213,6 +271,9 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
       const recordedDate = now.toISOString().slice(0, 10);
       const recordedTime = now.toTimeString().slice(0, 5);
 
+      // Attempt non-blocking location capture (5s max timeout)
+      const location = await getCurrentLocation();
+
       const res = await authFetch('/api/blockchain/attendance/queue', {
         method: 'POST',
         body: JSON.stringify({
@@ -224,6 +285,8 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
           status,
           schoolId:       'ZMB-KAPASA-001',
           localTimestamp: now.toISOString(),
+          latitude:       location?.latitude ?? null,
+          longitude:      location?.longitude ?? null,
         }),
       });
       const data = await res.json();
@@ -240,6 +303,10 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
         syncedFromOffline: true,
         confirmedOnChain:  false,
         timestamp:         now.toISOString(),
+        latitude:          location?.latitude ?? null,
+        longitude:         location?.longitude ?? null,
+        locationFlagged:   data.locationFlagged ?? false,
+        distanceMeters:    data.distanceMeters ?? null,
       };
 
       setRecords(prev => [rec, ...prev]);

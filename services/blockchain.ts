@@ -9,17 +9,7 @@ import {
 
 export const SOLANA_NETWORK = "devnet";
 export const SOLANA_ENDPOINT = clusterApiUrl(SOLANA_NETWORK);
-
-// Real deployed E-SYLLAB Attendance Anchor program (Devnet).
-// Deployed via Solana Playground — see program-keypair.json (kept private,
-// not committed) for the upgrade authority.
-// NOTE: the actual instruction-building logic for this program lives in
-// services/serverBlockchain.ts (Node-only, uses `crypto`) — NOT here,
-// since this file is shared with the browser build.
-export const PROGRAM_ID = new PublicKey("EPnBSBVvrAkFtnXH7CMkck2EAQXjV6LtwxkMiVkJpMpw");
-
-
-
+export const PROGRAM_ID = new PublicKey ("97HqPsAtSz2QbiiiVQVudFU2kzmCmvFAVLiZfqVSrfzU");
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type AttendanceStatus = "Present" | "Absent" | "Late" | "OnLeave";
@@ -34,6 +24,15 @@ export interface AttendanceRecord {
   schoolId: string;
   syncedFromOffline: boolean;
   localTimestamp: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationFlagged?: boolean;
+  distanceMeters?: number | null;
+}
+
+export interface LocationData {
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface PreparedTransaction {
@@ -73,9 +72,22 @@ export function getConnection(): Connection {
 export async function computeOfflineHash(
   staffId: string,
   date: string,
-  status: AttendanceStatus
+  status: AttendanceStatus,
+  location?: LocationData | null
 ): Promise<string> {
-  const input = `${staffId}:${date}:${status.toUpperCase().replace(" ", "_")}`;
+  let locStr = "NO_LOCATION";
+  if (
+    location &&
+    location.latitude !== undefined &&
+    location.latitude !== null &&
+    location.longitude !== undefined &&
+    location.longitude !== null &&
+    !isNaN(Number(location.latitude)) &&
+    !isNaN(Number(location.longitude))
+  ) {
+    locStr = `LOC:${Number(location.latitude).toFixed(6)},${Number(location.longitude).toFixed(6)}`;
+  }
+  const input = `${staffId}:${date}:${status.toUpperCase().replace(" ", "_")}:${locStr}`;
   const encoder = new TextEncoder();
   const data = encoder.encode(input);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
@@ -136,7 +148,8 @@ export async function buildAttendanceTransaction(
   const offlineHash = await computeOfflineHash(
     record.staffId,
     record.date,
-    record.status
+    record.status,
+    { latitude: record.latitude, longitude: record.longitude }
   );
 
   const memoPayload = JSON.stringify({
@@ -150,6 +163,10 @@ export async function buildAttendanceTransaction(
     time: record.time || "",
     className: record.className || "",
     status: record.status,
+    latitude: record.latitude ?? null,
+    longitude: record.longitude ?? null,
+    locationFlagged: record.locationFlagged ?? false,
+    distanceMeters: record.distanceMeters ?? null,
     offlineHash,
     syncedFromOffline: record.syncedFromOffline,
     localTimestamp: record.localTimestamp,

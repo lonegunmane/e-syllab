@@ -498,7 +498,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                       >
                         Privacy Policy
                       </button>{' '}
-                      and consent to my personal data being processed as described.
+                      and consent to my personal data being processed, including approximate location data when marking attendance if permission is granted.
                     </span>
                   </label>
                 </div>
@@ -856,7 +856,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                 <h4 className="font-bold text-white text-xs uppercase tracking-wider">2. What Information Is Collected</h4>
                 <ul className="list-disc pl-5 space-y-1 text-slate-400">
                   <li><strong>Account Identity:</strong> Full name, institutional email address, student role, profile avatar, contact number, and residential details.</li>
-                  <li><strong>Academic Records:</strong> Attendance registers, lesson marks, coursework submissions, and report cards.</li>
+                  <li><strong>Academic &amp; Attendance Records:</strong> Attendance registers, lesson marks, coursework submissions, and optional device GPS coordinates captured at the moment attendance is recorded (with user permission) for geofence verification.</li>
                   <li><strong>Security Logs:</strong> Active sign-in timestamps, device types, and session tokens to secure your account.</li>
                 </ul>
               </div>

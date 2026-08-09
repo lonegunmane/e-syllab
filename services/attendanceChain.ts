@@ -22,6 +22,7 @@ import {
 } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import type { AttendanceStatus } from './blockchain';
+import { authFetch } from './api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -207,7 +208,7 @@ export function isPhantomConnected(): boolean {
 // ─── Blockhash proxy ──────────────────────────────────────────────────────────
 
 async function fetchBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
-  const res = await fetch('/api/blockchain/blockhash');
+  const res = await authFetch('/api/blockchain/blockhash');
   const d   = await res.json();
   if (!d.success) throw new Error(d.error || 'Failed to fetch blockhash');
   return { blockhash: d.blockhash, lastValidBlockHeight: d.lastValidBlockHeight };
@@ -222,9 +223,8 @@ async function submitOnline(input: AttendanceInput): Promise<BlockchainResult> {
   const signerPublicKey = phantom.publicKey.toBase58();
 
   // Step 1: Backend computes offlineHash + memoPayload
-  const prepRes  = await fetch('/api/blockchain/attendance/prepare', {
+  const prepRes  = await authFetch('/api/blockchain/attendance/prepare', {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       ...input,
       signerPublicKey,
@@ -253,9 +253,8 @@ async function submitOnline(input: AttendanceInput): Promise<BlockchainResult> {
   console.log('[Phantom] Attendance tx sent:', signature);
 
   // Step 4: Backend confirms
-  const confirmRes  = await fetch('/api/blockchain/attendance/confirm', {
+  const confirmRes  = await authFetch('/api/blockchain/attendance/confirm', {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ signature, offlineHash: prepData.offlineHash }),
   });
   const confirmData = await confirmRes.json();
@@ -274,9 +273,8 @@ async function queueOffline(input: AttendanceInput): Promise<BlockchainResult> {
   // Generate an offline hash via backend if reachable, else skip hash for now
   let offlineHash = '';
   try {
-    const hashRes  = await fetch('/api/blockchain/attendance/hash', {
+    const hashRes  = await authFetch('/api/blockchain/attendance/hash', {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ staffId: input.staffId, date: input.date, status: input.status }),
     });
     const hashData = await hashRes.json();
@@ -355,7 +353,7 @@ export async function getPendingCount(): Promise<number> {
 
 export async function getBlockchainStatus() {
   try {
-    const res = await fetch('/api/blockchain/status');
+    const res = await authFetch('/api/blockchain/status');
     return await res.json();
   } catch {
     return { success: false, connected: false };

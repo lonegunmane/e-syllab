@@ -218,7 +218,19 @@ export const serverDb = {
         className TEXT,
         status TEXT NOT NULL,
         schoolId TEXT,
+        latitude REAL,
+        longitude REAL,
+        locationFlagged BOOLEAN DEFAULT 0,
+        distanceMeters REAL,
         createdAt TEXT NOT NULL
+      )
+    `);
+
+    // School config table for campus location and geofencing radius
+    sqlDb.run(`
+      CREATE TABLE IF NOT EXISTS school_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
       )
     `);
 
@@ -286,6 +298,19 @@ export const serverDb = {
     } catch {}
     try {
       sqlDb.run(`ALTER TABLE users ADD COLUMN consentGivenAt TEXT`);
+    } catch {}
+    // Migration: ensure latitude, longitude, locationFlagged, distanceMeters exist in attendance_records
+    try {
+      sqlDb.run(`ALTER TABLE attendance_records ADD COLUMN latitude REAL`);
+    } catch {}
+    try {
+      sqlDb.run(`ALTER TABLE attendance_records ADD COLUMN longitude REAL`);
+    } catch {}
+    try {
+      sqlDb.run(`ALTER TABLE attendance_records ADD COLUMN locationFlagged BOOLEAN DEFAULT 0`);
+    } catch {}
+    try {
+      sqlDb.run(`ALTER TABLE attendance_records ADD COLUMN distanceMeters REAL`);
     } catch {}
   },
 
@@ -1290,14 +1315,77 @@ export const serverDb = {
     };
   },
 
+  // ─── School Location & Geofence Config DB Helpers ─────────────────────────
+  getSchoolLocation(): { latitude: number; longitude: number; radiusMeters: number } {
+    try {
+      const stmt = sqlDb.prepare('SELECT key, value FROM school_config WHERE key IN ("latitude", "longitude", "radiusMeters")');
+      const config: Record<string, string> = {};
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        config[row.key as string] = row.value as string;
+      }
+      stmt.free();
+
+      return {
+        latitude: config.latitude !== undefined && config.latitude !== '' ? Number(config.latitude) : -15.3875,
+        longitude: config.longitude !== undefined && config.longitude !== '' ? Number(config.longitude) : 28.3228,
+        radiusMeters: config.radiusMeters !== undefined && config.radiusMeters !== '' ? Number(config.radiusMeters) : 150,
+      };
+    } catch (err) {
+      console.error('[Database] getSchoolLocation error:', err);
+      return {
+        latitude: -15.3875,
+        longitude: 28.3228,
+        radiusMeters: 150,
+      };
+    }
+  },
+
+  setSchoolLocation(loc: { latitude: number; longitude: number; radiusMeters: number }): void {
+    try {
+      const items = [
+        { key: 'latitude', value: String(loc.latitude) },
+        { key: 'longitude', value: String(loc.longitude) },
+        { key: 'radiusMeters', value: String(loc.radiusMeters) },
+      ];
+      for (const item of items) {
+        const stmt = sqlDb.prepare(`
+          INSERT INTO school_config (key, value) VALUES (?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `);
+        stmt.bind([item.key, item.value]);
+        stmt.step();
+        stmt.free();
+      }
+      this.save();
+    } catch (err) {
+      console.error('[Database] setSchoolLocation error:', err);
+    }
+  },
+
   // ─── Staff Performance & Attendance DB Helpers ─────────────────────────────
-  recordAttendance(record: { staffId: string; staffName?: string; date: string; time?: string; className?: string; status: string; schoolId?: string }): void {
+  recordAttendance(record: {
+    staffId: string;
+    staffName?: string;
+    date: string;
+    time?: string;
+    className?: string;
+    status: string;
+    schoolId?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    locationFlagged?: boolean;
+    distanceMeters?: number | null;
+  }): void {
     const id = this.generateId();
     const now = new Date().toISOString();
     try {
       const stmt = sqlDb.prepare(`
-        INSERT INTO attendance_records (id, staffId, staffName, date, time, className, status, schoolId, createdAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO attendance_records (
+          id, staffId, staffName, date, time, className, status, schoolId,
+          latitude, longitude, locationFlagged, distanceMeters, createdAt
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.bind([
         id,
@@ -1308,6 +1396,10 @@ export const serverDb = {
         record.className || null,
         record.status,
         record.schoolId || null,
+        record.latitude !== undefined && record.latitude !== null ? record.latitude : null,
+        record.longitude !== undefined && record.longitude !== null ? record.longitude : null,
+        record.locationFlagged ? 1 : 0,
+        record.distanceMeters !== undefined && record.distanceMeters !== null ? record.distanceMeters : null,
         now,
       ]);
       stmt.step();
@@ -1327,6 +1419,10 @@ export const serverDb = {
     className?: string;
     status: string;
     schoolId?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    locationFlagged: boolean;
+    distanceMeters?: number | null;
     createdAt: string;
   }> {
     const stmt = sqlDb.prepare('SELECT * FROM attendance_records WHERE staffId = ? ORDER BY date DESC, createdAt DESC');
@@ -1335,15 +1431,61 @@ export const serverDb = {
     while (stmt.step()) {
       const row = stmt.getAsObject();
       records.push({
-        id: row.id,
-        staffId: row.staffId,
-        staffName: row.staffName || undefined,
-        date: row.date,
-        time: row.time || undefined,
-        className: row.className || undefined,
-        status: row.status,
-        schoolId: row.schoolId || undefined,
-        createdAt: row.createdAt,
+        id: row.id as string,
+        staffId: row.staffId as string,
+        staffName: (row.staffName as string) || undefined,
+        date: row.date as string,
+        time: (row.time as string) || undefined,
+        className: (row.className as string) || undefined,
+        status: row.status as string,
+        schoolId: (row.schoolId as string) || undefined,
+        latitude: row.latitude !== null && row.latitude !== undefined ? Number(row.latitude) : null,
+        longitude: row.longitude !== null && row.longitude !== undefined ? Number(row.longitude) : null,
+        locationFlagged: Boolean(row.locationFlagged),
+        distanceMeters: row.distanceMeters !== null && row.distanceMeters !== undefined ? Number(row.distanceMeters) : null,
+        createdAt: row.createdAt as string,
+      });
+    }
+    stmt.free();
+    return records;
+  },
+
+  getAllAttendanceRecords(flaggedOnly: boolean = false): Array<{
+    id: string;
+    staffId: string;
+    staffName?: string;
+    date: string;
+    time?: string;
+    className?: string;
+    status: string;
+    schoolId?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    locationFlagged: boolean;
+    distanceMeters?: number | null;
+    createdAt: string;
+  }> {
+    const query = flaggedOnly
+      ? 'SELECT * FROM attendance_records WHERE locationFlagged = 1 ORDER BY date DESC, createdAt DESC'
+      : 'SELECT * FROM attendance_records ORDER BY date DESC, createdAt DESC';
+    const stmt = sqlDb.prepare(query);
+    const records: any[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      records.push({
+        id: row.id as string,
+        staffId: row.staffId as string,
+        staffName: (row.staffName as string) || undefined,
+        date: row.date as string,
+        time: (row.time as string) || undefined,
+        className: (row.className as string) || undefined,
+        status: row.status as string,
+        schoolId: (row.schoolId as string) || undefined,
+        latitude: row.latitude !== null && row.latitude !== undefined ? Number(row.latitude) : null,
+        longitude: row.longitude !== null && row.longitude !== undefined ? Number(row.longitude) : null,
+        locationFlagged: Boolean(row.locationFlagged),
+        distanceMeters: row.distanceMeters !== null && row.distanceMeters !== undefined ? Number(row.distanceMeters) : null,
+        createdAt: row.createdAt as string,
       });
     }
     stmt.free();

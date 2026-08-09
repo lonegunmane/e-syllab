@@ -5,15 +5,15 @@ import {
   Calendar, AlertTriangle, MessageSquare, Check, Sparkles, Smartphone,
   Layers, ChevronDown, ChevronUp, Code2, WifiOff, FileCheck, Shield,
   FileText, Trash2, LogOut, Upload, Laptop, Globe, Key, AlertCircle,
-  GraduationCap, BookOpen, Hash, Download
+  GraduationCap, BookOpen, Hash, Download, MapPin, Crosshair, Navigation
 } from 'lucide-react';
-import { User, UserRole, UserSession } from '../types';
+import { User, UserRole, UserSession, SchoolLocationConfig } from '../types';
 import { db } from '../services/database';
 import { 
   getSavedTheme, applyTheme, ThemeMode,
   getNotificationPreferences, saveNotificationPreferences, NotificationPreferences
 } from '../services/settingsService';
-import { getSessions, revokeSession, deleteAccount, clearToken, exportPersonalData } from '../services/api';
+import { getSessions, revokeSession, deleteAccount, clearToken, exportPersonalData, getSchoolLocation, updateSchoolLocation } from '../services/api';
 
 interface SettingsViewProps {
   user: User;
@@ -26,6 +26,7 @@ type SettingsSection =
   | 'display' 
   | 'notifications' 
   | 'devices' 
+  | 'location'
   | 'terms' 
   | 'privacy' 
   | 'about';
@@ -82,6 +83,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
   const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
   const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
 
+  // ── School Location & Geofence State (Admin Only) ─────────────────────────
+  const [schoolLocation, setSchoolLocation] = useState<SchoolLocationConfig>({
+    latitude: -15.3875,
+    longitude: 28.3228,
+    radiusMeters: 150,
+  });
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [isSavingLocation, setIsSavingLocation] = useState(false);
+  const [isDetectingGPS, setIsDetectingGPS] = useState(false);
+  const [locationFeedback, setLocationFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // Keep form data synchronized if user prop changes
   useEffect(() => {
     setFormData({
@@ -104,6 +116,93 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
       loadSessions();
     }
   }, [activeSection]);
+
+  // Load School Location when navigating to 'location' section or on mount for Admin
+  useEffect(() => {
+    if (activeSection === 'location' && user.role === UserRole.ADMIN) {
+      loadSchoolLocation();
+    }
+  }, [activeSection, user.role]);
+
+  const loadSchoolLocation = async () => {
+    setIsLoadingLocation(true);
+    setLocationFeedback(null);
+    try {
+      const res = await getSchoolLocation();
+      if (res.success && res.location) {
+        setSchoolLocation({
+          latitude: Number(res.location.latitude) || -15.3875,
+          longitude: Number(res.location.longitude) || 28.3228,
+          radiusMeters: Number(res.location.radiusMeters) || 150,
+        });
+      }
+    } catch (err: any) {
+      console.warn('[SettingsView] Unable to fetch school location:', err);
+    } finally {
+      setIsLoadingLocation(false);
+    }
+  };
+
+  const handleSaveSchoolLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingLocation(true);
+    setLocationFeedback(null);
+    try {
+      const res = await updateSchoolLocation(schoolLocation);
+      if (res.success) {
+        setLocationFeedback({
+          type: 'success',
+          text: 'School location and geofence radius saved successfully.',
+        });
+      } else {
+        setLocationFeedback({
+          type: 'error',
+          text: 'Failed to update school location.',
+        });
+      }
+    } catch (err: any) {
+      setLocationFeedback({
+        type: 'error',
+        text: err.message || 'Error saving school location.',
+      });
+    } finally {
+      setIsSavingLocation(false);
+    }
+  };
+
+  const handleDetectCampusGPS = () => {
+    if (!navigator.geolocation) {
+      setLocationFeedback({
+        type: 'error',
+        text: 'Geolocation is not supported by your browser.',
+      });
+      return;
+    }
+    setIsDetectingGPS(true);
+    setLocationFeedback(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setSchoolLocation(prev => ({
+          ...prev,
+          latitude: Math.round(pos.coords.latitude * 1000000) / 1000000,
+          longitude: Math.round(pos.coords.longitude * 1000000) / 1000000,
+        }));
+        setLocationFeedback({
+          type: 'success',
+          text: `Acquired device GPS coordinates (Accuracy: ±${Math.round(pos.coords.accuracy)}m). Click "Save Location" to apply.`,
+        });
+        setIsDetectingGPS(false);
+      },
+      (err) => {
+        setIsDetectingGPS(false);
+        setLocationFeedback({
+          type: 'error',
+          text: `Could not retrieve GPS coordinates: ${err.message}`,
+        });
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
 
   const loadSessions = async () => {
     setIsLoadingSessions(true);
@@ -334,6 +433,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
     { id: 'display', label: 'Display', icon: currentTheme === 'dark' ? Moon : Sun, description: 'Light & Dark theme' },
     { id: 'notifications', label: 'Notifications', icon: Bell, description: 'Alerts & reminders' },
     { id: 'devices', label: 'Connected Devices', icon: Smartphone, description: 'Active login sessions' },
+    ...(user.role === UserRole.ADMIN ? [
+      { id: 'location' as SettingsSection, label: 'School Location', icon: MapPin, description: 'Campus geofence & GPS' },
+    ] : []),
     { id: 'terms', label: 'Terms of Use', icon: FileText, description: 'Platform guidelines' },
     { id: 'privacy', label: 'Privacy Policy', icon: Shield, description: 'Data Protection Act 2021' },
     { id: 'about', label: 'About', icon: Info, description: 'App & system details' },
@@ -491,7 +593,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
               </div>
 
               {/* ─────────────────────────────────────────────────────────────────
-                  CARD 1: EDITABLE PROFILE DETAILS & AVATAR
+                  UNIFIED PROFILE & INSTITUTIONAL ACCOUNT DETAILS
                  ───────────────────────────────────────────────────────────────── */}
               <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6">
                 <div className="flex items-center justify-between pb-4 border-b border-white/10">
@@ -501,16 +603,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                     </div>
                     <div>
                       <h3 className="text-base font-bold text-white flex items-center gap-2">
-                        Editable Profile Information
+                        Profile &amp; Account Details
                       </h3>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        These personal details can be modified at any time.
+                        Manage your personal profile and view verified institutional credentials.
                       </p>
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 bg-primary-600/20 text-primary-300 border border-primary-500/30 rounded-xl text-[10px] font-extrabold uppercase tracking-wider hidden sm:inline-block">
-                    Editable Fields
-                  </span>
                 </div>
 
                 {/* Avatar Selection Section */}
@@ -524,7 +623,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                         Upload your custom photo or pick from 6 preloaded avatars.
                       </p>
                     </div>
-                    <label className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/40 rounded-xl text-xs font-bold cursor-pointer transition-all active:scale-95 self-start sm:self-auto">
+                    <label className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/40 rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:scale-105 active:scale-95 self-start sm:self-auto">
                       <Upload className="w-3.5 h-3.5" />
                       <span>Upload Custom Photo</span>
                       <input
@@ -536,9 +635,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                     </label>
                   </div>
 
-                  {/* Preloaded Avatars 6-item Grid */}
+                  {/* Preloaded Avatars 6-item Grid with subtle motion */}
                   <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5 block">
                       Choose from Preloaded Avatars:
                     </label>
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
@@ -549,23 +648,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                             key={av.id}
                             type="button"
                             onClick={() => handleSelectPreloadedAvatar(av.url)}
-                            className={`p-2 rounded-2xl border-2 transition-all flex flex-col items-center gap-1.5 cursor-pointer relative group ${
+                            className={`p-2.5 rounded-2xl border-2 transition-all duration-200 flex flex-col items-center gap-1.5 cursor-pointer relative group transform hover:scale-105 hover:-translate-y-1 hover:shadow-xl hover:shadow-primary-950/40 active:scale-95 ${
                               isSelected
-                                ? 'border-primary-500 bg-primary-950/40 shadow-lg shadow-primary-950/50 ring-2 ring-primary-500/30'
-                                : 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10'
+                                ? 'border-primary-500 bg-primary-950/50 shadow-md shadow-primary-950/60 ring-2 ring-primary-500/40 scale-105 animate-in zoom-in-95'
+                                : 'border-white/10 bg-white/5 hover:border-primary-500/40 hover:bg-white/10'
                             }`}
                           >
                             <img
                               src={av.url}
                               alt={av.name}
-                              className="w-12 h-12 rounded-xl object-cover bg-slate-900/60"
+                              className="w-12 h-12 rounded-xl object-cover bg-slate-900/60 transition-transform duration-200 group-hover:scale-105"
                             />
-                            <span className={`text-[10px] font-semibold truncate ${isSelected ? 'text-primary-300' : 'text-slate-400'}`}>
+                            <span className={`text-[10px] font-semibold truncate transition-colors ${isSelected ? 'text-primary-300 font-bold' : 'text-slate-400 group-hover:text-slate-200'}`}>
                               {av.name}
                             </span>
                             {isSelected && (
-                              <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-primary-600 text-white rounded-full flex items-center justify-center shadow-md">
-                                <Check className="w-3 h-3" />
+                              <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-primary-600 text-white rounded-full flex items-center justify-center shadow-md animate-in zoom-in-75 duration-150 ring-2 ring-slate-900">
+                                <Check className="w-3 h-3 stroke-[3]" />
                               </div>
                             )}
                           </button>
@@ -575,17 +674,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                   </div>
 
                   {customAvatarPreview && (
-                    <div className="flex items-center gap-3 p-2.5 bg-primary-950/30 border border-primary-500/30 rounded-xl text-xs text-primary-300">
+                    <div className="flex items-center gap-3 p-2.5 bg-primary-950/30 border border-primary-500/30 rounded-xl text-xs text-primary-300 animate-in fade-in">
                       <img src={customAvatarPreview} alt="Custom Preview" className="w-8 h-8 rounded-lg object-cover border border-primary-500" />
                       <span>Custom image selected. Click &quot;Save Profile Changes&quot; below to apply.</span>
                     </div>
                   )}
                 </div>
 
-                {/* Editable Form Inputs */}
+                {/* Unified Form: Editable Information + Protected Institutional Details */}
                 <form onSubmit={handleProfileSubmit} className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     
+                    {/* ── Editable Fields ── */}
                     {/* Full Name */}
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1.5 mb-1.5 uppercase tracking-wider ml-1">
@@ -652,6 +752,121 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                       />
                     </div>
 
+                    {/* ── Protected / Institutional Fields (Non-editable with Lock icon) ── */}
+
+                    {/* Email Address */}
+                    <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
+                      <div className="flex items-center justify-between text-slate-400">
+                        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <Mail className="w-3.5 h-3.5 text-primary-400" /> Email Address
+                        </span>
+                        <Lock className="w-3 h-3 text-slate-500" />
+                      </div>
+                      <p className="text-sm font-semibold text-white truncate">{user.email || 'N/A'}</p>
+                      <p className="text-[10px] text-slate-500">Primary authentication credential</p>
+                    </div>
+
+                    {/* Account Role */}
+                    <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
+                      <div className="flex items-center justify-between text-slate-400">
+                        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <Shield className="w-3.5 h-3.5 text-amber-400" /> Account Role
+                        </span>
+                        <Lock className="w-3 h-3 text-slate-500" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-extrabold uppercase">
+                          {user.role}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">System authorization tier</p>
+                    </div>
+
+                    {/* School / Institution */}
+                    <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
+                      <div className="flex items-center justify-between text-slate-400">
+                        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <School className="w-3.5 h-3.5 text-emerald-400" /> Institution
+                        </span>
+                        <Lock className="w-3 h-3 text-slate-500" />
+                      </div>
+                      <p className="text-sm font-semibold text-white truncate">{user.school || 'E-SYLLAB Academy'}</p>
+                      <p className="text-[10px] text-slate-500">Affiliated education center</p>
+                    </div>
+
+                    {/* Role Specific Read-Only: Student Grade or Teacher Assignments */}
+                    {user.role === UserRole.STUDENT && (
+                      <>
+                        <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
+                          <div className="flex items-center justify-between text-slate-400">
+                            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                              <GraduationCap className="w-3.5 h-3.5 text-cyan-400" /> Academic Grade
+                            </span>
+                            <Lock className="w-3 h-3 text-slate-500" />
+                          </div>
+                          <p className="text-sm font-semibold text-cyan-300">{user.grade || user.gradeLevel || 'Grade 10'}</p>
+                          <p className="text-[10px] text-slate-500">ECZ curriculum cohort</p>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
+                          <div className="flex items-center justify-between text-slate-400">
+                            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                              <BookOpen className="w-3.5 h-3.5 text-indigo-400" /> Class Section
+                            </span>
+                            <Lock className="w-3 h-3 text-slate-500" />
+                          </div>
+                          <p className="text-sm font-semibold text-white">{user.className || 'General Stream'}</p>
+                          <p className="text-[10px] text-slate-500">Assigned classroom cohort</p>
+                        </div>
+                      </>
+                    )}
+
+                    {user.role === UserRole.TEACHER && (
+                      <>
+                        <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
+                          <div className="flex items-center justify-between text-slate-400">
+                            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                              <BookOpen className="w-3.5 h-3.5 text-cyan-400" /> Teaching Subjects
+                            </span>
+                            <Lock className="w-3 h-3 text-slate-500" />
+                          </div>
+                          <p className="text-sm font-semibold text-cyan-300 truncate">
+                            {user.teachingSubjects && user.teachingSubjects.length > 0
+                              ? user.teachingSubjects.join(', ')
+                              : 'All STEM & Humanities'}
+                          </p>
+                          <p className="text-[10px] text-slate-500">Curriculum instruction areas</p>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
+                          <div className="flex items-center justify-between text-slate-400">
+                            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                              <GraduationCap className="w-3.5 h-3.5 text-indigo-400" /> Teaching Grades
+                            </span>
+                            <Lock className="w-3 h-3 text-slate-500" />
+                          </div>
+                          <p className="text-sm font-semibold text-white truncate">
+                            {user.teachingGrades && user.teachingGrades.length > 0
+                              ? user.teachingGrades.join(', ')
+                              : 'Grades 8 - 12'}
+                          </p>
+                          <p className="text-[10px] text-slate-500">Instruction levels</p>
+                        </div>
+                      </>
+                    )}
+
+                    {/* System Reference ID / Blockchain Address */}
+                    <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative md:col-span-2">
+                      <div className="flex items-center justify-between text-slate-400">
+                        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <Hash className="w-3.5 h-3.5 text-slate-400" /> Account Identifier
+                        </span>
+                        <Lock className="w-3 h-3 text-slate-500" />
+                      </div>
+                      <p className="font-mono text-xs text-slate-300 truncate">{user.blockchainId || user.id}</p>
+                      <p className="text-[10px] text-slate-500">Immutable ledger reference</p>
+                    </div>
+
                   </div>
 
                   {/* Save Profile Changes Submit Button */}
@@ -675,149 +890,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                     </button>
                   </div>
                 </form>
-              </div>
-
-              {/* ─────────────────────────────────────────────────────────────────
-                  CARD 2: READ-ONLY INSTITUTIONAL & ACCOUNT DETAILS
-                 ───────────────────────────────────────────────────────────────── */}
-              <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-white/10">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-2xl bg-slate-800 text-slate-400 border border-white/10">
-                      <ShieldCheck className="w-5 h-5 text-slate-300" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-white flex items-center gap-2">
-                        Institutional &amp; Account Details
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        These official credentials and access permissions are managed by school administrators.
-                      </p>
-                    </div>
-                  </div>
-                  <span className="px-3 py-1 bg-white/5 text-slate-400 border border-white/10 rounded-xl text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 self-start sm:self-auto">
-                    <Lock className="w-3 h-3 text-slate-400" />
-                    Read-Only (Protected)
-                  </span>
-                </div>
-
-                {/* Read-Only Details Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  
-                  {/* Email Address */}
-                  <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-1 relative">
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                        <Mail className="w-3.5 h-3.5 text-primary-400" /> Email Address
-                      </span>
-                      <Lock className="w-3 h-3 text-slate-500" />
-                    </div>
-                    <p className="text-sm font-semibold text-white truncate">{user.email || 'N/A'}</p>
-                    <p className="text-[10px] text-slate-500">Primary authentication credential</p>
-                  </div>
-
-                  {/* Account Role */}
-                  <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-1 relative">
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                        <Shield className="w-3.5 h-3.5 text-amber-400" /> Account Role
-                      </span>
-                      <Lock className="w-3 h-3 text-slate-500" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-extrabold uppercase">
-                        {user.role}
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-slate-500">System authorization tier</p>
-                  </div>
-
-                  {/* School / Institution */}
-                  <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-1 relative">
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                        <School className="w-3.5 h-3.5 text-emerald-400" /> Institution
-                      </span>
-                      <Lock className="w-3 h-3 text-slate-500" />
-                    </div>
-                    <p className="text-sm font-semibold text-white truncate">{user.school || 'E-SYLLAB Academy'}</p>
-                    <p className="text-[10px] text-slate-500">Affiliated education center</p>
-                  </div>
-
-                  {/* Role Specific Read-Only: Student Grade or Teacher Assignments */}
-                  {user.role === UserRole.STUDENT && (
-                    <>
-                      <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-1 relative">
-                        <div className="flex items-center justify-between text-slate-400">
-                          <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                            <GraduationCap className="w-3.5 h-3.5 text-cyan-400" /> Academic Grade
-                          </span>
-                          <Lock className="w-3 h-3 text-slate-500" />
-                        </div>
-                        <p className="text-sm font-semibold text-cyan-300">{user.grade || user.gradeLevel || 'Grade 10'}</p>
-                        <p className="text-[10px] text-slate-500">ECZ curriculum cohort</p>
-                      </div>
-
-                      <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-1 relative">
-                        <div className="flex items-center justify-between text-slate-400">
-                          <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                            <BookOpen className="w-3.5 h-3.5 text-indigo-400" /> Class Section
-                          </span>
-                          <Lock className="w-3 h-3 text-slate-500" />
-                        </div>
-                        <p className="text-sm font-semibold text-white">{user.className || 'General Stream'}</p>
-                        <p className="text-[10px] text-slate-500">Assigned classroom cohort</p>
-                      </div>
-                    </>
-                  )}
-
-                  {user.role === UserRole.TEACHER && (
-                    <>
-                      <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-1 relative">
-                        <div className="flex items-center justify-between text-slate-400">
-                          <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                            <BookOpen className="w-3.5 h-3.5 text-cyan-400" /> Teaching Subjects
-                          </span>
-                          <Lock className="w-3 h-3 text-slate-500" />
-                        </div>
-                        <p className="text-sm font-semibold text-cyan-300 truncate">
-                          {user.teachingSubjects && user.teachingSubjects.length > 0
-                            ? user.teachingSubjects.join(', ')
-                            : 'All STEM & Humanities'}
-                        </p>
-                        <p className="text-[10px] text-slate-500">Curriculum instruction areas</p>
-                      </div>
-
-                      <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-1 relative">
-                        <div className="flex items-center justify-between text-slate-400">
-                          <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                            <GraduationCap className="w-3.5 h-3.5 text-indigo-400" /> Teaching Grades
-                          </span>
-                          <Lock className="w-3 h-3 text-slate-500" />
-                        </div>
-                        <p className="text-sm font-semibold text-white truncate">
-                          {user.teachingGrades && user.teachingGrades.length > 0
-                            ? user.teachingGrades.join(', ')
-                            : 'Grades 8 - 12'}
-                        </p>
-                        <p className="text-[10px] text-slate-500">Instruction levels</p>
-                      </div>
-                    </>
-                  )}
-
-                  {/* System Reference ID / Blockchain Address */}
-                  <div className="p-4 rounded-2xl bg-white/5 border border-white/5 space-y-1 relative">
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                        <Hash className="w-3.5 h-3.5 text-slate-400" /> Account Identifier
-                      </span>
-                      <Lock className="w-3 h-3 text-slate-500" />
-                    </div>
-                    <p className="font-mono text-xs text-slate-300 truncate">{user.blockchainId || user.id}</p>
-                    <p className="text-[10px] text-slate-500">Immutable ledger reference</p>
-                  </div>
-
-                </div>
               </div>
 
               {/* ─────────────────────────────────────────────────────────────────
@@ -1314,6 +1386,200 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
           )}
 
           {/* ══════════════════════════════════════════════════════════════════════
+              SECTION: SCHOOL LOCATION & GEOFENCING (ADMIN ONLY)
+             ══════════════════════════════════════════════════════════════════════ */}
+          {activeSection === 'location' && user.role === UserRole.ADMIN && (
+            <div className="space-y-6 animate-in fade-in">
+              
+              <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
+                  <div>
+                    <div className="flex items-center gap-2 text-primary-400 text-xs font-bold uppercase tracking-wider mb-1">
+                      <MapPin className="w-4 h-4" /> Campus Geofence Configuration
+                    </div>
+                    <h2 className="text-xl md:text-2xl font-extrabold text-white">
+                      School Location &amp; Attendance Geofencing
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                      Configure the school's geographical coordinates and verification perimeter. Attendance submitted outside this radius will be flagged for administrative audit.
+                    </p>
+                  </div>
+
+                  <span className="px-3 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full text-xs font-bold uppercase tracking-wider self-start sm:self-auto">
+                    Admin Exclusive
+                  </span>
+                </div>
+
+                {/* Explanatory Policy Card */}
+                <div className="p-4 bg-primary-950/30 border border-primary-500/20 rounded-2xl space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-primary-300">
+                    <ShieldCheck className="w-4 h-4 text-primary-400" />
+                    <span>Non-Blocking Evidence Layer</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Under standard school policy, location capture serves as an evidentiary verification layer. Teachers are <strong>never blocked</strong> from recording attendance if GPS is weak or outside bounds; instead, any record falling outside the specified radius is tagged with a geofence warning for review in the Admin Dashboard.
+                  </p>
+                </div>
+
+                {isLoadingLocation ? (
+                  <div className="py-12 flex flex-col items-center justify-center gap-3">
+                    <Loader2 className="w-8 h-8 text-primary-400 animate-spin" />
+                    <p className="text-xs text-slate-400">Loading campus coordinates...</p>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSaveSchoolLocation} className="space-y-6">
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      {/* Latitude */}
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                          <Navigation className="w-3.5 h-3.5 text-primary-400" />
+                          School Latitude (Decimal Degrees)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          required
+                          value={schoolLocation.latitude}
+                          onChange={(e) => setSchoolLocation({ ...schoolLocation, latitude: parseFloat(e.target.value) || 0 })}
+                          placeholder="e.g. -15.3875"
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white text-sm focus:outline-none focus:border-primary-500 transition-all font-mono"
+                        />
+                        <p className="text-[11px] text-slate-500">e.g. -15.3875 (South is negative)</p>
+                      </div>
+
+                      {/* Longitude */}
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                          <Navigation className="w-3.5 h-3.5 text-primary-400" />
+                          School Longitude (Decimal Degrees)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.000001"
+                          required
+                          value={schoolLocation.longitude}
+                          onChange={(e) => setSchoolLocation({ ...schoolLocation, longitude: parseFloat(e.target.value) || 0 })}
+                          placeholder="e.g. 28.3228"
+                          className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-white text-sm focus:outline-none focus:border-primary-500 transition-all font-mono"
+                        />
+                        <p className="text-[11px] text-slate-500">e.g. 28.3228 (East is positive)</p>
+                      </div>
+                    </div>
+
+                    {/* Radius Slider & Number Input */}
+                    <div className="p-5 bg-white/5 border border-white/10 rounded-2xl space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                            <Crosshair className="w-4 h-4 text-emerald-400" />
+                            Allowed Geofence Radius
+                          </label>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            Permissible distance from campus center for standard attendance
+                          </p>
+                        </div>
+                        <div className="px-3 py-1.5 bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-300 font-mono font-bold text-sm">
+                          {schoolLocation.radiusMeters} meters
+                        </div>
+                      </div>
+
+                      <input
+                        type="range"
+                        min="25"
+                        max="2000"
+                        step="25"
+                        value={schoolLocation.radiusMeters}
+                        onChange={(e) => setSchoolLocation({ ...schoolLocation, radiusMeters: parseInt(e.target.value, 10) || 150 })}
+                        className="w-full accent-primary-500 cursor-pointer"
+                      />
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <span className="text-[11px] text-slate-400 mr-2 self-center">Quick presets:</span>
+                        {[50, 100, 150, 250, 500, 1000].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setSchoolLocation({ ...schoolLocation, radiusMeters: preset })}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                              schoolLocation.radiusMeters === preset
+                                ? 'bg-primary-600 text-white font-bold'
+                                : 'bg-white/5 text-slate-400 hover:text-white hover:bg-white/10'
+                            }`}
+                          >
+                            {preset}m
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Geolocation Capture Button & Save Controls */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-white/10">
+                      <button
+                        type="button"
+                        onClick={handleDetectCampusGPS}
+                        disabled={isDetectingGPS}
+                        className="w-full sm:w-auto px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 rounded-2xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        {isDetectingGPS ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin text-primary-400" />
+                            <span>Acquiring Device GPS...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Crosshair className="w-4 h-4 text-primary-400" />
+                            <span>Use My Current GPS Position</span>
+                          </>
+                        )}
+                      </button>
+
+                      <div className="flex items-center gap-3 w-full sm:w-auto">
+                        <button
+                          type="submit"
+                          disabled={isSavingLocation}
+                          className="w-full sm:w-auto px-6 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-2xl text-xs font-bold transition-all shadow-lg shadow-primary-900/50 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                        >
+                          {isSavingLocation ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>Saving Location...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Save className="w-4 h-4" />
+                              <span>Save School Location</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Feedback Alert */}
+                    {locationFeedback && (
+                      <div className={`p-4 rounded-2xl border text-xs flex items-center gap-3 animate-in fade-in ${
+                        locationFeedback.type === 'success'
+                          ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                          : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                      }`}>
+                        {locationFeedback.type === 'success' ? (
+                          <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400" />
+                        ) : (
+                          <AlertTriangle className="w-5 h-5 shrink-0 text-rose-400" />
+                        )}
+                        <span>{locationFeedback.text}</span>
+                      </div>
+                    )}
+
+                  </form>
+                )}
+
+              </div>
+
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════════════
               SECTION 5: TERMS OF USE
              ══════════════════════════════════════════════════════════════════════ */}
           {activeSection === 'terms' && (
@@ -1423,7 +1689,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                   <h3 className="text-sm font-bold text-white">2. Information We Collect</h3>
                   <ul className="list-disc pl-5 space-y-1 text-slate-400">
                     <li><strong className="text-white">Account Identification:</strong> Full name, institutional email address, school role, contact phone numbers, and profile avatars.</li>
-                    <li><strong className="text-white">Academic &amp; Attendance Records:</strong> Daily class attendance timestamps, homework submissions, subject assessment scores, and syllabus progression.</li>
+                    <li><strong className="text-white">Academic &amp; Attendance Records:</strong> Daily class attendance timestamps, subject assessment scores, syllabus progression, and optional device GPS coordinates captured at the moment attendance is marked (with user permission) for geofence verification.</li>
                     <li><strong className="text-white">Device &amp; Session Logs:</strong> Browser User-Agent, approximate IP address, and sign-in timestamps recorded for session security and unauthorized access prevention.</li>
                   </ul>
                 </section>

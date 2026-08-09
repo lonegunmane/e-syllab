@@ -226,4 +226,27 @@ export interface UserSession {
   isCurrent?: boolean;
 }
 
+export interface SchoolLocationConfig {
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+}
+
+export interface AttendanceRecordItem {
+  id: string;
+  staffId: string;
+  staffName?: string;
+  date: string;
+  time?: string;
+  className?: string;
+  status: string;
+  schoolId?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationFlagged: boolean;
+  distanceMeters?: number | null;
+  offlineHash?: string;
+  createdAt: string;
+}
+
 
