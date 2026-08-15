@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => {
       'global': 'globalThis',
     },
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         buffer: 'buffer',
       },

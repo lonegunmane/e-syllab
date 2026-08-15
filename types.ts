@@ -246,6 +246,9 @@ export interface AttendanceRecordItem {
   locationFlagged: boolean;
   distanceMeters?: number | null;
   offlineHash?: string;
+  signature?: string;
+  txSignature?: string;
+  explorerUrl?: string;
   createdAt: string;
 }
 

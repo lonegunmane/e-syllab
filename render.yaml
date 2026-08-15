@@ -16,6 +16,8 @@ services:
         value: 3000
       - key: RESEND_API_KEY
         sync: false
+      - key: DATABASE_URL
+        sync: false
       - key: SCHOOL_SIGNING_KEYPAIR
         sync: false
       - key: ALLOWED_ORIGIN

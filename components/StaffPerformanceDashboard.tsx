@@ -3,9 +3,10 @@ import {
   Users, Calendar, Award, FileText, CheckCircle, RefreshCw,
   Loader2, Search, BarChart2, TrendingUp, Briefcase, BookOpen,
   MapPin, AlertTriangle, ShieldCheck, Filter, Clock, Hash,
-  Navigation, Crosshair, ChevronRight, AlertCircle
+  Navigation, Crosshair, ChevronRight, AlertCircle, ExternalLink,
+  Copy, Check
 } from 'lucide-react';
-import { getStaffPerformance, getAdminAttendanceRecords } from '../services/api';
+import { getStaffPerformance, getAdminAttendanceRecords, verifyAttendanceHash } from '../services/api';
 import { AttendanceRecordItem } from '../types';
 
 interface TeacherPerformanceData {
@@ -33,6 +34,63 @@ export const StaffPerformanceDashboard: React.FC = () => {
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
   const [flaggedFilter, setFlaggedFilter] = useState<'all' | 'flagged'>('all');
   const [attendanceSearch, setAttendanceSearch] = useState('');
+
+  // Copy and Verify state for on-chain attendance audit
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [verifyingRows, setVerifyingRows] = useState<Record<string, boolean>>({});
+  const [verificationStatus, setVerificationStatus] = useState<Record<string, { status: 'verified' | 'mismatch'; message?: string }>>({});
+
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => {
+      setCopiedId(null);
+    }, 2000);
+  };
+
+  const handleVerifyRow = async (rec: AttendanceRecordItem) => {
+    setVerifyingRows(prev => ({ ...prev, [rec.id]: true }));
+    try {
+      const hashToVerify = rec.offlineHash || rec.signature || rec.txSignature || '';
+      const res = await verifyAttendanceHash({
+        staffId: rec.staffId,
+        date: rec.date,
+        status: rec.status,
+        hashToVerify,
+        signature: rec.signature || rec.txSignature,
+        latitude: rec.latitude,
+        longitude: rec.longitude,
+      });
+
+      if (res && res.isValid) {
+        setVerificationStatus(prev => ({
+          ...prev,
+          [rec.id]: {
+            status: 'verified',
+            message: res.message || 'Cryptographic proof verified — record is authentic and untampered.'
+          }
+        }));
+      } else {
+        setVerificationStatus(prev => ({
+          ...prev,
+          [rec.id]: {
+            status: 'mismatch',
+            message: res?.message || 'Hash mismatch — possible tampering detected!'
+          }
+        }));
+      }
+    } catch (err: any) {
+      setVerificationStatus(prev => ({
+        ...prev,
+        [rec.id]: {
+          status: 'mismatch',
+          message: err.message || 'Verification error'
+        }
+      }));
+    } finally {
+      setVerifyingRows(prev => ({ ...prev, [rec.id]: false }));
+    }
+  };
 
   const fetchPerformance = async () => {
     setLoading(true);
@@ -453,6 +511,10 @@ export const StaffPerformanceDashboard: React.FC = () => {
                       const hasCoords = rec.latitude !== null && rec.latitude !== undefined && rec.longitude !== null && rec.longitude !== undefined;
                       const isFlagged = Boolean(rec.locationFlagged);
                       const distance = rec.distanceMeters !== null && rec.distanceMeters !== undefined ? Math.round(rec.distanceMeters) : null;
+                      const signature = rec.signature || rec.txSignature || (rec.offlineHash && rec.offlineHash.length >= 44 && !rec.offlineHash.startsWith('queue-') ? rec.offlineHash : null);
+                      const solanaExplorerUrl = rec.explorerUrl || (signature && signature.length > 20 && !signature.startsWith('queue-') ? `https://explorer.solana.com/tx/${encodeURIComponent(signature)}?cluster=devnet` : null);
+                      const isVerifying = Boolean(verifyingRows[rec.id]);
+                      const vStatus = verificationStatus[rec.id];
 
                       return (
                         <tr key={rec.id} className="hover:bg-white/[0.02] transition-colors">
@@ -524,15 +586,111 @@ export const StaffPerformanceDashboard: React.FC = () => {
                             )}
                           </td>
 
-                          {/* Hash */}
-                          <td className="p-4 whitespace-nowrap text-right font-mono text-[10px]">
-                            {rec.offlineHash ? (
-                              <span className="px-2 py-1 bg-white/5 border border-white/10 rounded-lg text-slate-300 font-mono" title={rec.offlineHash}>
-                                {rec.offlineHash.slice(0, 10)}…{rec.offlineHash.slice(-6)}
-                              </span>
-                            ) : (
-                              <span className="text-slate-500 italic">Direct Tx</span>
-                            )}
+                          {/* Signature / Explorer Link / Copy / Inline Verification */}
+                          <td className="p-4 whitespace-nowrap text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {signature ? (
+                                <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg">
+                                  {solanaExplorerUrl ? (
+                                    <a
+                                      href={solanaExplorerUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title={`View on Solana Explorer:\n${signature}`}
+                                      className="text-primary-400 hover:text-primary-300 hover:underline font-mono text-[11px] inline-flex items-center gap-1 transition-colors group/link"
+                                    >
+                                      <span>
+                                        {signature.length > 18
+                                          ? `${signature.slice(0, 8)}...${signature.slice(-8)}`
+                                          : signature}
+                                      </span>
+                                      <ExternalLink className="w-3 h-3 opacity-60 group-hover/link:opacity-100 shrink-0" />
+                                    </a>
+                                  ) : (
+                                    <span className="text-slate-300 font-mono text-[11px]" title={signature}>
+                                      {signature.length > 18
+                                        ? `${signature.slice(0, 8)}...${signature.slice(-8)}`
+                                        : signature}
+                                    </span>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopy(rec.id, signature)}
+                                    title="Copy full transaction signature"
+                                    className="p-0.5 text-slate-500 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer ml-0.5"
+                                  >
+                                    {copiedId === rec.id ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              ) : rec.offlineHash ? (
+                                <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg">
+                                  <span className="text-slate-400 font-mono text-[11px]" title={rec.offlineHash}>
+                                    {rec.offlineHash.startsWith('queue-')
+                                      ? 'Pending Sync'
+                                      : rec.offlineHash.length > 18
+                                      ? `${rec.offlineHash.slice(0, 8)}...${rec.offlineHash.slice(-8)}`
+                                      : rec.offlineHash}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopy(rec.id, rec.offlineHash!)}
+                                    title="Copy hash"
+                                    className="p-0.5 text-slate-500 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer ml-0.5"
+                                  >
+                                    {copiedId === rec.id ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-slate-500 italic text-[11px]">Pending Sync</span>
+                              )}
+
+                              {/* Inline Verification Action & Indicator */}
+                              {isVerifying ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary-500/10 text-primary-300 border border-primary-500/20 text-[10px] font-bold">
+                                  <Loader2 className="w-3 h-3 animate-spin text-primary-400" />
+                                  <span>Verifying...</span>
+                                </span>
+                              ) : vStatus?.status === 'verified' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleVerifyRow(rec)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-950/60 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold hover:bg-emerald-900/60 transition-colors cursor-pointer"
+                                  title={vStatus.message || 'Cryptographic proof verified — click to re-verify'}
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                  <span>Verified</span>
+                                </button>
+                              ) : vStatus?.status === 'mismatch' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleVerifyRow(rec)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/60 text-rose-300 border border-rose-500/30 text-[10px] font-bold hover:bg-rose-900/60 transition-colors cursor-pointer"
+                                  title={vStatus.message || 'Integrity mismatch detected — click to re-verify'}
+                                >
+                                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                                  <span>Mismatch</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleVerifyRow(rec)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary-500/10 hover:bg-primary-500/20 text-primary-400 hover:text-primary-300 border border-primary-500/30 text-[10px] font-bold transition-all active:scale-95 cursor-pointer"
+                                  title="Verify cryptographic integrity against recorded parameters"
+                                >
+                                  <ShieldCheck className="w-3.5 h-3.5" />
+                                  <span>Verify</span>
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );

@@ -7,6 +7,7 @@
  * Place in: src/services/solanaAirdrop.ts
  */
 
+import { useState, useEffect, useCallback } from 'react';
 import {
   Connection,
   PublicKey,
@@ -208,6 +209,3 @@ export function useSolanaBalance(publicKey: string | null) {
 export function formatSOL(lamports: number): string {
   return `${(lamports / LAMPORTS_PER_SOL).toFixed(4)} SOL`;
 }
-
-// ─── React import (for hook) ─────────────────────────────────────────────────
-import { useState, useEffect, useCallback } from 'react';
