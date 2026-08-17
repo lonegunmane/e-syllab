@@ -1034,6 +1034,36 @@ function evaluateAttendanceLocation(
 
       const { user, needsPasswordReset } = authResult;
 
+      // Seeded admin 2FA bypass check (both ADMIN_SEED_EMAIL and ADMIN_SEED_EMAIL_2 bypass 2FA)
+      const adminSeedEmail1 = process.env.ADMIN_SEED_EMAIL?.trim().toLowerCase() || 'admin@gmail.com';
+      const adminSeedEmail2 = process.env.ADMIN_SEED_EMAIL_2?.trim().toLowerCase() || 'admin2@gmail.com';
+
+      if (trimmedEmail === adminSeedEmail1 || trimmedEmail === adminSeedEmail2) {
+        const token = jwt.sign(
+          {
+            userId: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+          } as JwtPayload,
+          JWT_SECRET,
+          { expiresIn: JWT_EXPIRY }
+        );
+
+        const userAgent = (req.headers['user-agent'] as string) || '';
+        const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+        await serverDb.createSession(user.id, parseDevice(userAgent), ipAddress, token);
+
+        return res.json({
+          success: true,
+          requires2FA: false,
+          user,
+          needsPasswordReset,
+          token,
+          message: "Sign in successful.",
+        });
+      }
+
       // Credentials valid! Generate code for Login
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = Date.now() + 10 * 60 * 1000;

@@ -318,95 +318,179 @@ export const serverDb = {
   async seedInitialData(): Promise<void> {
     const p = getPool();
     try {
-      const adminEmail = process.env.ADMIN_SEED_EMAIL?.trim().toLowerCase() || 'admin@gmail.com';
-      const adminId = '3';
       const now = new Date().toISOString();
 
-      // Check if admin or user with adminId, adminEmail, or role ADMIN already exists
-      const { rows: existingRows } = await p.query(
-        'SELECT id, email, role FROM users WHERE id = $1 OR LOWER(email) = LOWER($2) OR role = $3',
-        [adminId, adminEmail, 'ADMIN']
+      // ─── Seed Admin Account 1 ──────────────────────────────────────────────
+      const adminEmail1 = process.env.ADMIN_SEED_EMAIL?.trim().toLowerCase() || 'admin@gmail.com';
+      const adminId1 = '3';
+
+      const { rows: existingRows1 } = await p.query(
+        'SELECT id, email, role FROM users WHERE id = $1 OR LOWER(email) = LOWER($2)',
+        [adminId1, adminEmail1]
       );
 
-      const existingAdmin = existingRows[0];
+      const existingAdmin1 = existingRows1[0];
 
-      if (existingAdmin) {
-        // If the seeded admin exists but email differs from ADMIN_SEED_EMAIL, sync it
-        if (existingAdmin.email.toLowerCase() !== adminEmail.toLowerCase()) {
+      if (existingAdmin1) {
+        if (existingAdmin1.email.toLowerCase() !== adminEmail1.toLowerCase()) {
           await p.query('UPDATE users SET email = $1, "updatedAt" = $2 WHERE id = $3', [
-            adminEmail,
+            adminEmail1,
             now,
-            existingAdmin.id,
+            existingAdmin1.id,
           ]);
         }
 
-        // If ADMIN_SEED_PASSWORD is provided in environment, update the credentials
-        const envPassword = process.env.ADMIN_SEED_PASSWORD?.trim();
-        if (envPassword) {
-          const passwordHash = bcrypt.hashSync(envPassword, 10);
+        const envPassword1 = process.env.ADMIN_SEED_PASSWORD?.trim();
+        if (envPassword1) {
+          const passwordHash1 = bcrypt.hashSync(envPassword1, 10);
           const { rows: credRows } = await p.query(
             'SELECT "userId" FROM auth_credentials WHERE "userId" = $1',
-            [existingAdmin.id]
+            [existingAdmin1.id]
           );
 
           if (credRows.length > 0) {
             await p.query(
               'UPDATE auth_credentials SET "passwordHash" = $1, "updatedAt" = $2 WHERE "userId" = $3',
-              [passwordHash, now, existingAdmin.id]
+              [passwordHash1, now, existingAdmin1.id]
             );
           } else {
             await p.query(
               'INSERT INTO auth_credentials ("userId", "passwordHash", "passwordResetRequired", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5)',
-              [existingAdmin.id, passwordHash, true, now, now]
+              [existingAdmin1.id, passwordHash1, true, now, now]
             );
           }
         }
-        return; // Existing admin handled successfully
+      } else {
+        let adminPassword1 = process.env.ADMIN_SEED_PASSWORD?.trim();
+        if (!adminPassword1) {
+          adminPassword1 = crypto.randomBytes(16).toString('hex');
+          console.warn('================================================================================');
+          console.warn('[Security] No ADMIN_SEED_PASSWORD set — generated a random one-time admin password, check server logs now, it will not be shown again.');
+          console.warn(`[Security] Admin Email: ${adminEmail1} | Temporary One-Time Password: ${adminPassword1}`);
+          console.warn('================================================================================');
+        }
+
+        const passwordHash1 = bcrypt.hashSync(adminPassword1, 10);
+
+        // Insert admin user 1
+        await p.query(
+          `INSERT INTO users (
+            id, email, name, role, avatar, "blockchainId", contact, school, gender, "residentialAddress", "isProfileComplete", active, "createdAt", "updatedAt"
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          ON CONFLICT (id) DO NOTHING`,
+          [
+            adminId1,
+            adminEmail1,
+            encryptField('Primary Admin'),
+            'ADMIN',
+            'https://api.dicebear.com/7.x/avataaars/svg?seed=admin',
+            'sol-genesis-block-3-admin',
+            encryptField('777-888-9999'),
+            'ESYLAB Headquarters',
+            encryptField('Prefer not to say'),
+            encryptField('789 Pine Rd, Capital City'),
+            true,
+            true,
+            now,
+            now,
+          ]
+        );
+
+        // Insert admin credentials 1
+        await p.query(
+          `INSERT INTO auth_credentials ("userId", "passwordHash", "passwordResetRequired", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT ("userId") DO UPDATE SET "passwordHash" = EXCLUDED."passwordHash", "updatedAt" = EXCLUDED."updatedAt"`,
+          [adminId1, passwordHash1, true, now, now]
+        );
       }
 
-      let adminPassword = process.env.ADMIN_SEED_PASSWORD?.trim();
-      if (!adminPassword) {
-        adminPassword = crypto.randomBytes(16).toString('hex');
-        console.warn('================================================================================');
-        console.warn('[Security] No ADMIN_SEED_PASSWORD set — generated a random one-time admin password, check server logs now, it will not be shown again.');
-        console.warn(`[Security] Admin Email: ${adminEmail} | Temporary One-Time Password: ${adminPassword}`);
-        console.warn('================================================================================');
+      // ─── Seed Admin Account 2 ──────────────────────────────────────────────
+      const adminEmail2 = process.env.ADMIN_SEED_EMAIL_2?.trim().toLowerCase() || 'admin2@gmail.com';
+      const adminId2 = '4';
+
+      const { rows: existingRows2 } = await p.query(
+        'SELECT id, email, role FROM users WHERE id = $1 OR LOWER(email) = LOWER($2)',
+        [adminId2, adminEmail2]
+      );
+
+      const existingAdmin2 = existingRows2[0];
+
+      if (existingAdmin2) {
+        if (existingAdmin2.email.toLowerCase() !== adminEmail2.toLowerCase()) {
+          await p.query('UPDATE users SET email = $1, "updatedAt" = $2 WHERE id = $3', [
+            adminEmail2,
+            now,
+            existingAdmin2.id,
+          ]);
+        }
+
+        const envPassword2 = process.env.ADMIN_SEED_PASSWORD_2?.trim();
+        if (envPassword2) {
+          const passwordHash2 = bcrypt.hashSync(envPassword2, 10);
+          const { rows: credRows2 } = await p.query(
+            'SELECT "userId" FROM auth_credentials WHERE "userId" = $1',
+            [existingAdmin2.id]
+          );
+
+          if (credRows2.length > 0) {
+            await p.query(
+              'UPDATE auth_credentials SET "passwordHash" = $1, "updatedAt" = $2 WHERE "userId" = $3',
+              [passwordHash2, now, existingAdmin2.id]
+            );
+          } else {
+            await p.query(
+              'INSERT INTO auth_credentials ("userId", "passwordHash", "passwordResetRequired", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5)',
+              [existingAdmin2.id, passwordHash2, true, now, now]
+            );
+          }
+        }
+      } else {
+        let adminPassword2 = process.env.ADMIN_SEED_PASSWORD_2?.trim();
+        if (!adminPassword2) {
+          adminPassword2 = crypto.randomBytes(16).toString('hex');
+          console.warn('================================================================================');
+          console.warn('[Security] No ADMIN_SEED_PASSWORD_2 set — generated a random one-time admin password, check server logs now, it will not be shown again.');
+          console.warn(`[Security] Admin 2 Email: ${adminEmail2} | Temporary One-Time Password: ${adminPassword2}`);
+          console.warn('================================================================================');
+        }
+
+        const passwordHash2 = bcrypt.hashSync(adminPassword2, 10);
+
+        // Insert admin user 2
+        await p.query(
+          `INSERT INTO users (
+            id, email, name, role, avatar, "blockchainId", contact, school, gender, "residentialAddress", "isProfileComplete", active, "createdAt", "updatedAt"
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          ON CONFLICT (id) DO NOTHING`,
+          [
+            adminId2,
+            adminEmail2,
+            encryptField('Secondary Admin'),
+            'ADMIN',
+            'https://api.dicebear.com/7.x/avataaars/svg?seed=admin2',
+            'sol-genesis-block-4-admin',
+            encryptField('777-888-9998'),
+            'ESYLAB Headquarters',
+            encryptField('Prefer not to say'),
+            encryptField('789 Pine Rd, Capital City'),
+            true,
+            true,
+            now,
+            now,
+          ]
+        );
+
+        // Insert admin credentials 2
+        await p.query(
+          `INSERT INTO auth_credentials ("userId", "passwordHash", "passwordResetRequired", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT ("userId") DO UPDATE SET "passwordHash" = EXCLUDED."passwordHash", "updatedAt" = EXCLUDED."updatedAt"`,
+          [adminId2, passwordHash2, true, now, now]
+        );
       }
-
-      const passwordHash = bcrypt.hashSync(adminPassword, 10);
-
-      // Insert admin user
-      await p.query(
-        `INSERT INTO users (
-          id, email, name, role, avatar, "blockchainId", contact, school, gender, "residentialAddress", "isProfileComplete", active, "createdAt", "updatedAt"
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-        ON CONFLICT (id) DO NOTHING`,
-        [
-          adminId,
-          adminEmail,
-          encryptField('Primary Admin'),
-          'ADMIN',
-          'https://api.dicebear.com/7.x/avataaars/svg?seed=admin',
-          'sol-genesis-block-3-admin',
-          encryptField('777-888-9999'),
-          'ESYLAB Headquarters',
-          encryptField('Prefer not to say'),
-          encryptField('789 Pine Rd, Capital City'),
-          true,
-          true,
-          now,
-          now,
-        ]
-      );
-
-      // Insert admin credentials
-      await p.query(
-        `INSERT INTO auth_credentials ("userId", "passwordHash", "passwordResetRequired", "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT ("userId") DO UPDATE SET "passwordHash" = EXCLUDED."passwordHash", "updatedAt" = EXCLUDED."updatedAt"`,
-        [adminId, passwordHash, true, now, now]
-      );
 
       // Insert sample curriculum if not exists
       const { rows: currRows } = await p.query('SELECT id FROM curriculum_resources WHERE id = $1', ['curr-1']);
