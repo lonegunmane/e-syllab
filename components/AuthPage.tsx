@@ -19,6 +19,7 @@ import {
 import { User, UserRole } from '../types';
 import { db } from '../services/database';
 import { login, register, sendTwoFactorOtp, verifyLoginTwoFactor } from '../services/api';
+import { LogoIcon } from './Logo';
 
 interface AuthPageProps {
   onLoginSuccess: (data: {
@@ -354,12 +355,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
         <div className="glass-card p-8 md:p-10 rounded-[2.5rem]">
 
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center text-white text-3xl font-bold mx-auto mb-4 shadow-xl shadow-primary-900/20 border border-primary-400/30">
-              E
+            <div className="flex justify-center mb-4">
+              <LogoIcon size={68} className="drop-shadow-2xl shadow-primary-900/30" />
             </div>
 
             <h1 className="text-3xl font-extrabold text-white tracking-tight">
-              E-SYLAB
+              E-SYLLAB
             </h1>
 
             <p className="text-slate-400 mt-2 font-medium text-sm">

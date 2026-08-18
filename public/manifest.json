@@ -1,0 +1,59 @@
+{
+  "name": "E-SYLLAB — Secure Learning",
+  "short_name": "E-SYLLAB",
+  "description": "Blockchain-secured digital learning platform for Zambian secondary schools.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0c0a1f",
+  "theme_color": "#7c3aed",
+  "lang": "en",
+  "categories": ["education"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Mark Attendance",
+      "short_name": "Attendance",
+      "description": "Go straight to attendance marking",
+      "url": "/?tab=attendance",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Grade Hub",
+      "short_name": "Grades",
+      "description": "Record student grades",
+      "url": "/?tab=grades",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/icons/screenshot-mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "E-SYLLAB attendance screen"
+    }
+  ],
+  "prefer_related_applications": false
+}

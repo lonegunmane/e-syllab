@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="esyllab-bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6" />
+      <stop offset="50%" stop-color="#7C3AED" />
+      <stop offset="100%" stop-color="#5B21B6" />
+    </linearGradient>
+
+    <linearGradient id="esyllab-e-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#EDE9FE" />
+    </linearGradient>
+
+    <linearGradient id="esyllab-accent-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#DDD6FE" stop-opacity="0.95" />
+      <stop offset="50%" stop-color="#C4B5FD" />
+      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0.85" />
+    </linearGradient>
+
+    <filter id="esyllab-e-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#3B0764" flood-opacity="0.45" />
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#esyllab-bg-grad)"/>
+       <rect x="6" y="6" width="500" height="500" rx="122" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-opacity="0.2"/>
+  
+  <g filter="url(#esyllab-e-shadow)">
+    <!-- Bold Geometric Letter "E" -->
+    <path
+      d="M 148 112 H 368 C 376.8 112 384 119.2 384 128 V 166 C 384 174.8 376.8 182 368 182 H 214 V 218 H 332 C 340.8 218 348 225.2 348 234 V 262 C 348 270.8 340.8 278 332 278 H 214 V 314 H 368 C 376.8 314 384 321.2 384 330 V 368 C 384 376.8 376.8 384 368 384 H 148 C 137 384 128 375 128 364 V 132 C 128 121 137 112 148 112 Z"
+      fill="url(#esyllab-e-grad)"
+    />
+
+    <!-- Subtle Top-Arm Light Glint Highlight -->
+    <path
+      d="M 152 114 H 366 C 374 114 380 120 380 128 V 132 C 380 124 374 118 366 118 H 152 C 142 118 134 126 134 136 V 132 C 134 122 142 114 152 114 Z"
+      fill="#FFFFFF"
+      fill-opacity="0.6"
+    />
+
+    <!-- Sleek Character Accent Underline / Anchor -->
+    <rect
+      x="128"
+      y="412"
+      width="256"
+      height="18"
+      rx="9"
+      fill="url(#esyllab-accent-grad)"
+    />
+  </g>
+</svg>

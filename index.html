@@ -36,16 +36,15 @@
   <!-- PWA manifest -->
   <link rel="manifest" href="/manifest.json" />
 
-  <!-- Apple touch icon (shown on iOS home screen) -->
+  <!-- Favicon & Touch Icons -->
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="alternate icon" href="/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
   <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png" />
-
-  <!-- Apple splash screens (shown while app is loading on iOS) -->
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
 
   <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -468,6 +467,100 @@
       transition: color 0.2s;
     }
     #install-banner .ib-close:hover { color: #ffffff; }
+
+    /* ── Splash Screen Animations ────────────────────────────────────────────── */
+    @keyframes splashStroke {
+      0% {
+        stroke-dashoffset: 1000;
+        opacity: 0.2;
+      }
+      100% {
+        stroke-dashoffset: 0;
+        opacity: 1;
+      }
+    }
+
+    @keyframes splashFill {
+      0%, 40% {
+        fill-opacity: 0;
+      }
+      100% {
+        fill-opacity: 1;
+      }
+    }
+
+    @keyframes splashFillDelayed {
+      0%, 55% {
+        fill-opacity: 0;
+      }
+      100% {
+        fill-opacity: 1;
+      }
+    }
+
+    @keyframes splashPulse {
+      0%, 100% {
+        transform: scale(1);
+        filter: drop-shadow(0 0 16px rgba(124, 58, 237, 0.4));
+      }
+      50% {
+        transform: scale(1.035);
+        filter: drop-shadow(0 0 32px rgba(139, 92, 246, 0.75));
+      }
+    }
+
+    @keyframes splashText {
+      0%, 45% {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-splash-stroke {
+      stroke-dasharray: 1000;
+      stroke-dashoffset: 1000;
+      animation: splashStroke 750ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .animate-splash-stroke-shield {
+      stroke-dasharray: 1000;
+      stroke-dashoffset: 1000;
+      animation: splashStroke 750ms cubic-bezier(0.16, 1, 0.3, 1) 80ms forwards;
+    }
+
+    .animate-splash-stroke-channel {
+      stroke-dasharray: 1000;
+      stroke-dashoffset: 1000;
+      animation: splashStroke 650ms cubic-bezier(0.16, 1, 0.3, 1) 180ms forwards;
+    }
+
+    .animate-splash-stroke-channel-delayed {
+      stroke-dasharray: 1000;
+      stroke-dashoffset: 1000;
+      animation: splashStroke 650ms cubic-bezier(0.16, 1, 0.3, 1) 260ms forwards;
+    }
+
+    .animate-splash-fill {
+      fill-opacity: 0;
+      animation: splashFill 750ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .animate-splash-fill-delayed {
+      fill-opacity: 0;
+      animation: splashFillDelayed 750ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .animate-splash-pulse {
+      animation: splashPulse 2s ease-in-out infinite;
+    }
+
+    .animate-splash-text {
+      animation: splashText 800ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
   </style>
 </head>
 

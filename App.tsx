@@ -14,11 +14,13 @@ import { db } from './services/database';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { TeacherSetupModal } from './components/TeacherSetupModal';
 import { StudentSetupModal } from './components/StudentSetupModal';
+import { SplashScreen } from './components/SplashScreen';
 import { getToken, clearToken, getProfile } from './services/api';
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
+  const [splashVisible, setSplashVisible] = useState(true);
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -110,24 +112,8 @@ const App: React.FC = () => {
   };
 
 
-  if (initializing) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-white/5 border-t-primary-500 rounded-full animate-spin shadow-[0_0_15px_rgba(124,58,237,0.3)]" />
-      </div>
-    );
-  }
-
-  if (!currentUser) {
-    return <AuthPage onLoginSuccess={handleLoginSuccess} />;
-  }
-  
-  if (showPasswordReset) {
-      return <PasswordResetModal user={currentUser} onResetSuccess={handlePasswordResetSuccess} onLogout={handleLogout} />
-  }
-
-  const showTeacherOnboarding = currentUser.role === UserRole.TEACHER && !currentUser.isProfileComplete;
-  const showStudentOnboarding = currentUser.role === UserRole.STUDENT && !currentUser.isProfileComplete;
+  const showTeacherOnboarding = currentUser?.role === UserRole.TEACHER && !currentUser?.isProfileComplete;
+  const showStudentOnboarding = currentUser?.role === UserRole.STUDENT && !currentUser?.isProfileComplete;
 
   const renderContent = () => {
     if (!currentUser) return null;
@@ -156,29 +142,55 @@ const App: React.FC = () => {
     }
   };
 
+  const renderMainApp = () => {
+    if (initializing && !currentUser) {
+      return <div className="min-h-screen bg-[#0c0a1f]" />;
+    }
+
+    if (!currentUser) {
+      return <AuthPage onLoginSuccess={handleLoginSuccess} />;
+    }
+    
+    if (showPasswordReset) {
+      return <PasswordResetModal user={currentUser} onResetSuccess={handlePasswordResetSuccess} onLogout={handleLogout} />;
+    }
+
+    return (
+      <Layout 
+        user={currentUser} 
+        onLogout={handleLogout} 
+        onUpdateUser={handleUserUpdate}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      >
+        {showTeacherOnboarding && (
+          <TeacherSetupModal 
+            user={currentUser} 
+            onComplete={handleUserUpdate} 
+          />
+        )}
+        {showStudentOnboarding && (
+          <StudentSetupModal 
+            user={currentUser} 
+            onComplete={handleUserUpdate} 
+          />
+        )}
+        {renderContent()}
+        <OfflineIndicator />
+      </Layout>
+    );
+  };
+
   return (
-    <Layout 
-      user={currentUser} 
-      onLogout={handleLogout} 
-      onUpdateUser={handleUserUpdate}
-      activeTab={activeTab}
-      onTabChange={setActiveTab}
-    >
-      {showTeacherOnboarding && (
-        <TeacherSetupModal 
-          user={currentUser} 
-          onComplete={handleUserUpdate} 
+    <>
+      {splashVisible && (
+        <SplashScreen
+          isLoading={initializing}
+          onAnimationComplete={() => setSplashVisible(false)}
         />
       )}
-      {showStudentOnboarding && (
-        <StudentSetupModal 
-          user={currentUser} 
-          onComplete={handleUserUpdate} 
-        />
-      )}
-      {renderContent()}
-      <OfflineIndicator />
-    </Layout>
+      {renderMainApp()}
+    </>
   );
 };
 
