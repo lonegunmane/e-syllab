@@ -19,6 +19,7 @@ export interface LedgerEvent {
   type: 'GRADE' | 'CREDENTIAL' | 'ATTENDANCE' | 'SYSTEM_ANCHOR' | string;
   timestamp: string;
   status: 'CONFIRMED' | 'PENDING_SYNC' | string;
+  confirmedOnChain?: boolean;
   explorerUrl?: string;
   details?: string;
   // Grade fields
@@ -129,7 +130,11 @@ export const TransactionExplorer: React.FC = () => {
 
       if (!matchesSearch) return false;
       if (typeFilter !== 'ALL' && e.type !== typeFilter) return false;
-      if (statusFilter !== 'ALL' && e.status !== statusFilter) return false;
+      if (statusFilter !== 'ALL') {
+        const isConfirmed = Boolean(e.confirmedOnChain || e.status === 'CONFIRMED');
+        if (statusFilter === 'CONFIRMED' && !isConfirmed) return false;
+        if (statusFilter === 'PENDING' && isConfirmed) return false;
+      }
 
       return true;
     });
@@ -416,8 +421,8 @@ export const TransactionExplorer: React.FC = () => {
             className="px-3 py-2 bg-black/30 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
           >
             <option value="ALL" className="bg-[#1a1635]">All Statuses</option>
-            <option value="CONFIRMED" className="bg-[#1a1635]">Verified &amp; Saved</option>
-            <option value="PENDING_SYNC" className="bg-[#1a1635]">Pending Connection</option>
+            <option value="CONFIRMED" className="bg-[#1a1635]">CONFIRMED (On-Chain)</option>
+            <option value="PENDING" className="bg-[#1a1635]">PENDING (Local Database)</option>
           </select>
         </div>
       </div>
@@ -469,7 +474,22 @@ export const TransactionExplorer: React.FC = () => {
                     label: evt.type,
                   };
 
-                  const solanaExplorerUrl = evt.explorerUrl || (evt.signature && evt.signature.length > 20 && !evt.signature.startsWith('queue-') ? `https://explorer.solana.com/tx/${evt.signature}?cluster=devnet` : null);
+                  const rawSig = (evt.signature || '').trim();
+                  const isRealSig = Boolean(
+                    rawSig.length >= 44 &&
+                    !rawSig.startsWith('queue-') &&
+                    !rawSig.startsWith('recorded-') &&
+                    !rawSig.startsWith('pending-') &&
+                    !rawSig.startsWith('dummy-') &&
+                    !rawSig.startsWith('ledger-') &&
+                    !rawSig.startsWith('cred-') &&
+                    !rawSig.startsWith('att-') &&
+                    /^[1-9A-HJ-NP-Za-km-z]+$/.test(rawSig)
+                  );
+                  const isConfirmed = Boolean(evt.confirmedOnChain && isRealSig);
+                  const solanaExplorerUrl = isConfirmed
+                    ? (evt.explorerUrl || `https://explorer.solana.com/tx/${encodeURIComponent(rawSig)}?cluster=devnet`)
+                    : null;
 
                   return (
                     <tr key={`${evt.offlineHash}-${idx}`} className="hover:bg-white/5 transition-colors group">
@@ -498,7 +518,7 @@ export const TransactionExplorer: React.FC = () => {
                             </button>
                           </div>
                           <span className="font-mono text-[9px] text-slate-500">
-                            Ref: {evt.signature ? `${evt.signature.slice(0, 12)}…` : 'N/A'}
+                            Ref: {isConfirmed && evt.signature ? `${evt.signature.slice(0, 12)}…` : 'Local Record'}
                           </span>
                         </div>
                       </td>
@@ -540,7 +560,7 @@ export const TransactionExplorer: React.FC = () => {
                       {/* Slot & Date */}
                       <td className="px-4 py-3.5 font-mono text-[10px]">
                         <p className="text-slate-300">
-                          {evt.slot > 0 ? `#${evt.slot.toLocaleString()}` : 'Queued'}
+                          {isConfirmed && evt.slot > 0 ? `#${evt.slot.toLocaleString()}` : 'Local Database'}
                         </p>
                         <p className="text-[9px] text-slate-500 mt-0.5">
                           {new Date(evt.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -549,13 +569,13 @@ export const TransactionExplorer: React.FC = () => {
 
                       {/* Status */}
                       <td className="px-4 py-3.5">
-                        {evt.status === 'PENDING_SYNC' ? (
+                        {!isConfirmed ? (
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-950/40 border border-amber-500/20 px-2 py-0.5 rounded">
-                            <RefreshCw className="w-2.5 h-2.5 animate-spin" /> Pending Sync
+                            <RefreshCw className="w-2.5 h-2.5" /> PENDING
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded">
-                            <CheckCircle2 className="w-2.5 h-2.5" /> Verified
+                            <CheckCircle2 className="w-2.5 h-2.5" /> CONFIRMED
                           </span>
                         )}
                       </td>
@@ -568,13 +588,13 @@ export const TransactionExplorer: React.FC = () => {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-800 border border-emerald-500/30 text-emerald-300 hover:text-white text-[10px] font-bold transition-all shadow-sm"
-                            title="View public verification record"
+                            title="View public verification record on Solana Explorer"
                           >
                             <ExternalLink className="w-3 h-3" />
                             View Proof
                           </a>
                         ) : (
-                          <span className="text-[10px] text-slate-500 italic">Saved on device</span>
+                          <span className="text-[10px] text-slate-500 italic">Saved Locally</span>
                         )}
                       </td>
 
@@ -717,15 +737,15 @@ export const TransactionExplorer: React.FC = () => {
                   Check Record Authenticity
                 </button>
 
-                {selectedEvent.explorerUrl && (
+                {selectedEvent.confirmedOnChain && selectedEvent.signature && /^[1-9A-HJ-NP-Za-km-z]{44,}$/.test(selectedEvent.signature.trim()) && (
                   <a
-                    href={selectedEvent.explorerUrl}
+                    href={selectedEvent.explorerUrl || `https://explorer.solana.com/tx/${encodeURIComponent(selectedEvent.signature.trim())}?cluster=devnet`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold rounded-xl transition-all shadow-md"
                   >
                     <ExternalLink className="w-4 h-4" />
-                    View Public Record
+                    View Public Record on Solana Explorer
                   </a>
                 )}
               </div>

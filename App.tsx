@@ -10,7 +10,6 @@ import { AssessmentView } from './components/AssessmentView';
 import { TimetableView } from './components/TimetableView';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AuthPage } from './components/AuthPage';
-import { db } from './services/database';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { TeacherSetupModal } from './components/TeacherSetupModal';
 import { StudentSetupModal } from './components/StudentSetupModal';
@@ -25,8 +24,6 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
-    db.init();
-    
     // Check if we have a valid session strictly verified by the server
     const initAuth = async () => {
       const token = getToken();
@@ -43,8 +40,7 @@ const App: React.FC = () => {
         if (result && result.success && result.user) {
           setCurrentUser(result.user);
           localStorage.setItem('esylab_session', JSON.stringify(result.user));
-          const creds = db.getCredentialByUserId(result.user.id);
-          if (creds?.passwordResetRequired) {
+          if (result.needsPasswordReset) {
             setShowPasswordReset(true);
           }
         } else {
@@ -72,16 +68,16 @@ const App: React.FC = () => {
     }
   };
 
-  const handlePasswordResetSuccess = () => {
-    if (currentUser) {
-        const freshUser = db.findUserByEmail(currentUser.email);
-        if(freshUser){
-            setCurrentUser(freshUser);
-            localStorage.setItem('esylab_session', JSON.stringify(freshUser));
-        }
-    }
+  const handlePasswordResetSuccess = async () => {
+    try {
+      const result = await getProfile();
+      if (result && result.success && result.user) {
+        setCurrentUser(result.user);
+        localStorage.setItem('esylab_session', JSON.stringify(result.user));
+      }
+    } catch {}
     setShowPasswordReset(false);
-  }
+  };
 
   const handleLogout = async () => {
     try {

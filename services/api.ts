@@ -856,5 +856,63 @@ export async function getAdminAttendanceRecords(flaggedOnly = false): Promise<{ 
   return response.json();
 }
 
+export async function sendPasswordResetOtp(email: string) {
+  const response = await fetch(`${API_BASE_URL}/send-otp`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ email })
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || "Could not send password reset code, please try again.");
+  }
+  return data;
+}
+
+export async function resetPasswordWithOtp(email: string, otp: string, newPassword: string) {
+  const response = await fetch(`${API_BASE_URL}/auth/reset-password-with-otp`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ email, otp, newPassword })
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || "Could not reset password, please try again.");
+  }
+  return data;
+}
+
+export async function getUsers() {
+  const response = await authFetch(`${API_BASE_URL}/users`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch users");
+  }
+  return response.json();
+}
+
+export async function getAdminUsers() {
+  const response = await authFetch(`${API_BASE_URL}/admin/users`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch admin users");
+  }
+  return response.json();
+}
+
+export async function deleteUserByAdmin(userId: string) {
+  const response = await authFetch(`${API_BASE_URL}/admin/users/${userId}`, {
+    method: "DELETE"
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to delete user");
+  }
+  return response.json();
+}
+
+
 
 

@@ -128,10 +128,12 @@ export interface VaultDocument {
 
 export interface AuthCredential {
   userId: string;
-  email: string;
+  email?: string;
   passwordHash: string;
   passwordResetRequired?: boolean;
   lastLogin?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Message {
@@ -208,7 +210,7 @@ export interface AssessmentScore {
 export interface SystemNotification {
   id: string;
   userId: string;
-  type: 'deadline' | 'meeting' | 'misconduct' | 'general';
+  type: 'deadline' | 'meeting' | 'misconduct' | 'general' | 'ASSIGNMENT' | 'MESSAGE' | 'GRADE' | 'SYSTEM' | 'ATTENDANCE';
   title: string;
   message: string;
   relatedId?: string;

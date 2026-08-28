@@ -1,4 +1,9 @@
-// serverBlockchain.ts — Node-only Solana instruction building.
+// serverBlockchain.ts — Node-only Solana instruction building (Future/Reserved).
+//
+// NOTE: Active production and demo attendance in E-SYLLAB utilizes the standard
+// Solana Memo Program (MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr) with SHA-256
+// cryptographic hashes in server.ts.
+// The custom instruction builder below is reserved for future Anchor/Rust smart contract deployments.
 //
 // This is deliberately SEPARATE from services/blockchain.ts, which is a
 // shared file bundled into BOTH the frontend (Vite/browser) and backend

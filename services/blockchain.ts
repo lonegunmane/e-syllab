@@ -9,7 +9,13 @@ import {
 
 export const SOLANA_NETWORK = "devnet";
 export const SOLANA_ENDPOINT = clusterApiUrl(SOLANA_NETWORK);
-export const PROGRAM_ID = new PublicKey ("97HqPsAtSz2QbiiiVQVudFU2kzmCmvFAVLiZfqVSrfzU");
+
+/**
+ * NOTE: PROGRAM_ID and the PDA derivation helpers below are reserved for future custom Anchor/Rust smart contract programs.
+ * The active attendance system uses the Solana Memo Program (MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr)
+ * combined with SHA-256 cryptographic payload hashing for verifiable on-chain attestations.
+ */
+export const PROGRAM_ID = new PublicKey("97HqPsAtSz2QbiiiVQVudFU2kzmCmvFAVLiZfqVSrfzU");
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type AttendanceStatus = "Present" | "Absent" | "Late" | "OnLeave";
@@ -103,8 +109,13 @@ export function hexToBytes(hex: string): number[] {
   return result;
 }
 
-// ─── PDA Derivation ──────────────────────────────────────────────────────────
+// ─── PDA Derivation (Reserved for future Anchor smart contract architecture) ──
+// NOTE: Active attendance records use the standard Solana Memo Program.
 
+/**
+ * Derives a School PDA.
+ * Reserved for future Anchor smart contract deployment.
+ */
 export async function deriveSchoolPDA(schoolId: string): Promise<PublicKey> {
   const [pda] = await PublicKey.findProgramAddress(
     [new TextEncoder().encode("school"), new TextEncoder().encode(schoolId)],
@@ -113,6 +124,10 @@ export async function deriveSchoolPDA(schoolId: string): Promise<PublicKey> {
   return pda;
 }
 
+/**
+ * Derives a Staff PDA.
+ * Reserved for future Anchor smart contract deployment.
+ */
 export async function deriveStaffPDA(
   schoolPDA: PublicKey,
   staffId: string
@@ -124,6 +139,10 @@ export async function deriveStaffPDA(
   return pda;
 }
 
+/**
+ * Derives an Attendance PDA.
+ * Reserved for future Anchor smart contract deployment.
+ */
 export async function deriveAttendancePDA(
   staffPDA: PublicKey,
   dateStr: string
@@ -247,11 +266,53 @@ export async function getNetworkStatus(): Promise<{
 // ─── Legacy shim (keeps existing db.ts calls working) ────────────────────────
 export const blockchainService = {
   async commitHash(data: string): Promise<string> {
-    const hash = await computeOfflineHash("legacy", new Date().toISOString().slice(0,10), "Present");
-    console.log(`[Solana] Hash committed: ${hash}`);
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(data);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", bytes);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
     return hash;
   },
-  async verifyIntegrity(_hash: string): Promise<boolean> {
-    return true;
+  async verifyIntegrity(hashOrSignature: string): Promise<boolean> {
+    if (!hashOrSignature || typeof hashOrSignature !== "string") {
+      return false;
+    }
+    const clean = hashOrSignature.trim();
+    if (
+      !clean ||
+      clean.startsWith("recorded-") ||
+      clean.startsWith("queue-") ||
+      clean.startsWith("pending-") ||
+      clean.startsWith("dummy-") ||
+      clean.startsWith("mock-")
+    ) {
+      return false;
+    }
+
+    // 1. Valid 64-character hex SHA-256 hash
+    if (/^[a-f0-9]{64}$/i.test(clean)) {
+      return true;
+    }
+
+    // 2. Real Solana transaction signature (Base58 string, typically 44-90 chars)
+    if (/^[1-9A-HJ-NP-Za-km-z]{44,90}$/.test(clean)) {
+      try {
+        const connection = getConnection();
+        const statuses = await connection.getSignatureStatuses([clean]);
+        const status = statuses?.value?.[0];
+        if (
+          status &&
+          !status.err &&
+          (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized")
+        ) {
+          return true;
+        }
+      } catch (err) {
+        console.warn("[Blockchain] verifyIntegrity on-chain check error:", err);
+      }
+      return false;
+    }
+
+    return false;
   },
 };

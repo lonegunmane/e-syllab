@@ -17,9 +17,17 @@ import {
   Check
 } from 'lucide-react';
 import { User, UserRole } from '../types';
-import { db } from '../services/database';
-import { login, register, sendTwoFactorOtp, verifyLoginTwoFactor } from '../services/api';
+import {
+  login,
+  register,
+  sendTwoFactorOtp,
+  verifyLoginTwoFactor,
+  sendPasswordResetOtp,
+  resetPasswordWithOtp,
+} from '../services/api';
 import { LogoIcon } from './Logo';
+import { PasswordStrengthIndicator } from './PasswordStrengthIndicator';
+import { validatePassword } from '../services/passwordValidation';
 
 interface AuthPageProps {
   onLoginSuccess: (data: {
@@ -47,7 +55,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
   const [resetEmail, setResetEmail] = useState('');
   const [resetOtp, setResetOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [generatedOtp, setGeneratedOtp] = useState('');
 
   // Form State
   const [email, setEmail] = useState('');
@@ -64,69 +71,50 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
+    setDevCodeNotice(null);
 
     try {
-      const user = db.findUserByEmail(resetEmail);
-      if (!user) {
-        throw new Error("No account found with this email");
+      const res = await sendPasswordResetOtp(resetEmail.trim().toLowerCase());
+      if (res.devOtp) {
+        setDevCodeNotice(res.devOtp);
       }
-
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      setGeneratedOtp(otp);
-      
-      const response = await fetch("/api/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: resetEmail, otp })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 503) {
-          console.warn("[AUTH] Server email service not configured. Falling back to alert.");
-          alert(`Email sending isn't set up yet. Your code is: ${otp}`);
-        } else {
-          throw new Error(data.error || "Failed to send email");
-        }
-      }
-      
+      setSuccessMessage(res.message || `A password reset code was sent to ${resetEmail}`);
       setForgotPasswordStep('otp');
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "Failed to send reset code");
     } finally {
       setLoading(false);
     }
   };
 
   const handleVerifyAndReset = async () => {
-    if (resetOtp !== generatedOtp) {
-      setError("That code isn't correct. Please check and try again.");
+    if (!resetOtp || resetOtp.length < 6) {
+      setError("Please enter the complete 6-digit reset code.");
       return;
     }
 
-    if (!newPassword || newPassword.length < 4) {
-      setError("Password must be at least 4 characters.");
+    const validation = validatePassword(newPassword);
+    if (!validation.isValid) {
+      setError(validation.errorMessage);
       return;
     }
 
     setLoading(true);
+    setError(null);
     try {
-      const user = db.findUserByEmail(resetEmail);
-      if (user) {
-        await db.updatePassword(user.id, newPassword);
-        setSuccessMessage(`Password for ${resetEmail} has been updated successfully! You can now sign in with your new password.`);
-        setForgotPasswordStep('none');
-        setResetEmail('');
-        setResetOtp('');
-        setNewPassword('');
-        setGeneratedOtp('');
-        setIsLogin(true);
-        setEmail(resetEmail);
-        setPassword('');
-      }
+      const res = await resetPasswordWithOtp(resetEmail.trim().toLowerCase(), resetOtp.trim(), newPassword);
+      setSuccessMessage(res.message || `Password for ${resetEmail} has been updated successfully! You can now sign in with your new password.`);
+      setForgotPasswordStep('none');
+      setResetEmail('');
+      setResetOtp('');
+      setNewPassword('');
+      setDevCodeNotice(null);
+      setIsLogin(true);
+      setEmail(resetEmail);
+      setPassword('');
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "Failed to reset password.");
     } finally {
       setLoading(false);
     }
@@ -159,11 +147,11 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
               setDevCodeNotice(result.devCode);
             }
             setAuthStep('login_2fa');
-            setSuccessMessage(`A security code was sent to ${trimmedEmail}`);
+            setSuccessMessage(result.message || `A security code was sent to ${trimmedEmail}`);
             return;
           }
 
-          // Direct login fallback
+          // Direct login
           if (result.success && result.user) {
             onLoginSuccess({
               user: result.user,
@@ -172,21 +160,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
             return;
           }
         } catch (serverError: any) {
-          // If server auth fails, try local fallback with simulated code
-          console.log("[Auth] Server auth failed, trying local fallback...", serverError.message);
-          const localResult = await db.authenticateUser(trimmedEmail, password);
-          
-          if (localResult) {
-            const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
-            setDevCodeNotice(fallbackCode);
-            setPendingEmail(trimmedEmail);
-            setPendingRole(localResult.user.role);
-            setAuthStep('login_2fa');
-            setSuccessMessage(`Security code generated: ${fallbackCode}`);
-            return;
-          }
-          
-          setError("That username or password doesn’t look right.");
+          setError(serverError.message || "That username or password doesn't look right.");
         }
       }
 
@@ -194,6 +168,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
        * REGISTER → Trigger email verification for account creation
        */
       else {
+        const passwordValidation = validatePassword(password);
+        if (!passwordValidation.isValid) {
+          setError(passwordValidation.errorMessage);
+          setLoading(false);
+          return;
+        }
+
         try {
           const res = await sendTwoFactorOtp(trimmedEmail, 'REGISTER');
           if (res.devCode) {
@@ -201,14 +182,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
           }
           setPendingEmail(trimmedEmail);
           setAuthStep('register_2fa');
-          setSuccessMessage(`An activation code was sent to ${trimmedEmail}`);
+          setSuccessMessage(res.message || `An activation code was sent to ${trimmedEmail}`);
         } catch (regErr: any) {
-          // Local fallback for registration OTP
-          const fallbackCode = Math.floor(100000 + Math.random() * 900000).toString();
-          setDevCodeNotice(fallbackCode);
-          setPendingEmail(trimmedEmail);
-          setAuthStep('register_2fa');
-          setSuccessMessage(`Activation code generated: ${fallbackCode}`);
+          setError(regErr.message || "Failed to send verification code. Please try again.");
         }
       }
     } catch (err: any) {
@@ -231,30 +207,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
     setError(null);
 
     try {
-      // Try verifying on server
-      try {
-        const result = await verifyLoginTwoFactor(pendingEmail, twoFactorCode);
-        if (result.success && result.user) {
-          onLoginSuccess({
-            user: result.user,
-            needsPasswordReset: result.needsPasswordReset || false
-          });
-          return;
-        }
-      } catch (srvErr: any) {
-        // Fallback for demo code if devCodeNotice matches
-        if (devCodeNotice && twoFactorCode.trim() === devCodeNotice.trim()) {
-          const localUser = db.findUserByEmail(pendingEmail);
-          if (localUser) {
-            localStorage.setItem("user", JSON.stringify(localUser));
-            onLoginSuccess({
-              user: localUser,
-              needsPasswordReset: false
-            });
-            return;
-          }
-        }
-        throw srvErr;
+      const result = await verifyLoginTwoFactor(pendingEmail, twoFactorCode);
+      if (result.success && result.user) {
+        onLoginSuccess({
+          user: result.user,
+          needsPasswordReset: result.needsPasswordReset || false
+        });
+        return;
       }
     } catch (err: any) {
       setError(err.message || "That security code isn't right, please try again.");
@@ -283,20 +242,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
         consentGivenAt: consentTimestamp,
       };
 
-      try {
-        await register(newUserPayload, password, twoFactorCode);
-      } catch (regErr: any) {
-        if (devCodeNotice && twoFactorCode.trim() === devCodeNotice.trim()) {
-          // Dev code accepted
-        } else {
-          throw regErr;
-        }
-      }
-
-      // Sync local db
-      try {
-        await db.registerUser(newUserPayload, password);
-      } catch {}
+      await register(newUserPayload, password, twoFactorCode);
 
       setSuccessMessage('Verified! Account created successfully. You can now sign in.');
       setAuthStep('credentials');
@@ -323,9 +269,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
       }
       setSuccessMessage(`A fresh security code has been sent to ${pendingEmail}`);
     } catch (err: any) {
-      const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-      setDevCodeNotice(newCode);
-      setSuccessMessage(`Fresh code generated: ${newCode}`);
+      setError(err.message || "Failed to resend code. Please try again.");
     } finally {
       setIsResending(false);
     }
@@ -339,31 +283,30 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
     setForgotPasswordStep('none');
     setResetEmail('');
     setResetOtp('');
-    setGeneratedOtp('');
     setTwoFactorCode('');
     setDevCodeNotice(null);
     setConsentAgreed(false);
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen flex items-center justify-center p-3 sm:p-4 md:p-6 relative overflow-hidden">
       {/* Background Decorations */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-primary-900/20 rounded-full blur-[120px] -translate-x-1/2 -translate-y-1/2 opacity-60 animate-pulse" />
+      <div className="absolute top-0 left-0 w-96 h-96 bg-primary-900/20 rounded-full blur-[120px] -translate-x-1/2 -translate-y-1/2 opacity-60 animate-pulse pointer-events-none" />
       <div className="absolute bottom-0 right-0 w-full h-full bg-violet-900/10 rounded-full blur-[120px] translate-x-1/2 translate-y-1/2 opacity-40 pointer-events-none" />
 
       <div className="max-w-md w-full relative z-10">
-        <div className="glass-card p-8 md:p-10 rounded-[2.5rem]">
+        <div className="glass-card p-5 sm:p-7 md:p-8 rounded-3xl shadow-2xl border border-white/10">
 
-          <div className="text-center mb-8">
-            <div className="flex justify-center mb-4">
-              <LogoIcon size={68} className="drop-shadow-2xl shadow-primary-900/30" />
+          <div className="text-center mb-4 sm:mb-5">
+            <div className="flex justify-center mb-2 sm:mb-3">
+              <LogoIcon size={48} className="drop-shadow-2xl shadow-primary-900/30" />
             </div>
 
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               E-SYLLAB
             </h1>
 
-            <p className="text-slate-400 mt-2 font-medium text-sm">
+            <p className="text-slate-400 mt-1 font-medium text-xs sm:text-sm">
               {authStep !== 'credentials' 
                 ? 'Extra Login Step'
                 : isLogin
@@ -374,14 +317,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
           {/* Messages */}
           {error && (
-            <div className="bg-rose-950/80 border border-rose-500/30 text-rose-300 text-xs py-3 px-4 rounded-2xl flex items-center gap-2.5 mb-5 animate-in fade-in">
+            <div className="bg-rose-950/80 border border-rose-500/30 text-rose-300 text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-2.5 mb-3.5 animate-in fade-in">
               <Shield className="w-4 h-4 text-rose-400 shrink-0" />
               <span>{error}</span>
             </div>
           )}
 
           {successMessage && (
-            <div className="bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 text-xs py-3 px-4 rounded-2xl flex items-center gap-2.5 mb-5 animate-in fade-in">
+            <div className="bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 text-xs py-2.5 px-3.5 rounded-xl flex items-center gap-2.5 mb-3.5 animate-in fade-in">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>{successMessage}</span>
             </div>
@@ -389,7 +332,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
           {/* Dev Code Helper Notice if Email Service unconfigured */}
           {devCodeNotice && (
-            <div className="bg-purple-950/60 border border-purple-500/40 p-3.5 rounded-2xl mb-5 flex items-center justify-between gap-2 animate-in zoom-in-95">
+            <div className="bg-purple-950/60 border border-purple-500/40 p-3 rounded-xl mb-3.5 flex items-center justify-between gap-2 animate-in zoom-in-95">
               <div className="flex items-center gap-2 text-xs text-purple-200 font-medium">
                 <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
                 <span>Demo Login Code: <strong className="font-mono text-purple-300 text-sm tracking-wider ml-1">{devCodeNotice}</strong></span>
@@ -406,24 +349,24 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
           {/* STEP 1: LOGIN / REGISTER FORM */}
           {authStep === 'credentials' && (
-            <form onSubmit={handleAuth} className="space-y-5">
+            <form onSubmit={handleAuth} className="space-y-3.5 sm:space-y-4">
               {!isLogin && (
-                <div className="bg-primary-950/40 border border-primary-500/20 p-4 rounded-2xl flex gap-3 items-start">
-                  <Info className="w-5 h-5 text-primary-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-primary-100 leading-relaxed">
+                <div className="bg-primary-950/40 border border-primary-500/20 p-3 rounded-xl flex gap-2.5 items-start">
+                  <Info className="w-4 h-4 text-primary-400 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-primary-100 leading-relaxed">
                     Public sign up is for <strong>Students</strong>. An extra verification code will be sent to your email to activate your account.
                   </p>
                 </div>
               )}
 
               {!isLogin && (
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-300 ml-1 uppercase tracking-wider">
+                <div className="space-y-1 sm:space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-300 ml-1 uppercase tracking-wider">
                     Full Name
                   </label>
 
                   <div className="relative group">
-                    <UserIcon className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <UserIcon className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
 
                     <input
                       required
@@ -431,19 +374,19 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="Enter your name"
-                      className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all text-sm"
+                      className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all text-xs sm:text-sm"
                     />
                   </div>
                 </div>
               )}
 
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300 ml-1 uppercase tracking-wider">
+              <div className="space-y-1 sm:space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 ml-1 uppercase tracking-wider">
                   Email Address
                 </label>
 
                 <div className="relative group">
-                  <Mail className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
 
                   <input
                     required
@@ -451,18 +394,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@esylab.com"
-                    className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all text-sm"
+                    className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all text-xs sm:text-sm"
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300 ml-1 uppercase tracking-wider">
+              <div className="space-y-1 sm:space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 ml-1 uppercase tracking-wider">
                   Password
                 </label>
 
                 <div className="relative group">
-                  <Lock className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
 
                   <input
                     required
@@ -470,14 +413,18 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all text-sm"
+                    className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all text-xs sm:text-sm"
                   />
                 </div>
+
+                {!isLogin && (
+                  <PasswordStrengthIndicator password={password} />
+                )}
               </div>
 
               {!isLogin && (
-                <div className="pt-2 pb-1 animate-in fade-in">
-                  <label className="flex items-start gap-3 cursor-pointer group select-none">
+                <div className="pt-1 pb-0.5 animate-in fade-in">
+                  <label className="flex items-start gap-2.5 cursor-pointer group select-none">
                     <input
                       id="registration-consent-checkbox"
                       type="checkbox"
@@ -486,7 +433,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                       onChange={(e) => setConsentAgreed(e.target.checked)}
                       className="mt-0.5 w-4 h-4 rounded border-white/20 bg-white/5 text-primary-600 focus:ring-primary-500 focus:ring-offset-0 cursor-pointer accent-primary-600 shrink-0"
                     />
-                    <span className="text-xs text-slate-300 leading-relaxed group-hover:text-white transition-colors">
+                    <span className="text-[11px] text-slate-300 leading-relaxed group-hover:text-white transition-colors">
                       I have read and agree to the{' '}
                       <button
                         type="button"
@@ -507,17 +454,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
               <button
                 disabled={loading || (!isLogin && !consentAgreed)}
-                className="w-full bg-primary-600 hover:bg-primary-500 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="w-full bg-primary-600 hover:bg-primary-500 text-white py-3 sm:py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 text-xs sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {loading ? (
                   <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     {isLogin ? 'Checking sign in...' : 'Sending code...'}
                   </>
                 ) : (
                   <>
                     {isLogin ? 'Sign In' : 'Get Verification Code'}
-                    <ArrowRight className="w-5 h-5" />
+                    <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
@@ -526,15 +473,15 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
           {/* STEP 2: LOGIN CODE VERIFICATION */}
           {authStep === 'login_2fa' && (
-            <form onSubmit={handleVerifyLogin2FA} className="space-y-5 animate-in fade-in zoom-in-95">
-              <div className="bg-primary-950/40 border border-primary-500/30 p-4 rounded-2xl text-center space-y-2">
-                <div className="w-10 h-10 bg-primary-600/30 border border-primary-500/40 rounded-xl flex items-center justify-center mx-auto text-primary-300">
-                  <KeyRound className="w-5 h-5" />
+            <form onSubmit={handleVerifyLogin2FA} className="space-y-4 animate-in fade-in zoom-in-95">
+              <div className="bg-primary-950/40 border border-primary-500/30 p-3.5 rounded-xl text-center space-y-1.5">
+                <div className="w-9 h-9 bg-primary-600/30 border border-primary-500/40 rounded-lg flex items-center justify-center mx-auto text-primary-300">
+                  <KeyRound className="w-4 h-4" />
                 </div>
                 <div className="flex items-center justify-center gap-2">
                   <span className="text-xs font-bold text-white">Enter 6-Digit Security Code</span>
                   {pendingRole && (
-                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
                       {pendingRole}
                     </span>
                   )}
@@ -544,12 +491,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300 ml-1 uppercase tracking-wider">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 ml-1 uppercase tracking-wider">
                   6-Digit Security Code
                 </label>
                 <div className="relative">
-                  <KeyRound className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-primary-400" />
+                  <KeyRound className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-primary-400" />
                   <input
                     required
                     autoFocus
@@ -558,7 +505,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                     value={twoFactorCode}
                     onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
                     placeholder="000000"
-                    className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-primary-500/40 rounded-2xl outline-none focus:border-primary-400 text-center font-mono text-xl tracking-[0.3em] font-bold text-white transition-all"
+                    className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-white/5 border border-primary-500/40 rounded-xl outline-none focus:border-primary-400 text-center font-mono text-lg sm:text-xl tracking-[0.3em] font-bold text-white transition-all"
                   />
                 </div>
               </div>
@@ -571,14 +518,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                     setTwoFactorCode('');
                     setError(null);
                   }}
-                  className="px-4 py-3.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-2xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/10"
+                  className="px-3.5 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/10"
                 >
                   <ArrowLeft className="w-4 h-4" /> Back
                 </button>
                 <button
                   type="submit"
                   disabled={loading || twoFactorCode.length < 6}
-                  className="flex-1 bg-primary-600 hover:bg-primary-500 text-white py-3.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 disabled:opacity-50"
+                  className="flex-1 bg-primary-600 hover:bg-primary-500 text-white py-2.5 sm:py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 disabled:opacity-50"
                 >
                   {loading ? (
                     <>
@@ -592,7 +539,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                 </button>
               </div>
 
-              <div className="text-center pt-2">
+              <div className="text-center pt-1">
                 <button
                   type="button"
                   onClick={handleResend2FA}
@@ -608,10 +555,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
           {/* STEP 2: REGISTRATION VERIFICATION */}
           {authStep === 'register_2fa' && (
-            <form onSubmit={handleVerifyRegister2FA} className="space-y-5 animate-in fade-in zoom-in-95">
-              <div className="bg-primary-950/40 border border-primary-500/30 p-4 rounded-2xl text-center space-y-2">
-                <div className="w-10 h-10 bg-primary-600/30 border border-primary-500/40 rounded-xl flex items-center justify-center mx-auto text-primary-300">
-                  <Shield className="w-5 h-5" />
+            <form onSubmit={handleVerifyRegister2FA} className="space-y-4 animate-in fade-in zoom-in-95">
+              <div className="bg-primary-950/40 border border-primary-500/30 p-3.5 rounded-xl text-center space-y-1.5">
+                <div className="w-9 h-9 bg-primary-600/30 border border-primary-500/40 rounded-lg flex items-center justify-center mx-auto text-primary-300">
+                  <Shield className="w-4 h-4" />
                 </div>
                 <h3 className="text-xs font-bold text-white">Account Activation</h3>
                 <p className="text-xs text-slate-400">
@@ -619,12 +566,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-300 ml-1 uppercase tracking-wider">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 ml-1 uppercase tracking-wider">
                   6-Digit Activation Code
                 </label>
                 <div className="relative">
-                  <KeyRound className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-primary-400" />
+                  <KeyRound className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-primary-400" />
                   <input
                     required
                     autoFocus
@@ -633,7 +580,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                     value={twoFactorCode}
                     onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
                     placeholder="000000"
-                    className="w-full pl-12 pr-4 py-3.5 bg-white/5 border border-primary-500/40 rounded-2xl outline-none focus:border-primary-400 text-center font-mono text-xl tracking-[0.3em] font-bold text-white transition-all"
+                    className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-white/5 border border-primary-500/40 rounded-xl outline-none focus:border-primary-400 text-center font-mono text-lg sm:text-xl tracking-[0.3em] font-bold text-white transition-all"
                   />
                 </div>
               </div>
@@ -646,14 +593,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                     setTwoFactorCode('');
                     setError(null);
                   }}
-                  className="px-4 py-3.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-2xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/10"
+                  className="px-3.5 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/10"
                 >
                   <ArrowLeft className="w-4 h-4" /> Back
                 </button>
                 <button
                   type="submit"
                   disabled={loading || twoFactorCode.length < 6}
-                  className="flex-1 bg-primary-600 hover:bg-primary-500 text-white py-3.5 rounded-2xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 disabled:opacity-50"
+                  className="flex-1 bg-primary-600 hover:bg-primary-500 text-white py-2.5 sm:py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 disabled:opacity-50"
                 >
                   {loading ? (
                     <>
@@ -667,7 +614,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                 </button>
               </div>
 
-              <div className="text-center pt-2">
+              <div className="text-center pt-1">
                 <button
                   type="button"
                   onClick={handleResend2FA}
@@ -683,37 +630,32 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
           {/* Bottom Switch Mode / Options */}
           {authStep === 'credentials' && (
-            <div className="mt-8 pt-6 border-t border-white/10 text-center">
-              <p className="text-slate-400 text-sm">
-                {isLogin
-                  ? "Don't have an account yet?"
-                  : "Already have an account?"}
-              </p>
+            <div className="mt-4 pt-3.5 sm:mt-5 sm:pt-4 border-t border-white/10 text-center">
+              <div className="flex flex-wrap items-center justify-center gap-x-1.5 text-xs text-slate-400">
+                <span>{isLogin ? "Don't have an account yet?" : "Already have an account?"}</span>
+                <button
+                  type="button"
+                  onClick={toggleMode}
+                  className="text-primary-400 font-bold hover:underline cursor-pointer"
+                >
+                  {isLogin ? 'Sign up' : 'Log in'}
+                </button>
+              </div>
 
-              <button
-                type="button"
-                onClick={toggleMode}
-                className="mt-2 text-primary-400 font-bold hover:underline"
-              >
-                {isLogin
-                  ? 'Sign up for free'
-                  : 'Log in to your account'}
-              </button>
-
-              <div className="mt-6 pt-4 border-t border-white/10">
+              <div className="mt-2.5 pt-2 border-t border-white/5">
                 {forgotPasswordStep === 'none' ? (
                   <button
                     type="button"
                     onClick={() => setForgotPasswordStep('email')}
-                    className="text-xs text-primary-300 font-bold hover:underline"
+                    className="text-xs text-primary-300 hover:text-primary-200 font-semibold hover:underline cursor-pointer"
                   >
                     Forgot Password?
                   </button>
                 ) : (
-                  <div className="space-y-4 animate-in slide-in-from-bottom-4">
+                  <div className="space-y-3 animate-in slide-in-from-bottom-2 text-left">
                     {forgotPasswordStep === 'email' ? (
-                      <div className="space-y-3">
-                        <p className="text-xs text-slate-400 text-left ml-1 font-medium">Enter your email and we'll send you a code</p>
+                      <div className="space-y-2.5">
+                        <p className="text-[11px] text-slate-400 font-medium">Enter your email and we'll send you a code</p>
                         <div className="relative group">
                           <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                           <input
@@ -721,7 +663,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                             value={resetEmail}
                             onChange={(e) => setResetEmail(e.target.value)}
                             placeholder="your.email@example.com"
-                            className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs outline-none focus:border-primary-500 text-white"
+                            className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs outline-none focus:border-primary-500 text-white"
                           />
                         </div>
                         <div className="flex gap-2">
@@ -729,55 +671,57 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                             type="button"
                             onClick={handleSendOtp}
                             disabled={loading}
-                            className="flex-1 bg-primary-600 text-white py-2 rounded-xl text-xs font-bold hover:bg-primary-700 transition-colors disabled:opacity-50"
+                            className="flex-1 bg-primary-600 text-white py-2 rounded-xl text-xs font-bold hover:bg-primary-500 transition-colors disabled:opacity-50"
                           >
                             {loading ? 'Sending...' : 'Send Code'}
                           </button>
                           <button
                             type="button"
                             onClick={() => setForgotPasswordStep('none')}
-                            className="px-4 py-2 bg-white/5 text-slate-300 rounded-xl text-xs font-bold hover:bg-white/10"
+                            className="px-3.5 py-2 bg-white/5 text-slate-300 rounded-xl text-xs font-bold hover:bg-white/10 transition-colors"
                           >
                             Back
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2 text-emerald-400 mb-1">
-                          <CheckCircle2 className="w-4 h-4" />
-                          <p className="text-[10px] font-bold uppercase tracking-wider">Code Sent to {resetEmail}</p>
+                      <div className="space-y-2.5">
+                        <div className="flex items-center gap-2 text-emerald-400">
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          <p className="text-[10px] font-bold uppercase tracking-wider truncate">Code Sent to {resetEmail}</p>
                         </div>
                         
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1 text-left">
-                            <label className="text-[10px] font-bold text-slate-500 ml-1 uppercase">6-Digit Code</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">6-Digit Code</label>
                             <input
                               type="text"
                               maxLength={6}
                               value={resetOtp}
                               onChange={(e) => setResetOtp(e.target.value)}
                               placeholder="000000"
-                              className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm font-mono outline-none focus:border-primary-500 text-center text-white"
+                              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-mono outline-none focus:border-primary-500 text-center text-white"
                             />
                           </div>
-                          <div className="space-y-1 text-left">
-                            <label className="text-[10px] font-bold text-slate-500 ml-1 uppercase">New Password</label>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">New Password</label>
                             <input
                               type="password"
                               value={newPassword}
                               onChange={(e) => setNewPassword(e.target.value)}
                               placeholder="••••••••"
-                              className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 text-white"
+                              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs outline-none focus:border-primary-500 text-white"
                             />
                           </div>
                         </div>
+
+                        <PasswordStrengthIndicator password={newPassword} />
 
                         <button
                           type="button"
                           onClick={handleVerifyAndReset}
                           disabled={loading}
-                          className="w-full bg-primary-600 text-white py-2.5 rounded-xl text-xs font-bold hover:bg-primary-700 transition-colors shadow-lg shadow-primary-900/40"
+                          className="w-full bg-primary-600 text-white py-2 rounded-xl text-xs font-bold hover:bg-primary-500 transition-colors shadow-lg shadow-primary-900/40"
                         >
                           {loading ? 'Resetting...' : 'Verify & Reset Password'}
                         </button>
@@ -785,36 +729,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                     )}
                   </div>
                 )}
-              </div>
-
-              <div className="mt-8 pt-4 border-t border-white/10 flex flex-col items-center">
-                <button
-                  type="button"
-                  id="reset-trigger"
-                  onClick={(e) => {
-                    const target = e.currentTarget;
-                    if (target.getAttribute('data-confirm') === 'true') {
-                      db.reset();
-                      window.location.reload();
-                    } else {
-                      target.setAttribute('data-confirm', 'true');
-                      target.innerText = "CONFIRM: DELETE EVERYTHING?";
-                      target.classList.remove('text-slate-500');
-                      target.classList.add('text-rose-500', 'animate-pulse');
-                      setTimeout(() => {
-                        if (target) {
-                          target.setAttribute('data-confirm', 'false');
-                          target.innerText = "Zero System - Clear All Data";
-                          target.classList.add('text-slate-500');
-                          target.classList.remove('text-rose-500', 'animate-pulse');
-                        }
-                      }, 3000);
-                    }
-                  }}
-                  className="text-[9px] text-slate-500 hover:text-rose-400 font-bold uppercase tracking-[0.2em] transition-all duration-300"
-                >
-                  Zero System - Clear All Data
-                </button>
               </div>
             </div>
           )}

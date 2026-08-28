@@ -5,8 +5,7 @@ services:
     region: oregon
     plan: free
     branch: main
-    rootDir: google-drive-main
-    buildCommand: npm install
+    buildCommand: npm install && npm run build:server
     startCommand: npm run start
     healthCheckPath: /api/blockchain/status
     envVars:
@@ -19,6 +18,8 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: SCHOOL_SIGNING_KEYPAIR
+        sync: false
+      - key: JWT_SECRET
         sync: false
       - key: ALLOWED_ORIGIN
         value: https://e-syllab.vercel.app

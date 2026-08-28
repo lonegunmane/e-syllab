@@ -250,6 +250,12 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             const file = e.target.files[0];
+            const MAX_BYTES = 2 * 1024 * 1024; // 2MB
+            if (file.size > MAX_BYTES) {
+                window.alert(`Selected file "${file.name}" is ${(file.size / (1024 * 1024)).toFixed(1)}MB, which exceeds the 2MB limit. Please choose a smaller file.`);
+                e.target.value = '';
+                return;
+            }
             setFileName(file.name);
             setFileType(file.type || file.name.split('.').pop() || 'unknown');
 

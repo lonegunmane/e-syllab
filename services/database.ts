@@ -1,5 +1,6 @@
 import { User, UserRole, CurriculumResource, Message, GradeRecord, ResourceCategory, VaultDocument, DocumentStatus, Assignment } from '../types';
 import { blockchainService } from './blockchain';
+import { validatePassword } from './passwordValidation';
 import bcrypt from 'bcryptjs';
 
 // Interface matching the 'auth_credentials' table
@@ -36,34 +37,10 @@ export const db = {
   },
 
   /**
-   * Initialize the database with seed data if empty
+   * Initialize the database with seed data if empty (offline cache only)
    */
   init() {
-    if (!localStorage.getItem(this.tables.USERS)) {
-      console.log('[Database] Initializing Schema...');
-      
-      const initialUsers: User[] = [
-        { 
-          id: '3', 
-          name: 'Primary Admin', 
-          role: UserRole.ADMIN, 
-          email: 'admin@gmail.com', 
-          avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=admin',
-          blockchainId: 'sol-genesis-block-3-admin',
-          contact: '777-888-9999',
-          school: 'ESYLAB Headquarters',
-          gender: 'Prefer not to say',
-          residentialAddress: '789 Pine Rd, Capital City'
-        }
-      ];
-      
-      // Use bcryptjs.hashSync for synchronous hashing in initialization
-      const adminPasswordHash = bcrypt.hashSync('1357', 10);
-      
-      const initialCreds: AuthCredential[] = [
-        { userId: '3', passwordHash: adminPasswordHash, lastLogin: null, createdAt: new Date().toISOString(), passwordResetRequired: true }
-      ];
-
+    if (!localStorage.getItem(this.tables.CURRICULUM)) {
       const initialCurriculum: CurriculumResource[] = [
         {
           id: 'curr-1',
@@ -118,55 +95,12 @@ export const db = {
         }
       ];
 
-      this.saveTable(this.tables.USERS, initialUsers);
-      this.saveTable(this.tables.CREDENTIALS, initialCreds);
+      this.saveTable(this.tables.USERS, []);
+      this.saveTable(this.tables.CREDENTIALS, []);
       this.saveTable(this.tables.CURRICULUM, initialCurriculum);
       this.saveTable(this.tables.MESSAGES, []);
       this.saveTable(this.tables.GRADES, []);
       this.saveTable(this.tables.VAULT, []);
-      this.saveTable(this.tables.ASSIGNMENTS, initialAssignments);
-    } else if (!localStorage.getItem(this.tables.ASSIGNMENTS)) {
-      // Seed default assignments if missing
-      const now = new Date();
-      const in5Hours = new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString();
-      const in20Hours = new Date(now.getTime() + 20 * 60 * 60 * 1000).toISOString();
-      const in3Days = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString();
-
-      const initialAssignments: Assignment[] = [
-        {
-          id: 'asgn-1',
-          title: 'Physics Lab Report - Pendulum Oscillation',
-          subject: 'Science Physics',
-          gradeLevel: 'Grade 10',
-          description: 'Submit calculated experimental values for gravitational acceleration (g) and attach error analysis spreadsheet.',
-          dueDate: in5Hours,
-          priority: 'urgent',
-          createdByName: 'Dr. Sarah Wilson',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'asgn-2',
-          title: 'Quadratic Equations Problem Set',
-          subject: 'Mathematics',
-          gradeLevel: 'Grade 10',
-          description: 'Complete exercises 1-15 on Page 142. Solve using quadratic formula and factoring techniques.',
-          dueDate: in20Hours,
-          priority: 'high',
-          createdByName: 'Mr. James Blake',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'asgn-3',
-          title: 'Cellular Respiration Diagram & Summary',
-          subject: 'Biology',
-          gradeLevel: 'All Grades',
-          description: 'Draw and label the Krebs cycle and electron transport chain. Write a 300-word overview of ATP yield.',
-          dueDate: in3Days,
-          priority: 'medium',
-          createdByName: 'Prof. Alice Green',
-          createdAt: new Date().toISOString()
-        }
-      ];
       this.saveTable(this.tables.ASSIGNMENTS, initialAssignments);
     }
   },
@@ -238,6 +172,11 @@ export const db = {
   },
   
   async updatePassword(userId: string, newPassword: string): Promise<void> {
+    const validation = validatePassword(newPassword);
+    if (!validation.isValid) {
+      throw new Error(validation.errorMessage);
+    }
+
     const credentials = this.getTable(this.tables.CREDENTIALS) as AuthCredential[];
     const credIndex = credentials.findIndex(c => c.userId === userId);
     if (credIndex > -1) {
@@ -282,6 +221,11 @@ export const db = {
 
   async registerUser(user: Omit<User, 'id'>, password: string): Promise<User> {
     this.init();
+    const validation = validatePassword(password);
+    if (!validation.isValid) {
+      throw new Error(validation.errorMessage);
+    }
+
     if (this.findUserByEmail(user.email)) {
       throw new Error("Email already exists");
     }

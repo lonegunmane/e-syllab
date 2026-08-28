@@ -1,13 +1,25 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-// API key is obtained exclusively from environment variables for local development
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let aiClient: GoogleGenAI | null = null;
+function getAIClient(): GoogleGenAI | null {
+  if (!aiClient) {
+    const key = typeof process !== "undefined" && process.env?.GEMINI_API_KEY ? process.env.GEMINI_API_KEY : "";
+    if (!key) return null;
+    aiClient = new GoogleGenAI({ apiKey: key });
+  }
+  return aiClient;
+}
 
 export const geminiService = {
   async getLearningAssistantResponse(query: string, context: string) {
     // Check connectivity before calling API
-    if (!navigator.onLine) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
       return "I'm currently in offline mode. Please reconnect to the internet to use the AI Assistant.";
+    }
+
+    const ai = getAIClient();
+    if (!ai) {
+      return "AI Assistant is not configured on this environment.";
     }
 
     try {
@@ -30,7 +42,10 @@ export const geminiService = {
   },
 
   async analyzeClassPerformance(results: any[]) {
-    if (!navigator.onLine) return null;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return null;
+
+    const ai = getAIClient();
+    if (!ai) return null;
 
     try {
       const response = await ai.models.generateContent({

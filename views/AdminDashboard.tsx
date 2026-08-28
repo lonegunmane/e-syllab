@@ -22,6 +22,8 @@ import { TimetableView } from '../components/TimetableView';
 import { StaffPerformanceDashboard } from '../components/StaffPerformanceDashboard';
 import { AssessmentView } from '../components/AssessmentView';
 import { NotificationSendForm } from '../components/NotificationSendForm';
+import { PasswordStrengthIndicator } from '../components/PasswordStrengthIndicator';
+import { validatePassword } from '../services/passwordValidation';
 
 const staffActivity = [
   { name: 'Jan', activity: 400 },
@@ -793,6 +795,12 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             const file = e.target.files[0];
+            const MAX_BYTES = 2 * 1024 * 1024; // 2MB
+            if (file.size > MAX_BYTES) {
+                window.alert(`Selected file "${file.name}" is ${(file.size / (1024 * 1024)).toFixed(1)}MB, which exceeds the 2MB limit. Please choose a smaller file.`);
+                e.target.value = '';
+                return;
+            }
             setFileName(file.name);
             setFileType(file.type || file.name.split('.').pop() || 'unknown');
             
@@ -1177,7 +1185,7 @@ const MetricTrackerModal: React.FC<MetricTrackerModalProps> = ({ metric, onClose
         <div className="p-4 border-t border-white/10 bg-black/20 flex justify-between items-center text-xs text-slate-400">
           <span className="flex items-center gap-2 font-mono text-[11px]">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            E-SYLAB Live Tracking Engine • Database & Solana Ledger Synchronized
+            E-SYLLAB Live Tracking Engine • Database & Solana Ledger Synchronized
           </span>
           <button
             onClick={onClose}
@@ -1240,6 +1248,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
     e.preventDefault();
     setIsCreatingStaff(true);
     setStaffMsg(null);
+
+    const validation = validatePassword(staffPassword);
+    if (!validation.isValid) {
+      setStaffMsg({ type: 'error', text: validation.errorMessage });
+      setIsCreatingStaff(false);
+      return;
+    }
+
     try {
         await createUserByAdmin({
             name: staffName, email: staffEmail, role: staffRole,
@@ -1278,7 +1294,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">System Control Panel</h1>
-          <p className="text-slate-400">Secure real-time monitoring of the E-SYLAB ecosystem.</p>
+          <p className="text-slate-400">Secure real-time monitoring of the E-SYLLAB ecosystem.</p>
         </div>
         <div className="flex items-center gap-4">
            <div className="bg-white/5 backdrop-blur-md rounded-full px-4 py-2 border border-white/10 flex items-center gap-3">
@@ -1423,11 +1439,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                 </div>
                 <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Email Address</label>
-                    <input required type="email" placeholder="john.smith@esylab.edu" value={staffEmail} onChange={e=>setStaffEmail(e.target.value)} className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 transition-all text-white placeholder:text-slate-600" />
+                    <input required type="email" placeholder="john.smith@esyllab.edu" value={staffEmail} onChange={e=>setStaffEmail(e.target.value)} className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 transition-all text-white placeholder:text-slate-600" />
                 </div>
                 <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Temporary Password</label>
                     <input required type="password" placeholder="••••••••" value={staffPassword} onChange={e=>setStaffPassword(e.target.value)} className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 transition-all text-white placeholder:text-slate-600" />
+                    <PasswordStrengthIndicator password={staffPassword} />
                 </div>
                 <button 
                   disabled={isCreatingStaff || (staffRole === UserRole.ADMIN && totalAdmins >= 2)} 

@@ -5,27 +5,44 @@ import {
 } from 'lucide-react';
 import {
   Connection,
-  PublicKey,
   clusterApiUrl,
 } from '@solana/web3.js';
+import { verifyAttendanceHash, verifyLedgerRecord } from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface VerificationResult {
   valid: boolean;
-  signature: string;
+  confirmedOnChain: boolean;
+  signature?: string | null;
   slot: number;
   timestamp: string;
   memoData: string;
   hashMatch: boolean;
   blockTime?: number;
   error?: string;
+  statusMessage?: string;
 }
 
 // ─── Solana Connection ─────────────────────────────────────────────────────────
 
 const DEVNET_CONNECTION = new Connection(clusterApiUrl('devnet'), 'confirmed');
 const EXPLORER_BASE = 'https://explorer.solana.com/tx';
+
+// Helper to check valid Solana signature format
+const isValidSolanaSig = (sig?: string | null): boolean => {
+  if (!sig || typeof sig !== 'string') return false;
+  const s = sig.trim();
+  return s.length >= 44 &&
+    !s.startsWith('queue-') &&
+    !s.startsWith('recorded-') &&
+    !s.startsWith('pending-') &&
+    !s.startsWith('dummy-') &&
+    !s.startsWith('ledger-') &&
+    !s.startsWith('cred-') &&
+    !s.startsWith('att-') &&
+    /^[1-9A-HJ-NP-Za-km-z]+$/.test(s);
+};
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
@@ -37,79 +54,116 @@ export const VerifyAttendance: React.FC = () => {
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [recentVerifications, setRecentVerifications] = useState<VerificationResult[]>([]);
 
-  // ── Verify on-chain ─────────────────────────────────────────────────────────
+  // ── Verify record ─────────────────────────────────────────────────────────
   const verifyOnChain = useCallback(async () => {
-    if (!inputValue.trim()) return;
+    const rawVal = inputValue.trim();
+    if (!rawVal) return;
 
     setIsVerifying(true);
     setResult(null);
 
     try {
-      let signature: string;
-
       if (inputType === 'signature') {
-        signature = inputValue.trim();
+        const signature = rawVal;
+        if (!isValidSolanaSig(signature)) {
+          throw new Error('Invalid transaction reference signature format. A valid Solana signature contains base58 characters.');
+        }
+
+        // Fetch transaction from Solana Devnet
+        const tx = await DEVNET_CONNECTION.getTransaction(signature, {
+          commitment: 'confirmed',
+          maxSupportedTransactionVersion: 0,
+        });
+
+        if (!tx) {
+          throw new Error('Record not found on Solana Devnet. The transaction may still be propagating or was rejected.');
+        }
+
+        if (tx.meta?.err) {
+          throw new Error('Transaction was found on Solana Devnet but failed during execution.');
+        }
+
+        // Extract memo data from transaction logs
+        const memoLog = tx.meta?.logMessages?.find(
+          msg => msg.includes('Memo') && msg.includes('{"app":"E-SYLLAB"')
+        );
+
+        if (!memoLog) {
+          throw new Error('No E-SYLLAB attendance attestation found in this transaction.');
+        }
+
+        const memoMatch = memoLog.match(/Memo \(len \d+\): (.+)/);
+        const memoData = memoMatch ? memoMatch[1] : memoLog;
+
+        let parsedMemo: any;
+        try {
+          parsedMemo = JSON.parse(memoData);
+        } catch {
+          parsedMemo = { raw: memoData };
+        }
+
+        // Check hash match if expected hash provided
+        let hashMatch = true;
+        if (expectedHash.trim()) {
+          hashMatch = memoData.includes(expectedHash.trim()) ||
+                     (parsedMemo.offlineHash && parsedMemo.offlineHash === expectedHash.trim());
+        }
+
+        const verification: VerificationResult = {
+          valid: true,
+          confirmedOnChain: true,
+          signature,
+          slot: tx.slot,
+          timestamp: new Date().toISOString(),
+          memoData: typeof parsedMemo === 'object' ? JSON.stringify(parsedMemo, null, 2) : memoData,
+          hashMatch,
+          blockTime: tx.blockTime ?? undefined,
+          statusMessage: 'Verified and confirmed on Solana Devnet.',
+        };
+
+        setResult(verification);
+        setRecentVerifications(prev => [verification, ...prev].slice(0, 10));
       } else {
-        // If user provided a hash, we'd need to query the DB to find the signature
-        // For now, show a message
-        throw new Error('Please enter the transaction reference ID to verify.');
+        // Hash verification: Query backend database & verify hash integrity
+        const hashToVerify = rawVal;
+        let responseData: any = null;
+
+        try {
+          // Attempt ledger verification first
+          responseData = await verifyLedgerRecord(hashToVerify);
+        } catch (lErr) {
+          // Fallback to attendance verify-hash
+          responseData = await verifyAttendanceHash({ offlineHash: hashToVerify });
+        }
+
+        if (!responseData || !responseData.isValid) {
+          throw new Error(responseData?.message || 'Hash not found in the verified school database or records have been tampered with.');
+        }
+
+        const hasRealSig = isValidSolanaSig(responseData.signature);
+        const confirmedOnChain = Boolean(responseData.confirmedOnChain && hasRealSig);
+
+        const verification: VerificationResult = {
+          valid: true,
+          confirmedOnChain,
+          signature: confirmedOnChain ? responseData.signature : null,
+          slot: responseData.slot || 0,
+          timestamp: new Date().toISOString(),
+          memoData: JSON.stringify(responseData.record || { offlineHash: hashToVerify, status: confirmedOnChain ? 'CONFIRMED' : 'PENDING' }, null, 2),
+          hashMatch: true,
+          statusMessage: confirmedOnChain
+            ? 'Record verified and confirmed on Solana Devnet.'
+            : 'Record verified against PostgreSQL school database (Pending on-chain network confirmation).',
+        };
+
+        setResult(verification);
+        setRecentVerifications(prev => [verification, ...prev].slice(0, 10));
       }
-
-      // Fetch transaction from Solana
-      const tx = await DEVNET_CONNECTION.getTransaction(signature, {
-        commitment: 'confirmed',
-        maxSupportedTransactionVersion: 0,
-      });
-
-      if (!tx) {
-        throw new Error('Record not found. It may be too recent or the ID is incorrect.');
-      }
-
-      // Extract memo data from transaction logs
-      const memoLog = tx.meta?.logMessages?.find(
-        msg => msg.includes('Memo') && msg.includes('{"app":"E-SYLLAB"')
-      );
-
-      if (!memoLog) {
-        throw new Error('No attendance record found in this entry.');
-      }
-
-      // Parse memo JSON from log
-      // Log format: "Program log: Memo (len 123): {"app":"E-SYLLAB",...}"
-      const memoMatch = memoLog.match(/Memo \(len \d+\): (.+)/);
-      const memoData = memoMatch ? memoMatch[1] : memoLog;
-
-      let parsedMemo: any;
-      try {
-        parsedMemo = JSON.parse(memoData);
-      } catch {
-        parsedMemo = { raw: memoData };
-      }
-
-      // Check hash match if expected hash provided
-      let hashMatch = false;
-      if (expectedHash.trim()) {
-        hashMatch = memoData.includes(expectedHash) ||
-                   (parsedMemo.offlineHash && parsedMemo.offlineHash === expectedHash);
-      }
-
-      const verification: VerificationResult = {
-        valid: true,
-        signature,
-        slot: tx.slot,
-        timestamp: new Date().toISOString(),
-        memoData: typeof parsedMemo === 'object' ? JSON.stringify(parsedMemo, null, 2) : memoData,
-        hashMatch: expectedHash.trim() ? hashMatch : true,
-        blockTime: tx.blockTime ?? undefined,
-      };
-
-      setResult(verification);
-      setRecentVerifications(prev => [verification, ...prev].slice(0, 10));
-
     } catch (err: any) {
       setResult({
         valid: false,
-        signature: inputValue,
+        confirmedOnChain: false,
+        signature: null,
         slot: 0,
         timestamp: new Date().toISOString(),
         memoData: '',
@@ -132,7 +186,7 @@ export const VerifyAttendance: React.FC = () => {
           Check Record Authenticity
         </h2>
         <p className="text-slate-400 text-sm mt-0.5">
-          Confirm that an attendance record is genuine and has not been altered.
+          Confirm that an attendance or academic record is genuine, tamper-free, and verified.
         </p>
       </div>
 
@@ -140,31 +194,31 @@ export const VerifyAttendance: React.FC = () => {
       <div className="glass-card p-6 rounded-2xl">
         <div className="flex gap-2 mb-4">
           <button
-            onClick={() => setInputType('signature')}
+            onClick={() => { setInputType('signature'); setResult(null); }}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
               inputType === 'signature'
                 ? 'bg-primary-600 text-white'
                 : 'bg-white/5 text-slate-400 hover:text-white'
             }`}
           >
-            Record Reference Number
+            Record Reference Number (Solana Tx)
           </button>
           <button
-            onClick={() => setInputType('hash')}
+            onClick={() => { setInputType('hash'); setResult(null); }}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
               inputType === 'hash'
                 ? 'bg-primary-600 text-white'
                 : 'bg-white/5 text-slate-400 hover:text-white'
             }`}
           >
-            Record Security Code
+            Record Security Code (SHA-256 Hash)
           </button>
         </div>
 
         <div className="space-y-4">
           <div>
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
-              {inputType === 'signature' ? 'Record Reference Number' : 'Security Record Code'}
+              {inputType === 'signature' ? 'Solana Transaction Signature' : 'Record Security Hash (SHA-256)'}
             </label>
             <div className="relative mt-1">
               <input
@@ -173,12 +227,12 @@ export const VerifyAttendance: React.FC = () => {
                 onChange={e => setInputValue(e.target.value)}
                 placeholder={
                   inputType === 'signature'
-                    ? '5xV... (reference number)'
-                    : '7ab5c8e... (security code)'
+                    ? 'e.g. 5xV... (44+ character base58 signature)'
+                    : 'e.g. a9f82c0192e84d3b6... (64-character hex hash)'
                 }
                 className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono outline-none focus:border-primary-500 transition-colors placeholder:text-slate-600"
               />
-              {inputType === 'signature' && inputValue.length > 80 && (
+              {inputType === 'signature' && inputValue.length > 40 && isValidSolanaSig(inputValue) && (
                 <CheckCircle className="absolute right-3 top-3 w-5 h-5 text-emerald-400" />
               )}
             </div>
@@ -207,7 +261,7 @@ export const VerifyAttendance: React.FC = () => {
             {isVerifying ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Checking record authenticity…</>
             ) : (
-              <><Search className="w-4 h-4" /> Confirm Record is Authentic</>
+              <><Search className="w-4 h-4" /> Confirm Record Authenticity</>
             )}
           </button>
         </div>
@@ -227,9 +281,26 @@ export const VerifyAttendance: React.FC = () => {
               <XCircle className="w-6 h-6 text-rose-400 mt-0.5 shrink-0" />
             )}
             <div className="flex-1 min-w-0">
-              <p className={`font-bold text-sm ${result.valid ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {result.valid ? '✅ Record Confirmed Authentic!' : '❌ Could Not Verify Record'}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className={`font-bold text-sm ${result.valid ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {result.valid ? '✅ Record Confirmed Authentic' : '❌ Could Not Verify Record'}
+                </p>
+                {result.valid && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    result.confirmedOnChain
+                      ? 'bg-emerald-900/80 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-amber-900/80 text-amber-300 border border-amber-500/40'
+                  }`}>
+                    {result.confirmedOnChain ? 'CONFIRMED ON-CHAIN' : 'SAVED LOCALLY (PENDING ON-CHAIN)'}
+                  </span>
+                )}
+              </div>
+
+              {result.statusMessage && (
+                <p className="text-xs text-slate-300 mt-1">
+                  {result.statusMessage}
+                </p>
+              )}
 
               {result.error && (
                 <p className="text-xs text-rose-300 mt-1 bg-rose-950/40 p-2 rounded-lg border border-rose-500/10">
@@ -241,18 +312,22 @@ export const VerifyAttendance: React.FC = () => {
               {result.valid && (
                 <div className="mt-3 space-y-2">
                   {/* Signature */}
-                  <div className="flex items-center gap-2 text-xs">
-                    <Hash className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="text-slate-400">Record ID:</span>
-                    <span className="font-mono text-emerald-300 truncate">{result.signature}</span>
-                  </div>
+                  {result.signature && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <Hash className="w-3.5 h-3.5 text-slate-500" />
+                      <span className="text-slate-400">Record ID:</span>
+                      <span className="font-mono text-emerald-300 truncate">{result.signature}</span>
+                    </div>
+                  )}
 
                   {/* Slot */}
-                  <div className="flex items-center gap-2 text-xs">
-                    <Database className="w-3.5 h-3.5 text-slate-500" />
-                    <span className="text-slate-400">Record Slot:</span>
-                    <span className="font-mono text-emerald-300">{result.slot.toLocaleString()}</span>
-                  </div>
+                  {result.slot > 0 && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <Database className="w-3.5 h-3.5 text-slate-500" />
+                      <span className="text-slate-400">Record Slot:</span>
+                      <span className="font-mono text-emerald-300">#{result.slot.toLocaleString()}</span>
+                    </div>
+                  )}
 
                   {/* Block Time */}
                   {result.blockTime && (
@@ -272,7 +347,7 @@ export const VerifyAttendance: React.FC = () => {
                         <>
                           <CheckCircle className="w-4 h-4 text-emerald-400" />
                           <span className="text-emerald-400 font-bold">Record Match Confirmed</span>
-                          <span className="text-slate-500">— The secure record matches your security code perfectly.</span>
+                          <span className="text-slate-500">— The saved record matches your security code perfectly.</span>
                         </>
                       ) : (
                         <>
@@ -292,16 +367,18 @@ export const VerifyAttendance: React.FC = () => {
                     </pre>
                   </div>
 
-                  {/* Explorer Link */}
-                  <a
-                    href={`${EXPLORER_BASE}/${result.signature}?cluster=devnet`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 inline-flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 hover:underline font-medium"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    View Public Record on Explorer
-                  </a>
+                  {/* Explorer Link - Only shown when confirmed on-chain */}
+                  {result.confirmedOnChain && result.signature && (
+                    <a
+                      href={`${EXPLORER_BASE}/${result.signature}?cluster=devnet`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 hover:underline font-medium"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      View Public Record on Solana Explorer
+                    </a>
+                  )}
                 </div>
               )}
             </div>
@@ -325,14 +402,22 @@ export const VerifyAttendance: React.FC = () => {
                     <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
                   )}
                   <div className="min-w-0">
-                    <p className="text-xs font-mono text-slate-300 truncate">{v.signature.slice(0, 20)}…</p>
-                    <p className="text-[10px] text-slate-500">Record #{v.slot.toLocaleString()}</p>
+                    <p className="text-xs font-mono text-slate-300 truncate">
+                      {v.signature ? `${v.signature.slice(0, 20)}…` : 'Local Database Record'}
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      {v.slot > 0 ? `Record #${v.slot.toLocaleString()}` : 'Stored in School DB'}
+                    </p>
                   </div>
                 </div>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  v.valid ? 'text-emerald-400 bg-emerald-950/40' : 'text-rose-400 bg-rose-950/40'
+                  v.confirmedOnChain
+                    ? 'text-emerald-400 bg-emerald-950/40 border border-emerald-500/20'
+                    : v.valid
+                    ? 'text-amber-400 bg-amber-950/40 border border-amber-500/20'
+                    : 'text-rose-400 bg-rose-950/40 border border-rose-500/20'
                 }`}>
-                  {v.valid ? 'Authentic' : 'Unverified'}
+                  {v.confirmedOnChain ? 'CONFIRMED' : v.valid ? 'PENDING' : 'UNVERIFIED'}
                 </span>
               </div>
             ))}

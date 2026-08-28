@@ -511,8 +511,19 @@ export const StaffPerformanceDashboard: React.FC = () => {
                       const hasCoords = rec.latitude !== null && rec.latitude !== undefined && rec.longitude !== null && rec.longitude !== undefined;
                       const isFlagged = Boolean(rec.locationFlagged);
                       const distance = rec.distanceMeters !== null && rec.distanceMeters !== undefined ? Math.round(rec.distanceMeters) : null;
-                      const signature = rec.signature || rec.txSignature || (rec.offlineHash && rec.offlineHash.length >= 44 && !rec.offlineHash.startsWith('queue-') ? rec.offlineHash : null);
-                      const solanaExplorerUrl = rec.explorerUrl || (signature && signature.length > 20 && !signature.startsWith('queue-') ? `https://explorer.solana.com/tx/${encodeURIComponent(signature)}?cluster=devnet` : null);
+                      const rawSig = (rec.signature || rec.txSignature || '').trim();
+                      const isConfirmedSig = Boolean(
+                        rawSig.length >= 44 &&
+                        !rawSig.startsWith('queue-') &&
+                        !rawSig.startsWith('recorded-') &&
+                        !rawSig.startsWith('pending-') &&
+                        !rawSig.startsWith('dummy-') &&
+                        !rawSig.startsWith('att-') &&
+                        !rawSig.startsWith('ledger-') &&
+                        /^[1-9A-HJ-NP-Za-km-z]+$/.test(rawSig)
+                      );
+                      const signature = isConfirmedSig ? rawSig : null;
+                      const solanaExplorerUrl = rec.explorerUrl || (isConfirmedSig ? `https://explorer.solana.com/tx/${encodeURIComponent(rawSig)}?cluster=devnet` : null);
                       const isVerifying = Boolean(verifyingRows[rec.id]);
                       const vStatus = verificationStatus[rec.id];
 

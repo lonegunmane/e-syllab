@@ -1,5 +1,5 @@
 {
-  "name": "E-SYLAB - Secure Learning Platform",
+  "name": "E-SYLLAB - Secure Learning Platform",
   "description": "A blockchain-integrated digital learning platform for schools with offline-first capabilities, role-based dashboards, and AI-driven insights.",
   "requestFramePermissions": [
     "camera",

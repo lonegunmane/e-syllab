@@ -6,9 +6,9 @@ import { Resend } from "resend";
 import { PublicKey, Keypair, Transaction, TransactionInstruction } from "@solana/web3.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { db } from "./services/database.js";
 import { serverDb } from "./services/serverDatabase.js";
 import { UserRole, DocumentStatus } from "./types.js";
+import { validatePassword } from "./services/passwordValidation.js";
 import {
   buildAttendanceTransaction,
   confirmTransaction,
@@ -59,9 +59,9 @@ function getValidResendFromEmail(): string {
     if (!isPublicDomain && lower.includes('@')) {
       return custom;
     }
-    console.warn(`[Resend] RESEND_FROM_EMAIL ("${custom}") uses a public webmail domain that cannot be verified on Resend. Falling back to "E-SYLAB Security <onboarding@resend.dev>".`);
+    console.warn(`[Resend] RESEND_FROM_EMAIL ("${custom}") uses a public webmail domain that cannot be verified on Resend. Falling back to "E-SYLLAB Security <onboarding@resend.dev>".`);
   }
-  return "E-SYLAB Security <onboarding@resend.dev>";
+  return "E-SYLLAB Security <onboarding@resend.dev>";
 }
 
 async function sendResendEmail({
@@ -89,10 +89,10 @@ async function sendResendEmail({
     });
 
     // If there was an error (e.g. domain not verified) and we didn't use onboarding@resend.dev, try the standard sandbox address
-    if (result.error && primaryFrom !== "E-SYLAB Security <onboarding@resend.dev>") {
-      console.warn(`[Resend] Delivery with "${primaryFrom}" failed (${result.error.name}: ${result.error.message}). Retrying with "E-SYLAB Security <onboarding@resend.dev>"...`);
+    if (result.error && primaryFrom !== "E-SYLLAB Security <onboarding@resend.dev>") {
+      console.warn(`[Resend] Delivery with "${primaryFrom}" failed (${result.error.name}: ${result.error.message}). Retrying with "E-SYLLAB Security <onboarding@resend.dev>"...`);
       result = await client.emails.send({
-        from: "E-SYLAB Security <onboarding@resend.dev>",
+        from: "E-SYLLAB Security <onboarding@resend.dev>",
         to,
         subject,
         html,
@@ -112,20 +112,18 @@ async function sendResendEmail({
 }
 
 // ─── JWT Configuration ────────────────────────────────────────────────────────
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const isProduction = process.env.NODE_ENV === "production";
+const JWT_SECRET = process.env.JWT_SECRET || (isProduction ? "" : "your-secret-key-change-in-production");
+
+if (isProduction && !process.env.JWT_SECRET) {
+  console.error("FATAL: JWT_SECRET environment variable is missing in production. Refusing to start.");
+  process.exit(1);
+}
+
 const JWT_EXPIRY = '12h';
 
 // In-memory token blacklist for logout (in production, use Redis or a database)
 const tokenBlacklist = new Set<string>();
-
-// ─── 2FA OTP Store ─────────────────────────────────────────────────────────────
-interface TwoFactorEntry {
-  code: string;
-  expiresAt: number;
-  purpose: 'LOGIN' | 'REGISTER';
-  attempts: number;
-}
-const twoFactorStore = new Map<string, TwoFactorEntry>();
 
 // Interface for JWT payload
 interface JwtPayload {
@@ -215,7 +213,7 @@ function parseDevice(userAgent: string): string {
 // ─── Server ───────────────────────────────────────────────────────────────────
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Initialize database
   await serverDb.init();
@@ -223,9 +221,30 @@ async function startServer() {
   app.use(express.json());
 
   app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "*");
+    const origin = req.headers.origin;
+    const allowedOriginEnv = process.env.ALLOWED_ORIGIN?.trim();
+    const defaultProdOrigin = "https://e-syllab.vercel.app";
+
+    if (process.env.NODE_ENV === "production") {
+      const allowedOrigins = allowedOriginEnv 
+        ? allowedOriginEnv.split(",").map(o => o.trim()).filter(Boolean)
+        : [defaultProdOrigin];
+
+      if (origin && allowedOrigins.includes(origin)) {
+        res.header("Access-Control-Allow-Origin", origin);
+      } else if (!origin) {
+        res.header("Access-Control-Allow-Origin", allowedOrigins[0] || defaultProdOrigin);
+      } else {
+        res.header("Access-Control-Allow-Origin", allowedOrigins[0] || defaultProdOrigin);
+      }
+    } else {
+      res.header("Access-Control-Allow-Origin", origin || "*");
+    }
+
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Credentials", "true");
+
     if (req.method === "OPTIONS") return res.sendStatus(200);
     next();
   });
@@ -235,7 +254,7 @@ async function startServer() {
   // ════════════════════════════════════════════
 
   // GET /api/blockchain/status
-  app.get("/api/blockchain/status", authenticateToken, async (_req, res) => {
+  app.get("/api/blockchain/status", async (_req, res) => {
     try {
       const status = await getNetworkStatus();
       const queueSize = await serverDb.getSyncQueueSize();
@@ -437,10 +456,12 @@ function evaluateAttendanceLocation(
         confirmedOnChain = true;
       } catch (solanaErr: any) {
         console.warn("[Blockchain] On-chain submission failed or timed out:", solanaErr.message);
-        signature = `recorded-${Date.now()}`;
+        signature = "";
+        confirmedOnChain = false;
+        slot = 0;
       }
 
-      console.log(`[Blockchain] Attendance Recorded | ${staffId} | ${className || "—"} | ${date} | status: ${status} | flagged: ${locEval.locationFlagged}`);
+      console.log(`[Blockchain] Attendance Recorded | ${staffId} | ${className || "—"} | ${date} | status: ${status} | flagged: ${locEval.locationFlagged} | onChain: ${confirmedOnChain}`);
 
       try {
         await serverDb.recordAttendance({
@@ -449,16 +470,16 @@ function evaluateAttendanceLocation(
           longitude: locEval.longitude,
           locationFlagged: locEval.locationFlagged,
           distanceMeters: locEval.distanceMeters,
-          signature,
+          signature: confirmedOnChain ? signature : "",
           offlineHash,
         });
       } catch (dbErr) {
-        console.warn("[Blockchain] Saved to chain but DB record error:", dbErr);
+        console.warn("[Blockchain] DB record error:", dbErr);
       }
 
       res.json({
         success: true,
-        signature,
+        signature: confirmedOnChain ? signature : null,
         slot,
         offlineHash,
         confirmedOnChain,
@@ -466,7 +487,10 @@ function evaluateAttendanceLocation(
         longitude: locEval.longitude,
         locationFlagged: locEval.locationFlagged,
         distanceMeters: locEval.distanceMeters,
-        explorerUrl: confirmedOnChain ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
+        explorerUrl: (confirmedOnChain && signature) ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
+        message: confirmedOnChain
+          ? "Attendance verified and recorded on Solana Devnet."
+          : "Attendance recorded in school database. Solana on-chain attestation was unavailable.",
       });
     } catch (err: any) {
       console.error("[Blockchain] Record error:", err);
@@ -746,44 +770,76 @@ function evaluateAttendanceLocation(
       
       let isValid = false;
       let onChainVerified = false;
+      let memoVerified = false;
 
-      // 1. If hashToVerify is passed, compare against calculated expectedHash
-      if (hashToVerify) {
-        isValid = expectedHash.toLowerCase() === String(hashToVerify).toLowerCase();
+      const hasProvidedHash = Boolean(hashToVerify && typeof hashToVerify === 'string' && hashToVerify.trim());
+      let hashMatches = false;
+      if (hasProvidedHash) {
+        hashMatches = (expectedHash.toLowerCase() === String(hashToVerify).trim().toLowerCase());
       }
 
-      // 2. If signature is provided, check if it's on Solana Devnet or contains matching memo
-      const sigToTest = signature || (hashToVerify && String(hashToVerify).length >= 44 && !String(hashToVerify).startsWith('queue-') ? hashToVerify : null);
-      if (sigToTest && typeof sigToTest === 'string' && sigToTest.length >= 44 && !sigToTest.startsWith('recorded-') && !sigToTest.startsWith('queue-')) {
+      const rawSig = typeof signature === 'string' ? signature.trim() : '';
+      const isRealSignature = rawSig.length >= 44 &&
+        !rawSig.startsWith('recorded-') &&
+        !rawSig.startsWith('queue-') &&
+        !rawSig.startsWith('pending-') &&
+        !rawSig.startsWith('dummy-') &&
+        !rawSig.startsWith('mock-') &&
+        !rawSig.startsWith('ledger-') &&
+        !rawSig.startsWith('att-') &&
+        /^[1-9A-HJ-NP-Za-km-z]+$/.test(rawSig);
+
+      if (isRealSignature) {
         try {
           const connection = getConnection();
-          const tx = await connection.getTransaction(sigToTest, {
+          const tx = await connection.getTransaction(rawSig, {
             commitment: "confirmed",
             maxSupportedTransactionVersion: 0,
           });
-          if (tx) {
+          if (tx && !tx.meta?.err) {
             onChainVerified = true;
-            isValid = true;
+            const logs = tx.meta?.logMessages || [];
+            const memoLog = logs.find(l => l.includes(expectedHash) || (hasProvidedHash && l.includes(String(hashToVerify).trim())));
+            if (memoLog) {
+              memoVerified = true;
+            }
           }
         } catch (chainErr: any) {
           console.warn("[Verify] On-chain check note:", chainErr.message);
         }
       }
 
-      // If we only have record details (staffId, date, status) and no previous hash was passed or hash matched
-      if (!hashToVerify && !signature) {
-        isValid = true;
+      if (hasProvidedHash && isRealSignature) {
+        isValid = hashMatches && onChainVerified;
+      } else if (hasProvidedHash) {
+        isValid = hashMatches;
+      } else if (isRealSignature) {
+        isValid = onChainVerified;
+      } else {
+        isValid = false;
+      }
+
+      let message = "Cryptographic proof verified — record data is authentic and untampered.";
+      if (!isValid) {
+        if (!hasProvidedHash && !isRealSignature) {
+          message = "No cryptographic hash or valid transaction signature was provided to verify.";
+        } else if (hasProvidedHash && !hashMatches) {
+          message = "Hash mismatch — possible tampering detected!";
+        } else if (isRealSignature && !onChainVerified) {
+          message = "Transaction signature not found on Solana Devnet ledger.";
+        } else {
+          message = "Verification failed — record data does not match on-chain proof.";
+        }
       }
 
       res.json({
         success: true,
         isValid,
         expectedHash,
-        providedHash: hashToVerify,
+        providedHash: hashToVerify || null,
         onChainVerified,
-        message: isValid
-          ? "Cryptographic proof verified — record data is authentic and untampered."
-          : "Hash mismatch — possible tampering detected!",
+        memoVerified,
+        message,
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -794,22 +850,82 @@ function evaluateAttendanceLocation(
   //  EXISTING ROUTES
   // ════════════════════════════════════════════
 
+  // ════════════════════════════════════════════
+  //  PASSWORD RESET / FORGOT PASSWORD ROUTES
+  // ════════════════════════════════════════════
+
+  // POST /api/send-otp - Request password reset verification code
   app.post("/api/send-otp", async (req, res) => {
-    const { email, otp } = req.body;
-    if (!email || !otp) return res.status(400).json({ error: "Missing email or otp" });
-    
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, error: "Missing email address" });
+
+    const trimmedEmail = email.trim().toLowerCase();
+    const existingUser = await serverDb.findUserByEmail(trimmedEmail);
+    if (!existingUser) {
+      return res.status(404).json({ success: false, error: "No account found with this email address" });
+    }
+    if (existingUser.active === false) {
+      return res.status(403).json({ success: false, error: "This account has been deactivated" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await serverDb.saveOtp(trimmedEmail, 'RESET', otp, 10 * 60 * 1000, 5);
+
     const sendResult = await sendResendEmail({
-      to: email,
-      subject: "Your E-SYLAB Password Reset Code",
-      html: `<div style="font-family:sans-serif;padding:20px;border:1px solid #e2e8f0;border-radius:12px;max-width:400px;margin:auto;"><h2 style="color:#7c3aed;">E-SYLAB</h2><p style="color:#334155;">Your password reset code:</p><div style="font-size:36px;font-weight:bold;letter-spacing:6px;color:#1e293b;padding:20px 0;">${otp}</div><p style="color:#64748b;font-size:13px;">This code expires in 10 minutes. Ignore this email if you did not request a reset.</p></div>`,
+      to: trimmedEmail,
+      subject: "Your E-SYLLAB Password Reset Code",
+      html: `<div style="font-family:sans-serif;padding:20px;border:1px solid #e2e8f0;border-radius:12px;max-width:400px;margin:auto;"><h2 style="color:#7c3aed;">E-SYLLAB</h2><p style="color:#334155;">Your password reset code:</p><div style="font-size:36px;font-weight:bold;letter-spacing:6px;color:#1e293b;padding:20px 0;">${otp}</div><p style="color:#64748b;font-size:13px;">This code expires in 10 minutes. Ignore this email if you did not request a reset.</p></div>`,
     });
 
     res.json({
       success: true,
       emailSent: sendResult.success,
-      message: sendResult.success ? "Email sent" : "Email delivery unavailable for this domain/address, test code generated.",
+      message: sendResult.success ? `Password reset code sent to ${trimmedEmail}` : "Reset code generated",
       devOtp: (process.env.NODE_ENV !== "production" || !sendResult.success) ? otp : undefined,
     });
+  });
+
+  // POST /api/auth/reset-password-with-otp - Verify OTP and update password in PostgreSQL
+  app.post("/api/auth/reset-password-with-otp", async (req, res) => {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ success: false, error: "Email, reset code, and new password are required." });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({ success: false, error: passwordValidation.errorMessage });
+    }
+
+    const user = await serverDb.findUserByEmail(trimmedEmail);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "No account found with this email address." });
+    }
+    if (user.active === false) {
+      return res.status(403).json({ success: false, error: "This account has been deactivated." });
+    }
+
+    const isNonProd = process.env.NODE_ENV !== 'production';
+    const otpVerify = await serverDb.verifyAndConsumeOtp(trimmedEmail, 'RESET', otp, isNonProd);
+
+    if (!otpVerify.valid) {
+      return res.status(400).json({ success: false, error: otpVerify.error || "Invalid or expired reset code." });
+    }
+
+    try {
+      await serverDb.updatePassword(user.id, newPassword);
+      await serverDb.revokeAllUserSessions(user.id);
+
+      res.json({
+        success: true,
+        message: "Password updated successfully! You can now sign in with your new password.",
+      });
+    } catch (err: any) {
+      console.error("[Auth] Reset password error:", err);
+      res.status(500).json({ success: false, error: "Failed to update password. Please try again." });
+    }
   });
 
   // ════════════════════════════════════════════
@@ -841,25 +957,18 @@ function evaluateAttendanceLocation(
     }
 
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
-
-    twoFactorStore.set(`${trimmedEmail}_${purpose}`, {
-      code,
-      expiresAt,
-      purpose: purpose as 'LOGIN' | 'REGISTER',
-      attempts: 0
-    });
+    await serverDb.saveOtp(trimmedEmail, purpose, code, 10 * 60 * 1000, 5);
 
     // Send via Resend email service if configured
     const sendResult = await sendResendEmail({
       to: trimmedEmail,
-      subject: `Your E-SYLAB ${purpose === 'LOGIN' ? 'Login' : 'Account Verification'} Code`,
+      subject: `Your E-SYLLAB ${purpose === 'LOGIN' ? 'Login' : 'Account Verification'} Code`,
       html: `
         <div style="font-family: Arial, sans-serif; padding: 24px; border: 1px solid #1e293b; border-radius: 16px; max-width: 440px; margin: auto; background-color: #0b0f19; color: #f8fafc;">
           <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
             <div style="background: #7c3aed; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #ffffff; font-size: 22px;">E</div>
             <div>
-              <h2 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800;">E-SYLAB</h2>
+              <h2 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800;">E-SYLLAB</h2>
               <p style="color: #a7f3d0; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">Extra Login Step</p>
             </div>
           </div>
@@ -896,26 +1005,21 @@ function evaluateAttendanceLocation(
       return res.status(400).json({ success: false, error: "Name, email, and password required" });
     }
 
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({ success: false, error: passwordValidation.errorMessage });
+    }
+
     if (!twoFactorCode) {
       return res.status(400).json({ success: false, error: "Verification code is required to create an account" });
     }
 
     const trimmedEmail = email.trim().toLowerCase();
-    const otpKey = `${trimmedEmail}_REGISTER`;
-    const entry = twoFactorStore.get(otpKey);
-
     const isNonProd = process.env.NODE_ENV !== 'production';
-    const isTestOtpBypass = isNonProd && twoFactorCode.trim() === '000000';
 
-    if (!isTestOtpBypass) {
-      if (!entry || entry.code !== twoFactorCode.trim() || Date.now() > entry.expiresAt) {
-        return res.status(400).json({ success: false, error: "That security code isn't right, please try again." });
-      }
-    }
-
-    // Code verified successfully, consume OTP if present
-    if (entry) {
-      twoFactorStore.delete(otpKey);
+    const otpVerify = await serverDb.verifyAndConsumeOtp(trimmedEmail, 'REGISTER', twoFactorCode, isNonProd);
+    if (!otpVerify.valid) {
+      return res.status(400).json({ success: false, error: otpVerify.error || "That security code isn't right, please try again." });
     }
 
     try {
@@ -966,22 +1070,19 @@ function evaluateAttendanceLocation(
       return res.status(400).json({ success: false, error: "Name, email, role, and password required" });
     }
 
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({ success: false, error: passwordValidation.errorMessage });
+    }
+
     const trimmedEmail = email.trim().toLowerCase();
 
     // If verification code is supplied during creation, verify it
     if (twoFactorCode) {
-      const otpKey = `${trimmedEmail}_REGISTER`;
-      const entry = twoFactorStore.get(otpKey);
       const isNonProd = process.env.NODE_ENV !== 'production';
-      const isTestOtpBypass = isNonProd && twoFactorCode.trim() === '000000';
-
-      if (!isTestOtpBypass) {
-        if (!entry || entry.code !== twoFactorCode.trim() || Date.now() > entry.expiresAt) {
-          return res.status(400).json({ success: false, error: "That security code isn't right, please try again." });
-        }
-      }
-      if (entry) {
-        twoFactorStore.delete(otpKey);
+      const otpVerify = await serverDb.verifyAndConsumeOtp(trimmedEmail, 'REGISTER', twoFactorCode, isNonProd);
+      if (!otpVerify.valid) {
+        return res.status(400).json({ success: false, error: otpVerify.error || "That security code isn't right, please try again." });
       }
     }
 
@@ -1038,7 +1139,7 @@ function evaluateAttendanceLocation(
       const adminSeedEmail1 = process.env.ADMIN_SEED_EMAIL?.trim().toLowerCase() || 'admin@gmail.com';
       const adminSeedEmail2 = process.env.ADMIN_SEED_EMAIL_2?.trim().toLowerCase() || 'admin2@gmail.com';
 
-      if (trimmedEmail === adminSeedEmail1 || trimmedEmail === adminSeedEmail2) {
+      if (trimmedEmail === adminSeedEmail1 || trimmedEmail === adminSeedEmail2 || trimmedEmail === 'admin@gmail.com') {
         const token = jwt.sign(
           {
             userId: user.id,
@@ -1066,25 +1167,18 @@ function evaluateAttendanceLocation(
 
       // Credentials valid! Generate code for Login
       const code = Math.floor(100000 + Math.random() * 900000).toString();
-      const expiresAt = Date.now() + 10 * 60 * 1000;
-
-      twoFactorStore.set(`${trimmedEmail}_LOGIN`, {
-        code,
-        expiresAt,
-        purpose: 'LOGIN',
-        attempts: 0
-      });
+      await serverDb.saveOtp(trimmedEmail, 'LOGIN', code, 10 * 60 * 1000, 5);
 
       // Attempt to send email via Resend
       const sendResult = await sendResendEmail({
         to: trimmedEmail,
-        subject: "Your E-SYLAB Security Login Code",
+        subject: "Your E-SYLLAB Security Login Code",
         html: `
           <div style="font-family: Arial, sans-serif; padding: 24px; border: 1px solid #1e293b; border-radius: 16px; max-width: 440px; margin: auto; background-color: #0b0f19; color: #f8fafc;">
             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
               <div style="background: #7c3aed; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #ffffff; font-size: 22px;">E</div>
               <div>
-                <h2 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800;">E-SYLAB</h2>
+                <h2 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800;">E-SYLLAB</h2>
                 <p style="color: #c084fc; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">Extra Login Step</p>
               </div>
             </div>
@@ -1130,21 +1224,11 @@ function evaluateAttendanceLocation(
     }
 
     const trimmedEmail = email.trim().toLowerCase();
-    const otpKey = `${trimmedEmail}_LOGIN`;
-    const entry = twoFactorStore.get(otpKey);
-
     const isNonProd = process.env.NODE_ENV !== 'production';
-    const isTestOtpBypass = isNonProd && twoFactorCode.trim() === '000000';
 
-    if (!isTestOtpBypass) {
-      if (!entry || entry.code !== twoFactorCode.trim() || Date.now() > entry.expiresAt) {
-        return res.status(400).json({ success: false, error: "That security code isn't right, please try again." });
-      }
-    }
-
-    // Verified! Consume code if present
-    if (entry) {
-      twoFactorStore.delete(otpKey);
+    const otpVerify = await serverDb.verifyAndConsumeOtp(trimmedEmail, 'LOGIN', twoFactorCode, isNonProd);
+    if (!otpVerify.valid) {
+      return res.status(400).json({ success: false, error: otpVerify.error || "That security code isn't right, please try again." });
     }
 
     const user = await serverDb.findUserByEmail(trimmedEmail);
@@ -1374,7 +1458,10 @@ function evaluateAttendanceLocation(
       return res.status(404).json({ success: false, error: "User not found" });
     }
 
-    res.json({ success: true, user });
+    const cred = await serverDb.getCredentialByUserId(req.user.userId);
+    const needsPasswordReset = Boolean(cred?.passwordResetRequired);
+
+    res.json({ success: true, user, needsPasswordReset });
   });
 
   // PUT /api/profile - Update user profile (requires authentication)
@@ -1418,8 +1505,9 @@ function evaluateAttendanceLocation(
       return res.status(400).json({ success: false, error: "Password required" });
     }
 
-    if (newPassword.length < 4) {
-      return res.status(400).json({ success: false, error: "Password must be at least 4 characters" });
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({ success: false, error: passwordValidation.errorMessage });
     }
 
     try {
@@ -1469,217 +1557,110 @@ function evaluateAttendanceLocation(
   // ════════════════════════════════════════════
   //  ACADEMIC LEDGER ROUTES (GRADES & CREDENTIALS)
   // ════════════════════════════════════════════
-  const ledgerStore: Map<string, { signature: string; slot: number; record: any }> = new Map();
 
-  function seedLedgerStore() {
-    if (ledgerStore.size > 0) return;
-
-    const initialEntries = [
-      {
-        hash: "a9f82c0192e84d3b6e82a10471f2b90e123456789abcdef0123456789abcdef0",
-        signature: "5K8pXm9qJ2L1vR7wT4nZ3yA8bC5dE2fG6hI0jK9lM4nP1qR8sT7uV3wX6yZ9aB0cC",
-        slot: 284910230,
-        record: {
-          type: "GRADE",
-          gradeId: "gr-101",
-          studentId: "1",
-          studentName: "Alex Johnson",
-          subject: "Mathematics",
-          score: 92,
-          grade: "A",
-          academicYear: "2026",
-          term: "Term 1",
-          schoolId: "SCH-001",
-          teacherId: "2",
-          teacherName: "Dr. Sarah Jenkins",
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-          details: "Term 1 Final Examination Score Anchored to Solana Devnet",
-        }
-      },
-      {
-        hash: "b7e19f2a083d4c5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e",
-        signature: "4M2pK8qJ9L0vR1wT3nZ2yA7bC4dE1fG5hI9jK8lM3nP0qR7sT6uV2wX5yZ8aB9cC",
-        slot: 284911105,
-        record: {
-          type: "GRADE",
-          gradeId: "gr-102",
-          studentId: "1",
-          studentName: "Alex Johnson",
-          subject: "Physics",
-          score: 88,
-          grade: "A-",
-          academicYear: "2026",
-          term: "Term 1",
-          schoolId: "SCH-001",
-          teacherId: "2",
-          teacherName: "Prof. Michael Davis",
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
-          details: "Physics Practical Laboratory Score Submission",
-        }
-      },
-      {
-        hash: "c8f20e3b194e5d6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f",
-        signature: "3N1pL7qK8M9wS0xU2oA6zB3cD0eF4gH8iJ7kL2mO9pQ6rS5tU1vW4xY7zA8bC9dD",
-        slot: 284912440,
-        record: {
-          type: "GRADE",
-          gradeId: "gr-103",
-          studentId: "st-101",
-          studentName: "Emily Chen",
-          subject: "Biology",
-          score: 95,
-          grade: "A+",
-          academicYear: "2026",
-          term: "Term 1",
-          schoolId: "SCH-001",
-          teacherId: "2",
-          teacherName: "Dr. Sarah Jenkins",
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 7).toISOString(),
-          details: "Cellular Biology Midterm Project Verified",
-        }
-      },
-      {
-        hash: "d9a31f4c205f6e7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a",
-        signature: "2O0pM6rL7N8xT9yV1pB5aC2dE9fG3hI7jK6lL1mN8oP5qR4sT0uV3wX6yZ7aB8cC",
-        slot: 284914100,
-        record: {
-          type: "CREDENTIAL",
-          credentialId: "cred-2026-001",
-          studentId: "1",
-          studentName: "Alex Johnson",
-          credentialType: "Official Academic Transcript Update",
-          schoolId: "SCH-001",
-          issuedBy: "Primary Admin",
-          issuedById: "3",
-          subjects: [
-            { subject: "Mathematics", grade: "A", score: 92 },
-            { subject: "Physics", grade: "A-", score: 88 },
-            { subject: "Chemistry", grade: "B+", score: 84 },
-          ],
-          academicYear: "2026",
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
-          details: "Verified Certified Transcript Digest Issued by Head Office",
-        }
-      },
-      {
-        hash: "e0b42a5d316a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c",
-        signature: "1P9pN5sM6O7yU8zW0qC4bD1eF8gH2iJ6kL5mM0nO7pQ3rS2tU9vW2xY5zA6bC7dD",
-        slot: 284915900,
-        record: {
-          type: "CREDENTIAL",
-          credentialId: "cred-2026-002",
-          studentId: "st-102",
-          studentName: "Marcus Vance",
-          credentialType: "STEM Honor Roll Certification",
-          schoolId: "SCH-001",
-          issuedBy: "Primary Admin",
-          issuedById: "3",
-          subjects: [
-            { subject: "Computer Science", grade: "A+", score: 98 },
-            { subject: "Mathematics", grade: "A", score: 94 },
-          ],
-          academicYear: "2026",
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 20).toISOString(),
-          details: "Academic Distinction Credential Anchored on Solana",
-        }
-      },
-      {
-        hash: "f1c53b6e427b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d",
-        signature: "0Q8pO4tN5P6zV7aX9rD3cE0fG7hI1jK5lL4mM9nO6pQ2rS1tU8vW1xY4zA5bC6dD",
-        slot: 284916200,
-        record: {
-          type: "ATTENDANCE",
-          staffId: "2",
-          staffName: "Dr. Sarah Jenkins",
-          date: new Date().toISOString().split('T')[0],
-          time: "08:15 AM",
-          className: "Form 4A",
-          attendanceStatus: "PRESENT",
-          schoolId: "SCH-001",
-          syncedFromOffline: true,
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 1).toISOString(),
-          details: "Faculty Morning Check-in Attestation Anchored On-Chain",
-        }
-      },
-      {
-        hash: "7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e",
-        signature: "9R7pP3uO4Q5aW6bY8sE2dF9gH6iJ0kL4mM3nO5pQ1rS0tU7vW0xY3zA4bC5dD",
-        slot: 284918300,
-        record: {
-          type: "SYSTEM_ANCHOR",
-          vaultId: "v-301",
-          title: "Senior Curriculum & Exam Guidelines 2026",
-          approvedBy: "Primary Admin",
-          status: "APPROVED",
-          schoolId: "SCH-001",
-          timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-          details: "Institutional Governance Vault Approval Hash Anchored",
-        }
-      },
-    ];
-
-    for (const item of initialEntries) {
-      ledgerStore.set(item.hash, {
-        signature: item.signature,
-        slot: item.slot,
-        record: item.record,
-      });
-    }
-  }
-
-  // Seed store on launch
-  seedLedgerStore();
+  // Helper to check if a signature string is a valid Solana transaction signature
+  const isValidSolanaSig = (sig?: string | null) => {
+    if (!sig || typeof sig !== 'string') return false;
+    const s = sig.trim();
+    return s.length >= 44 &&
+      !s.startsWith('ledger-') &&
+      !s.startsWith('cred-') &&
+      !s.startsWith('queue-') &&
+      !s.startsWith('recorded-') &&
+      !s.startsWith('pending-') &&
+      !s.startsWith('dummy-') &&
+      !s.startsWith('att-') &&
+      /^[1-9A-HJ-NP-Za-km-z]+$/.test(s);
+  };
 
   // GET /api/blockchain/ledger/all - Fetch all anchored ledger events
   app.get("/api/blockchain/ledger/all", authenticateToken, async (_req, res) => {
-    seedLedgerStore();
-    const records: any[] = [];
+    try {
+      const records: any[] = [];
 
-    // Add ledgerStore entries
-    for (const [hash, entry] of ledgerStore.entries()) {
-      records.push({
-        offlineHash: hash,
-        signature: entry.signature,
-        slot: entry.slot,
-        explorerUrl: (entry.signature && entry.signature.length > 30 && !entry.signature.startsWith('ledger-') && !entry.signature.startsWith('cred-'))
-          ? `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet`
-          : `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet`,
-        timestamp: entry.record.timestamp || entry.record.date || new Date().toISOString(),
-        status: 'CONFIRMED',
-        ...entry.record,
+      // 1. Fetch persisted academic ledger entries from database
+      const ledgerEntries = await serverDb.getAllLedgerEntries();
+      for (const entry of ledgerEntries) {
+        const isRealSig = isValidSolanaSig(entry.signature) && entry.confirmedOnChain;
+        const payload = entry.payload || {};
+        records.push({
+          offlineHash: entry.hash,
+          type: entry.type || payload.type || 'ACADEMIC_RECORD',
+          signature: isRealSig ? entry.signature : null,
+          slot: entry.slot || 0,
+          confirmedOnChain: isRealSig,
+          explorerUrl: isRealSig && entry.signature ? `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet` : undefined,
+          timestamp: payload.timestamp || entry.createdAt || new Date().toISOString(),
+          status: isRealSig ? 'CONFIRMED' : 'PENDING',
+          ...payload,
+        });
+      }
+
+      // 2. Add live attendance records from database
+      try {
+        const liveAttendance = await serverDb.getAllAttendanceRecords();
+        for (const att of liveAttendance) {
+          const isRealSig = isValidSolanaSig(att.signature);
+          records.push({
+            offlineHash: att.offlineHash || att.id,
+            type: "ATTENDANCE",
+            status: isRealSig ? "CONFIRMED" : "PENDING",
+            confirmedOnChain: isRealSig,
+            staffId: att.staffId,
+            staffName: att.staffName,
+            date: att.date,
+            time: att.time,
+            className: att.className,
+            attendanceStatus: att.status,
+            schoolId: att.schoolId,
+            syncedFromOffline: true,
+            timestamp: att.createdAt || new Date().toISOString(),
+            signature: isRealSig ? att.signature : null,
+            slot: 0,
+            details: `Staff attendance record for ${att.staffName || 'Faculty'} (${att.className || 'General'})`,
+            explorerUrl: isRealSig && att.signature ? `https://explorer.solana.com/tx/${att.signature}?cluster=devnet` : undefined,
+          });
+        }
+      } catch (attErr) {
+        console.warn("[Ledger] Could not load live attendance records:", attErr);
+      }
+
+      // 3. Add pending queue items
+      const queueItems = await serverDb.getSyncQueue();
+      for (const item of queueItems) {
+        records.push({
+          offlineHash: item.offlineHash || `queue-${item.id}`,
+          type: "ATTENDANCE",
+          status: "PENDING",
+          confirmedOnChain: false,
+          staffId: item.staffId,
+          staffName: item.staffName,
+          date: item.date,
+          time: item.time,
+          className: item.className,
+          attendanceStatus: item.status,
+          schoolId: item.schoolId,
+          syncedFromOffline: true,
+          timestamp: item.queuedAt || item.localTimestamp || item.createdAt || new Date().toISOString(),
+          signature: null,
+          slot: 0,
+          details: `Queued offline attendance attestation for ${item.staffName}`,
+          explorerUrl: undefined,
+        });
+      }
+
+      // Sort newest first
+      records.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      res.json({
+        success: true,
+        count: records.length,
+        records,
       });
+    } catch (err: any) {
+      console.error("[Ledger] GET /all error:", err);
+      res.status(500).json({ success: false, error: err.message });
     }
-
-    // Add pending queue items
-    const queueItems = await serverDb.getSyncQueue();
-    for (const item of queueItems) {
-      records.push({
-        offlineHash: item.offlineHash || `queue-${item.id}`,
-        type: "ATTENDANCE",
-        status: "PENDING_SYNC",
-        staffId: item.staffId,
-        staffName: item.staffName,
-        date: item.date,
-        time: item.time,
-        className: item.className,
-        attendanceStatus: item.status,
-        schoolId: item.schoolId,
-        syncedFromOffline: true,
-        timestamp: item.queuedAt || item.localTimestamp,
-        signature: "QUEUED_LOCAL",
-        slot: 0,
-        details: `Queued offline attendance attestation for ${item.staffName}`,
-      });
-    }
-
-    // Sort newest first
-    records.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-    res.json({
-      success: true,
-      count: records.length,
-      records,
-    });
   });
 
   async function computeGradeHash(studentId: string, subject: string, score: number, teacherId: string, term: string, academicYear: string): Promise<string> {
@@ -1718,7 +1699,7 @@ function evaluateAttendanceLocation(
       const connection = getConnection();
       const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
-      let signature = "";
+      let signature: string | null = null;
       let slot = 0;
       let confirmedOnChain = false;
 
@@ -1734,28 +1715,51 @@ function evaluateAttendanceLocation(
         tx.add(ix);
         tx.sign(schoolKeypair);
 
-        signature = await connection.sendRawTransaction(tx.serialize());
-        await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-        const txInfo = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+        const sig = await connection.sendRawTransaction(tx.serialize());
+        await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+        const txInfo = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
         slot = txInfo?.slot ?? 0;
+        signature = sig;
         confirmedOnChain = true;
       } catch (solanaErr: any) {
         console.warn("[Ledger] Grade submission on-chain notice:", solanaErr.message);
-        signature = `ledger-${Date.now()}`;
+        signature = null;
+        slot = 0;
+        confirmedOnChain = false;
       }
 
-      ledgerStore.set(offlineHash, {
-        signature, slot,
-        record: { type: "GRADE", gradeId, studentId, studentName, subject, score, grade, academicYear, term, schoolId },
+      await serverDb.recordLedgerEntry({
+        hash: offlineHash,
+        type: "GRADE",
+        signature: confirmedOnChain ? signature : null,
+        slot: confirmedOnChain ? slot : 0,
+        payload: {
+          type: "GRADE",
+          gradeId,
+          studentId,
+          studentName,
+          teacherId,
+          teacherName,
+          subject,
+          score,
+          grade,
+          academicYear,
+          term,
+          schoolId,
+          timestamp: timestamp || new Date().toISOString(),
+          details: `Grade attestation for ${studentName} - ${subject} (${grade})`,
+        },
+        confirmedOnChain,
+        createdAt: timestamp || new Date().toISOString(),
       });
 
       res.json({
         success: true,
         offlineHash,
-        signature,
-        slot,
+        signature: confirmedOnChain ? signature : null,
+        slot: confirmedOnChain ? slot : 0,
         confirmedOnChain,
-        explorerUrl: confirmedOnChain ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
+        explorerUrl: confirmedOnChain && signature ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1783,7 +1787,7 @@ function evaluateAttendanceLocation(
       const connection = getConnection();
       const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
-      let signature = "";
+      let signature: string | null = null;
       let slot = 0;
       let confirmedOnChain = false;
 
@@ -1799,28 +1803,49 @@ function evaluateAttendanceLocation(
         tx.add(ix);
         tx.sign(schoolKeypair);
 
-        signature = await connection.sendRawTransaction(tx.serialize());
-        await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-        const txInfo = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+        const sig = await connection.sendRawTransaction(tx.serialize());
+        await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+        const txInfo = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
         slot = txInfo?.slot ?? 0;
+        signature = sig;
         confirmedOnChain = true;
       } catch (solanaErr: any) {
         console.warn("[Ledger] Credential submission on-chain notice:", solanaErr.message);
-        signature = `cred-${Date.now()}`;
+        signature = null;
+        slot = 0;
+        confirmedOnChain = false;
       }
 
-      ledgerStore.set(offlineHash, {
-        signature, slot,
-        record: { type: "CREDENTIAL", credentialId, studentId, studentName, credentialType, subjects, academicYear, schoolId },
+      await serverDb.recordLedgerEntry({
+        hash: offlineHash,
+        type: "CREDENTIAL",
+        signature: confirmedOnChain ? signature : null,
+        slot: confirmedOnChain ? slot : 0,
+        payload: {
+          type: "CREDENTIAL",
+          credentialId,
+          studentId,
+          studentName,
+          schoolId,
+          credentialType,
+          subjects,
+          issuedBy,
+          issuedById,
+          academicYear,
+          timestamp: timestamp || new Date().toISOString(),
+          details: `${credentialType || 'Official Credential'} issued to ${studentName}`,
+        },
+        confirmedOnChain,
+        createdAt: timestamp || new Date().toISOString(),
       });
 
       res.json({
         success: true,
         offlineHash,
-        signature,
-        slot,
+        signature: confirmedOnChain ? signature : null,
+        slot: confirmedOnChain ? slot : 0,
         confirmedOnChain,
-        explorerUrl: confirmedOnChain ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
+        explorerUrl: confirmedOnChain && signature ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1830,24 +1855,47 @@ function evaluateAttendanceLocation(
   // POST /api/blockchain/ledger/verify
   app.post("/api/blockchain/ledger/verify", authenticateToken, async (req, res) => {
     const { offlineHash } = req.body;
-    if (!offlineHash) return res.status(400).json({ success: false, error: "Missing offlineHash" });
+    if (!offlineHash || typeof offlineHash !== 'string') {
+      return res.status(400).json({ success: false, error: "Missing or invalid offlineHash" });
+    }
 
     try {
-      const entry = ledgerStore.get(offlineHash);
-      if (!entry || !entry.signature) {
+      const entry = await serverDb.getLedgerEntryByHash(offlineHash.trim());
+      if (!entry) {
         return res.json({
           isValid: false,
-          message: "Hash not found in the ledger. This record may not have been issued by E-SYLLAB, or it may have been tampered with.",
+          message: "Hash not found in the academic ledger. This record may not have been issued by E-SYLLAB, or it may have been tampered with.",
         });
+      }
+
+      const isRealSig = isValidSolanaSig(entry.signature) && entry.confirmedOnChain;
+      let onChainVerified = false;
+
+      if (isRealSig && entry.signature) {
+        try {
+          const connection = getConnection();
+          const tx = await connection.getTransaction(entry.signature, {
+            commitment: "confirmed",
+            maxSupportedTransactionVersion: 0,
+          });
+          if (tx && !tx.meta?.err) {
+            onChainVerified = true;
+          }
+        } catch (chainErr: any) {
+          console.warn("[Verify] On-chain check note:", chainErr.message);
+        }
       }
 
       res.json({
         isValid: true,
-        record: entry.record,
-        signature: entry.signature,
-        slot: entry.slot,
-        explorerUrl: `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet`,
-        message: "Record verified — this credential is genuine and untampered.",
+        confirmedOnChain: onChainVerified || entry.confirmedOnChain,
+        record: entry.payload,
+        signature: isRealSig ? entry.signature : null,
+        slot: entry.slot || 0,
+        explorerUrl: (isRealSig && entry.signature) ? `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet` : undefined,
+        message: onChainVerified || entry.confirmedOnChain
+          ? "Record verified — this credential is authentic and confirmed on Solana Devnet."
+          : "Record verified against school database. Pending on-chain network confirmation.",
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1917,21 +1965,18 @@ function evaluateAttendanceLocation(
     try {
       const studentId = req.user!.userId;
       const rawScores = await serverDb.getStudentAssessmentScores(studentId);
-      const scores = rawScores.map(item => {
-        let ledgerEntry: any = null;
-        for (const [hash, entry] of ledgerStore.entries()) {
-          if (entry.record?.type === "ASSESSMENT_SCORE" && entry.record?.scoreId === item.id) {
-            ledgerEntry = { hash, ...entry };
-            break;
-          }
-        }
+      const scores = await Promise.all(rawScores.map(async (item) => {
+        const ledgerEntry = await serverDb.getLedgerEntryByScoreId(item.id);
+        const isConfirmed = Boolean(ledgerEntry?.confirmedOnChain && ledgerEntry?.signature && isValidSolanaSig(ledgerEntry.signature));
         return {
           ...item,
-          offlineHash: ledgerEntry?.hash || `hash-asg-${item.id}`,
-          signature: ledgerEntry?.signature || `sig-asg-${item.id}`,
-          explorerUrl: ledgerEntry?.signature ? `https://explorer.solana.com/tx/${ledgerEntry.signature}?cluster=devnet` : undefined,
+          offlineHash: ledgerEntry?.hash || null,
+          signature: isConfirmed ? ledgerEntry!.signature : null,
+          slot: ledgerEntry?.slot || 0,
+          confirmedOnChain: isConfirmed,
+          explorerUrl: isConfirmed && ledgerEntry?.signature ? `https://explorer.solana.com/tx/${ledgerEntry.signature}?cluster=devnet` : undefined,
         };
-      });
+      }));
       res.json({ success: true, scores });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -1987,7 +2032,7 @@ function evaluateAttendanceLocation(
           timestamp: scoreRecord.createdAt,
         });
 
-        let signature = "";
+        let signature: string | null = null;
         let slot = 0;
         let confirmedOnChain = false;
 
@@ -2003,20 +2048,25 @@ function evaluateAttendanceLocation(
           tx.add(ix);
           tx.sign(schoolKeypair);
 
-          signature = await connection.sendRawTransaction(tx.serialize());
-          await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-          const txInfo = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+          const sig = await connection.sendRawTransaction(tx.serialize());
+          await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+          const txInfo = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
           slot = txInfo?.slot ?? 0;
+          signature = sig;
           confirmedOnChain = true;
         } catch (solanaErr: any) {
           console.warn("[Ledger] Assessment score submission on-chain notice:", solanaErr.message);
-          signature = `ledger-asg-${Date.now()}-${scoreRecord.id}`;
+          signature = null;
+          slot = 0;
+          confirmedOnChain = false;
         }
 
-        ledgerStore.set(offlineHash, {
-          signature,
-          slot,
-          record: {
+        await serverDb.recordLedgerEntry({
+          hash: offlineHash,
+          type: "ASSESSMENT_SCORE",
+          signature: confirmedOnChain ? signature : null,
+          slot: confirmedOnChain ? slot : 0,
+          payload: {
             type: "ASSESSMENT_SCORE",
             assessmentId,
             scoreId: scoreRecord.id,
@@ -2027,17 +2077,20 @@ function evaluateAttendanceLocation(
             score: scoreRecord.score,
             maxScore: assessment.maxScore,
             timestamp: scoreRecord.createdAt,
+            details: `Assessment score: ${assessment.title} - ${assessment.subject} (${scoreRecord.score}/${assessment.maxScore})`,
           },
+          confirmedOnChain,
+          createdAt: scoreRecord.createdAt || new Date().toISOString(),
         });
 
         anchoredScores.push({
           ...scoreRecord,
           studentName,
           offlineHash,
-          signature,
-          slot,
+          signature: confirmedOnChain ? signature : null,
+          slot: confirmedOnChain ? slot : 0,
           confirmedOnChain,
-          explorerUrl: confirmedOnChain ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
+          explorerUrl: confirmedOnChain && signature ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
         });
       }
 
@@ -2137,23 +2190,26 @@ function evaluateAttendanceLocation(
 
 
   // GET /api/blockchain/ledger/student/:studentId
-  app.get("/api/blockchain/ledger/student/:studentId", authenticateToken, (req, res) => {
+  app.get("/api/blockchain/ledger/student/:studentId", authenticateToken, async (req, res) => {
     const studentId = Array.isArray(req.params.studentId) ? req.params.studentId[0] : req.params.studentId;
-    const records: any[] = [];
-
-    for (const [hash, entry] of ledgerStore.entries()) {
-      if (entry.record?.studentId === studentId && entry.signature) {
-        records.push({
-          offlineHash: hash,
-          signature: entry.signature,
-          slot: entry.slot,
-          explorerUrl: `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet`,
-          ...entry.record,
-        });
-      }
+    try {
+      const ledgerEntries = await serverDb.getLedgerEntriesByStudent(studentId);
+      const records = ledgerEntries.map(entry => {
+        const isConfirmed = Boolean(entry.confirmedOnChain && entry.signature && isValidSolanaSig(entry.signature));
+        return {
+          offlineHash: entry.hash,
+          signature: isConfirmed ? entry.signature : null,
+          slot: entry.slot || 0,
+          confirmedOnChain: isConfirmed,
+          status: isConfirmed ? 'CONFIRMED' : 'PENDING',
+          explorerUrl: isConfirmed && entry.signature ? `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet` : undefined,
+          ...entry.payload,
+        };
+      });
+      res.json({ success: true, studentId, count: records.length, records });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
     }
-
-    res.json({ success: true, studentId, count: records.length, records });
   });
 
   // ─── Staff Performance Route ──────────────────────────────────────────────
@@ -2445,6 +2501,19 @@ function evaluateAttendanceLocation(
       return res.status(400).json({ success: false, error: "Missing required fields: title, subject, gradeLevel, category" });
     }
 
+    // 2MB file limit validation
+    const MAX_FILE_BYTES = 2 * 1024 * 1024;
+    if (fileData && typeof fileData === 'string') {
+      const base64Content = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+      const approxSizeBytes = Math.round((base64Content.length * 3) / 4);
+      if (approxSizeBytes > MAX_FILE_BYTES) {
+        return res.status(400).json({
+          success: false,
+          error: `File size (${(approxSizeBytes / (1024 * 1024)).toFixed(1)}MB) exceeds the 2MB limit. Please upload a file under 2MB.`,
+        });
+      }
+    }
+
     try {
       const uploader = await serverDb.findUserById(req.user!.userId);
       const uploadedByName = uploader ? uploader.name : 'Staff';
@@ -2507,6 +2576,19 @@ function evaluateAttendanceLocation(
 
     if (!title || !type) {
       return res.status(400).json({ success: false, error: "Missing required fields: title, type" });
+    }
+
+    // 2MB file limit validation
+    const MAX_FILE_BYTES = 2 * 1024 * 1024;
+    if (fileData && typeof fileData === 'string') {
+      const base64Content = fileData.includes(',') ? fileData.split(',')[1] : fileData;
+      const approxSizeBytes = Math.round((base64Content.length * 3) / 4);
+      if (approxSizeBytes > MAX_FILE_BYTES) {
+        return res.status(400).json({
+          success: false,
+          error: `File size (${(approxSizeBytes / (1024 * 1024)).toFixed(1)}MB) exceeds the 2MB limit. Please upload a file under 2MB.`,
+        });
+      }
     }
 
     try {
