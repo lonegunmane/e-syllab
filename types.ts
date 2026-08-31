@@ -27,6 +27,7 @@ export interface User {
   gender?: 'Male' | 'Female' | string;
   residentialAddress?: string;
   consentGivenAt?: string;
+  emailVerifiedAt?: string | null;
   // Teacher specific fields
   teachingGrades?: string[];
   teachingClasses?: string[];
@@ -131,6 +132,7 @@ export interface AuthCredential {
   email?: string;
   passwordHash: string;
   passwordResetRequired?: boolean;
+  emailVerifiedAt?: string | null;
   lastLogin?: string | null;
   createdAt?: string;
   updatedAt?: string;

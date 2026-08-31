@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
   "isProfileComplete" BOOLEAN DEFAULT FALSE,
   active BOOLEAN DEFAULT TRUE,
   "consentGivenAt" TEXT,
+  "emailVerifiedAt" TEXT,
   "createdAt" TEXT NOT NULL,
   "updatedAt" TEXT NOT NULL
 );
@@ -223,3 +224,23 @@ CREATE TABLE IF NOT EXISTS academic_ledger (
 );
 CREATE INDEX IF NOT EXISTS idx_academic_ledger_type ON academic_ledger(type);
 CREATE INDEX IF NOT EXISTS idx_academic_ledger_created_at ON academic_ledger("createdAt" DESC);
+
+-- 17. Invited Users Table & Index (Admin-invited Faculty & Staff)
+CREATE TABLE IF NOT EXISTS invited_users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('TEACHER', 'ADMIN')),
+  "invitedBy" TEXT,
+  "createdAt" TEXT NOT NULL,
+  "acceptedAt" TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_invited_users_email ON invited_users(LOWER(email));
+
+-- 18. Auth Email Rate Limits Table
+CREATE TABLE IF NOT EXISTS auth_email_rate_limits (
+  email TEXT PRIMARY KEY,
+  count INTEGER NOT NULL,
+  "windowStart" BIGINT NOT NULL
+);
+

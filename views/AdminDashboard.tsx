@@ -1,10 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip, ResponsiveContainer, Cell 
-} from 'recharts';
-import { 
   Users, UserPlus, Database, Settings, Search, 
   ShieldCheck, CheckCircle, XCircle, Loader2, Mail, Lock,
   User as UserIcon, Phone, School, Home, Save, Pencil, GraduationCap, Briefcase, Calendar, Plus, FileText, BookOpen, X, Trash2, Bell
@@ -24,17 +20,7 @@ import { AssessmentView } from '../components/AssessmentView';
 import { NotificationSendForm } from '../components/NotificationSendForm';
 import { PasswordStrengthIndicator } from '../components/PasswordStrengthIndicator';
 import { validatePassword } from '../services/passwordValidation';
-
-const staffActivity = [
-  { name: 'Jan', activity: 400 },
-  { name: 'Feb', activity: 300 },
-  { name: 'Mar', activity: 600 },
-  { name: 'Apr', activity: 800 },
-  { name: 'May', activity: 500 },
-  { name: 'Jun', activity: 900 },
-];
-
-const COLORS = ['#7c3aed', '#a78bfa', '#c4b5fd', '#8b5cf6'];
+import { CheckRecordsView } from '../components/CheckRecordsView';
 
 interface AdminDashboardProps {
   user: User;
@@ -646,8 +632,8 @@ const VaultApprovals: React.FC = () => {
         <div className="glass-card rounded-3xl overflow-hidden animate-in fade-in">
             <div className="p-6 border-b border-white/5 flex items-center justify-between">
                 <div>
-                    <h2 className="font-bold text-white uppercase tracking-tight">Vault Approvals Queue</h2>
-                    <p className="text-xs text-slate-400">Secure verification of faculty submissions.</p>
+                    <h2 className="font-bold text-white uppercase tracking-tight">Papers waiting</h2>
+                    <p className="text-xs text-slate-400">Teacher papers waiting for review.</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
@@ -661,9 +647,9 @@ const VaultApprovals: React.FC = () => {
                     <thead className="bg-white/5 text-slate-500 font-bold uppercase text-[10px] tracking-widest">
                         <tr>
                             <th className="px-6 py-4">Document / Identity</th>
-                            <th className="px-6 py-4">Faculty Member</th>
+                            <th className="px-6 py-4">Teacher</th>
                             <th className="px-6 py-4">Classification</th>
-                            <th className="px-6 py-4">Evidence Hash</th>
+                            <th className="px-6 py-4">Record code</th>
                             <th className="px-6 py-4 text-right">Approval</th>
                         </tr>
                     </thead>
@@ -728,7 +714,7 @@ const VaultApprovals: React.FC = () => {
                                     <div className="flex flex-col items-center gap-2">
                                         <ShieldCheck className="w-12 h-12 opacity-10 mb-2" />
                                         <p>Approval queue is currently clear.</p>
-                                        <p className="text-[10px] uppercase tracking-widest not-italic">All faculty submissions verified on-chain.</p>
+                                        <p className="text-[10px] uppercase tracking-widest not-italic">All teacher papers have been reviewed.</p>
                                     </div>
                                 </td>
                             </tr>
@@ -1249,30 +1235,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
     setIsCreatingStaff(true);
     setStaffMsg(null);
 
-    const validation = validatePassword(staffPassword);
-    if (!validation.isValid) {
-      setStaffMsg({ type: 'error', text: validation.errorMessage });
-      setIsCreatingStaff(false);
-      return;
-    }
-
     try {
         await createUserByAdmin({
-            name: staffName, email: staffEmail, role: staffRole,
-            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(staffName)}`
-        }, staffPassword);
+            name: staffName.trim(), 
+            email: staffEmail.trim().toLowerCase(), 
+            role: staffRole,
+            avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(staffName.trim())}`
+        });
 
         // Sync with local db if available for fallback/counts
         try {
           await db.registerUser({
-              name: staffName, email: staffEmail, role: staffRole,
-              avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(staffName)}`
-          }, staffPassword);
+              name: staffName.trim(), 
+              email: staffEmail.trim().toLowerCase(), 
+              role: staffRole,
+              avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(staffName.trim())}`
+          }, '1357');
         } catch {
           // Ignore if local registration fails or already exists
         }
 
-        setStaffMsg({type: 'success', text: `${staffRole === UserRole.ADMIN ? 'Administrator' : 'Faculty'} account created successfully.`});
+        setStaffMsg({
+          type: 'success', 
+          text: `${staffName.trim()} can now open E-SYLLAB, enter this email, and choose their password.`
+        });
         setStaffName(''); setStaffEmail(''); setStaffPassword('');
         refreshCounts();
     } catch (err: any) { 
@@ -1293,8 +1279,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
     <div className="max-w-7xl mx-auto space-y-8">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">System Control Panel</h1>
-          <p className="text-slate-400">Secure real-time monitoring of the E-SYLLAB ecosystem.</p>
+          <h1 className="text-2xl font-bold text-white tracking-tight">School home</h1>
+          <p className="text-slate-400">See students, teachers, and school records.</p>
         </div>
         <div className="flex items-center gap-4">
            <div className="bg-white/5 backdrop-blur-md rounded-full px-4 py-2 border border-white/10 flex items-center gap-3">
@@ -1395,8 +1381,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <LiveNetworkActivity />
             <div className="glass-card p-6 rounded-2xl relative overflow-hidden">
-              <h2 className="font-bold text-white mb-2 flex items-center gap-2"><UserPlus className="w-5 h-5 text-primary-400" /> Onboard Personnel</h2>
-              <p className="text-xs text-slate-400 mb-6 leading-relaxed">System-provisioned accounts for Faculty and Administrators. Account limits are strictly enforced.</p>
+              <h2 className="font-bold text-white mb-2 flex items-center gap-2"><UserPlus className="w-5 h-5 text-primary-400" /> Add a teacher</h2>
+              <p className="text-xs text-slate-400 mb-6 leading-relaxed">Add accounts for teachers and administrators.</p>
               
               {staffMsg && (
                 <div className={`text-xs p-3 rounded-xl mb-4 animate-in slide-in-from-top-2 border ${
@@ -1417,7 +1403,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                         : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
                     }`}
                   >
-                    Faculty
+                    Teacher
                   </button>
                   <button
                     type="button"
@@ -1441,10 +1427,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Email Address</label>
                     <input required type="email" placeholder="john.smith@esyllab.edu" value={staffEmail} onChange={e=>setStaffEmail(e.target.value)} className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 transition-all text-white placeholder:text-slate-600" />
                 </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Temporary Password</label>
-                    <input required type="password" placeholder="••••••••" value={staffPassword} onChange={e=>setStaffPassword(e.target.value)} className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 transition-all text-white placeholder:text-slate-600" />
-                    <PasswordStrengthIndicator password={staffPassword} />
+                <div className="p-3 bg-white/5 border border-white/10 rounded-xl">
+                  <p className="text-xs text-slate-400">
+                    No password needed. {staffRole === UserRole.ADMIN ? 'The admin' : 'The teacher'} will enter this email on first login and choose their own password.
+                  </p>
                 </div>
                 <button 
                   disabled={isCreatingStaff || (staffRole === UserRole.ADMIN && totalAdmins >= 2)} 
@@ -1453,7 +1439,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                   }`}
                 >
                    {isCreatingStaff ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                   Provision Account
+                   Add {staffRole === UserRole.ADMIN ? 'Admin' : 'Teacher'}
                 </button>
               </form>
               <Users className="absolute -bottom-10 -right-10 w-32 h-32 text-white/5 pointer-events-none" />
@@ -1474,12 +1460,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
       {activeTab === 'staff' && (
         <div className="space-y-8">
           <StaffPerformanceDashboard />
-          <UserManager role={UserRole.TEACHER} title="Faculty Account Management" onDelete={refreshCounts} />
+          <UserManager role={UserRole.TEACHER} title="Teacher Accounts" onDelete={refreshCounts} />
         </div>
       )}
       {activeTab === 'students' && <UserManager role={UserRole.STUDENT} title="Student Directory" onDelete={refreshCounts} />}
       {(activeTab === 'profile' || activeTab === 'settings') && <SettingsView user={user} onUpdateUser={onUpdateUser} onLogout={onLogout} />}
       {activeTab === 'vault' && <VaultApprovals />}
+      {activeTab === 'check-records' && <CheckRecordsView />}
 
       <MetricTrackerModal 
         metric={selectedMetricTracker} 

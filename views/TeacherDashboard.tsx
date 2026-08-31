@@ -141,11 +141,11 @@ const DetailedStudentList: React.FC = () => {
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="p-3.5 rounded-xl bg-white/5 border border-white/5 space-y-1">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Grade Level</span>
-                  <p className="text-white font-semibold">{selectedStudent.grade || selectedStudent.gradeLevel || 'Grade 10'}</p>
+                  <p className="text-white font-semibold">{selectedStudent.grade || selectedStudent.gradeLevel || 'Not set'}</p>
                 </div>
                 <div className="p-3.5 rounded-xl bg-white/5 border border-white/5 space-y-1">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Class / Stream</span>
-                  <p className="text-white font-semibold">{selectedStudent.className || 'Class A'}</p>
+                  <p className="text-white font-semibold">{selectedStudent.className || 'Not set'}</p>
                 </div>
                 <div className="p-3.5 rounded-xl bg-white/5 border border-white/5 space-y-1">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contact Number</span>

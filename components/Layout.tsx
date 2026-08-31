@@ -136,6 +136,7 @@ export const Layout: React.FC<LayoutProps> = ({
           { id: 'timetable',      icon: Calendar,        label: 'Timetable'                                                  },
           { id: 'announcements',  icon: BookOpen,        label: 'Notices'                                                    },
           { id: 'vault',          icon: ShieldCheck,     label: 'Approvals',  badge: pendingVaultCount > 0 ? pendingVaultCount : undefined },
+          { id: 'check-records',  icon: Database,        label: 'Check records'                                              },
           { id: 'communicate',    icon: MessageSquare,   label: 'Messages'                                                   },
           { id: 'assessments',    icon: BarChart2,       label: 'Assessments'                                                },
           { id: 'grades',         icon: TrendingUp,      label: 'Grades'                                                     },

@@ -233,7 +233,7 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
       });
 
       const rec: AttendanceRecord = {
-        id:                data.signature || `rec-${Date.now()}`,
+        id:                data.id || (data.confirmedOnChain && data.signature ? data.signature : `att-${Date.now()}`),
         staffId:           user.id,
         staffName:         user.name,
         date:              recordedDate,
@@ -241,12 +241,12 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
         className,
         status,
         offlineHash:       data.offlineHash || '',
-        signature:         data.signature,
+        signature:         data.confirmedOnChain && data.signature ? data.signature : undefined,
         slot:              data.slot,
         syncedFromOffline: false,
-        confirmedOnChain:  data.confirmedOnChain ?? true,
+        confirmedOnChain:  Boolean(data.confirmedOnChain),
         timestamp:         now.toISOString(),
-        explorerUrl:       data.explorerUrl,
+        explorerUrl:       data.confirmedOnChain && data.signature ? data.explorerUrl : undefined,
         latitude:          data.latitude ?? location?.latitude ?? null,
         longitude:         data.longitude ?? location?.longitude ?? null,
         locationFlagged:   data.locationFlagged ?? false,
@@ -336,7 +336,7 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
             Mark Attendance
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            Your attendance is saved securely and cannot be altered.
+            Your attendance is saved. If the lock is waiting, the school still has the record.
           </p>
         </div>
         <div className="flex items-center gap-1.5 text-xs mt-1">
@@ -349,8 +349,8 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
               <Wifi className="w-3.5 h-3.5" /> Online
             </span>
           ) : (
-            <span className="text-rose-400 flex items-center gap-1.5">
-              <WifiOff className="w-3.5 h-3.5" /> Offline
+            <span className="text-amber-400 flex items-center gap-1.5">
+              <WifiOff className="w-3.5 h-3.5" /> Working locally
             </span>
           )}
           <button
@@ -496,23 +496,23 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
             }
             <div className="flex-1">
               <p className={`font-bold text-base ${lastRecord.confirmedOnChain ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {lastRecord.confirmedOnChain ? 'Attendance saved & verified ✓' : 'Saved to your device'}
+                {lastRecord.confirmedOnChain
+                  ? 'Saved. This cannot be changed.'
+                  : lastRecord.syncedFromOffline
+                  ? 'Saved on this device. Will send when internet is back.'
+                  : 'Saved at school. Waiting to lock.'}
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                {lastRecord.confirmedOnChain
-                  ? `${user.name}${lastRecord.className ? ' · ' + lastRecord.className : ''} · ${lastRecord.date} ${lastRecord.time} · ${STATUS_CONFIG[lastRecord.status].label} · Permanently recorded`
-                  : 'This will be automatically secured the next time you have internet.'}
+                {`${user.name}${lastRecord.className ? ' · ' + lastRecord.className : ''} · ${lastRecord.date} ${lastRecord.time} · ${STATUS_CONFIG[lastRecord.status].label}`}
               </p>
-              {lastRecord.confirmedOnChain && (
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <button
-                    onClick={() => setTxState('idle')}
-                    className="px-4 py-2 bg-primary-600 text-white text-xs font-bold rounded-xl hover:bg-primary-700 transition-all active:scale-95"
-                  >
-                    Mark another day
-                  </button>
-                </div>
-              )}
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => setTxState('idle')}
+                  className="px-4 py-2 bg-primary-600 text-white text-xs font-bold rounded-xl hover:bg-primary-700 transition-all active:scale-95"
+                >
+                  Mark another day
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -589,11 +589,15 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
                         </span>
                         {r.confirmedOnChain ? (
                           <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400">
-                            <CheckCircle className="w-3.5 h-3.5" /> Verified
+                            <CheckCircle className="w-3.5 h-3.5" /> Saved. This cannot be changed.
+                          </span>
+                        ) : r.syncedFromOffline ? (
+                          <span className="flex items-center gap-1 text-[11px] font-bold text-amber-400">
+                            <Clock className="w-3.5 h-3.5" /> Saved on this device. Will send when internet is back.
                           </span>
                         ) : (
                           <span className="flex items-center gap-1 text-[11px] font-bold text-amber-400">
-                            <Clock className="w-3.5 h-3.5" /> Pending
+                            <Clock className="w-3.5 h-3.5" /> Saved at school. Waiting to lock.
                           </span>
                         )}
                       </div>

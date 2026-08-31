@@ -67,7 +67,7 @@ export const StaffPerformanceDashboard: React.FC = () => {
           ...prev,
           [rec.id]: {
             status: 'verified',
-            message: res.message || 'Cryptographic proof verified — record is authentic and untampered.'
+            message: res.message || 'Record verified — this attendance record matches.'
           }
         }));
       } else {
@@ -75,7 +75,7 @@ export const StaffPerformanceDashboard: React.FC = () => {
           ...prev,
           [rec.id]: {
             status: 'mismatch',
-            message: res?.message || 'Hash mismatch — possible tampering detected!'
+            message: res?.message || 'Record mismatch — details do not match.'
           }
         }));
       }
@@ -408,10 +408,10 @@ export const StaffPerformanceDashboard: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                    Attendance Geofence Verification Ledger
+                    Teacher Attendance &amp; Location Review
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Evidentiary audit of teacher attendance records, GPS coordinate proofs, and tamper-evident hashes.
+                    Review teacher attendance records and location checks.
                   </p>
                 </div>
               </div>
@@ -503,7 +503,7 @@ export const StaffPerformanceDashboard: React.FC = () => {
                       <th className="p-4">Status</th>
                       <th className="p-4">Geofence &amp; Location</th>
                       <th className="p-4">Coordinates</th>
-                      <th className="p-4 text-right">Integrity Hash</th>
+                      <th className="p-4 text-right">Record code</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
@@ -607,8 +607,8 @@ export const StaffPerformanceDashboard: React.FC = () => {
                                       href={solanaExplorerUrl}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      title={`View on Solana Explorer:\n${signature}`}
-                                      className="text-primary-400 hover:text-primary-300 hover:underline font-mono text-[11px] inline-flex items-center gap-1 transition-colors group/link"
+                                      title={`Open public proof`}
+                                      className="text-emerald-400 hover:text-emerald-300 hover:underline font-mono text-[11px] inline-flex items-center gap-1 transition-colors group/link"
                                     >
                                       <span>
                                         {signature.length > 18
@@ -628,7 +628,7 @@ export const StaffPerformanceDashboard: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => handleCopy(rec.id, signature)}
-                                    title="Copy full transaction signature"
+                                    title="Copy record code"
                                     className="p-0.5 text-slate-500 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer ml-0.5"
                                   >
                                     {copiedId === rec.id ? (
@@ -650,7 +650,7 @@ export const StaffPerformanceDashboard: React.FC = () => {
                                   <button
                                     type="button"
                                     onClick={() => handleCopy(rec.id, rec.offlineHash!)}
-                                    title="Copy hash"
+                                    title="Copy record code"
                                     className="p-0.5 text-slate-500 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer ml-0.5"
                                   >
                                     {copiedId === rec.id ? (
@@ -668,24 +668,24 @@ export const StaffPerformanceDashboard: React.FC = () => {
                               {isVerifying ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary-500/10 text-primary-300 border border-primary-500/20 text-[10px] font-bold">
                                   <Loader2 className="w-3 h-3 animate-spin text-primary-400" />
-                                  <span>Verifying...</span>
+                                  <span>Checking...</span>
                                 </span>
                               ) : vStatus?.status === 'verified' ? (
                                 <button
                                   type="button"
                                   onClick={() => handleVerifyRow(rec)}
                                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-950/60 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold hover:bg-emerald-900/60 transition-colors cursor-pointer"
-                                  title={vStatus.message || 'Cryptographic proof verified — click to re-verify'}
+                                  title="Record matches"
                                 >
                                   <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                                  <span>Verified</span>
+                                  <span>Matches</span>
                                 </button>
                               ) : vStatus?.status === 'mismatch' ? (
                                 <button
                                   type="button"
                                   onClick={() => handleVerifyRow(rec)}
                                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-950/60 text-rose-300 border border-rose-500/30 text-[10px] font-bold hover:bg-rose-900/60 transition-colors cursor-pointer"
-                                  title={vStatus.message || 'Integrity mismatch detected — click to re-verify'}
+                                  title="Record mismatch"
                                 >
                                   <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                                   <span>Mismatch</span>
@@ -695,10 +695,10 @@ export const StaffPerformanceDashboard: React.FC = () => {
                                   type="button"
                                   onClick={() => handleVerifyRow(rec)}
                                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary-500/10 hover:bg-primary-500/20 text-primary-400 hover:text-primary-300 border border-primary-500/30 text-[10px] font-bold transition-all active:scale-95 cursor-pointer"
-                                  title="Verify cryptographic integrity against recorded parameters"
+                                  title="Check this record"
                                 >
                                   <ShieldCheck className="w-3.5 h-3.5" />
-                                  <span>Verify</span>
+                                  <span>Check</span>
                                 </button>
                               )}
                             </div>

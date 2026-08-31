@@ -27,8 +27,6 @@ const DEFAULT_PERIODS = [
   'Period 8 (14:50 - 15:35)',
 ];
 
-const STANDARD_CLASSES = ['Grade 10A', 'Grade 11B', 'Grade 12A'];
-
 // Color mapping helper for subjects
 function getSubjectBadgeStyle(subject: string) {
   const subLower = (subject || '').toLowerCase();
@@ -55,7 +53,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({ currentUser }) => 
   const [teachers, setTeachers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState<string>(
-    currentUser.role === UserRole.STUDENT && currentUser.grade ? currentUser.grade : 'Grade 10A'
+    currentUser.role === UserRole.STUDENT && currentUser.grade ? currentUser.grade : 'ALL'
   );
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -67,7 +65,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({ currentUser }) => 
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Form Fields
-  const [formClassName, setFormClassName] = useState('Grade 10A');
+  const [formClassName, setFormClassName] = useState('');
   const [formDayOfWeek, setFormDayOfWeek] = useState('Monday');
   const [formPeriod, setFormPeriod] = useState(DEFAULT_PERIODS[0]);
   const [formSubject, setFormSubject] = useState('');
@@ -101,7 +99,8 @@ export const TimetableView: React.FC<TimetableViewProps> = ({ currentUser }) => 
 
   const handleOpenAddModal = (day?: string, period?: string) => {
     setEditingEntry(null);
-    setFormClassName(selectedClass === 'ALL' ? 'Grade 10A' : selectedClass);
+    const existingClasses = Array.from(new Set(timetables.map(t => t.className).filter(Boolean))).sort();
+    setFormClassName(selectedClass === 'ALL' ? (existingClasses[0] || '') : selectedClass);
     setFormDayOfWeek(day || 'Monday');
     setFormPeriod(period || DEFAULT_PERIODS[0]);
     setFormSubject('');
@@ -213,11 +212,10 @@ export const TimetableView: React.FC<TimetableViewProps> = ({ currentUser }) => 
     return matchesClass && matchesSearch;
   });
 
-  // Extract all unique class names present in data or defaults
-  const availableClasses = Array.from(new Set([
-    ...STANDARD_CLASSES,
-    ...timetables.map(t => t.className)
-  ])).sort();
+  // Extract all unique class names present in data
+  const availableClasses = Array.from(new Set(
+    timetables.map(t => t.className).filter(Boolean)
+  )).sort();
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in">
@@ -463,10 +461,10 @@ export const TimetableView: React.FC<TimetableViewProps> = ({ currentUser }) => 
                                     onClick={() => handleOpenAddModal(day, periodStr)}
                                     className="opacity-0 group-hover/empty:opacity-100 flex items-center gap-1 text-[10px] font-bold text-primary-400 hover:text-primary-300 px-2 py-1 bg-primary-950/40 rounded-lg border border-primary-500/20 transition-all"
                                   >
-                                    <Plus className="w-3 h-3" /> Add Slot
+                                    <Plus className="w-3 h-3" /> Add lesson
                                   </button>
                                 ) : (
-                                  <span className="text-[10px] text-slate-600 italic">Free Period</span>
+                                  <span className="text-[10px] text-slate-500 italic">No lesson yet</span>
                                 )}
                               </div>
                             )}

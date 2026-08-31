@@ -20,6 +20,7 @@ import { User, UserRole } from '../types';
 import {
   login,
   register,
+  acceptInvite,
   sendTwoFactorOtp,
   verifyLoginTwoFactor,
   sendPasswordResetOtp,
@@ -42,13 +43,17 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
-  // 2FA States
-  const [authStep, setAuthStep] = useState<'credentials' | 'login_2fa' | 'register_2fa'>('credentials');
+  // 2FA & Onboarding States
+  const [authStep, setAuthStep] = useState<'credentials' | 'login_2fa' | 'register_2fa' | 'set_password'>('credentials');
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
   const [pendingRole, setPendingRole] = useState<UserRole | null>(null);
   const [devCodeNotice, setDevCodeNotice] = useState<string | null>(null);
   const [isResending, setIsResending] = useState(false);
+
+  // Invited Teacher Password Setup
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
 
   // Forgot Password States
   const [forgotPasswordStep, setForgotPasswordStep] = useState<'none' | 'email' | 'otp'>('none');
@@ -139,6 +144,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
       if (isLogin) {
         try {
           const result = await login(trimmedEmail, password);
+
+          if (result.mustSetPassword) {
+            setPendingEmail(trimmedEmail);
+            setInviteEmail(trimmedEmail);
+            setAuthStep('set_password');
+            setSuccessMessage("Your email was added by the school. Please choose your password.");
+            return;
+          }
 
           if (result.requires2FA) {
             setPendingEmail(trimmedEmail);
@@ -272,6 +285,40 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
       setError(err.message || "Failed to resend code. Please try again.");
     } finally {
       setIsResending(false);
+    }
+  };
+
+  const handleAcceptInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetEmail = (inviteEmail || email || '').trim().toLowerCase();
+    if (!targetEmail) {
+      setError("Please enter your email address.");
+      return;
+    }
+
+    const validation = validatePassword(invitePassword);
+    if (!validation.isValid) {
+      setError(validation.errorMessage);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await acceptInvite(targetEmail, invitePassword);
+      if (result.success && result.user) {
+        setSuccessMessage("Password set successfully! Signing in...");
+        onLoginSuccess({
+          user: result.user,
+          needsPasswordReset: false,
+        });
+        return;
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to set password. Please check with your school administrator.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -628,6 +675,85 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
             </form>
           )}
 
+          {/* STEP 3: INVITED STAFF / SET PASSWORD */}
+          {authStep === 'set_password' && (
+            <form onSubmit={handleAcceptInvite} className="space-y-4 animate-in fade-in zoom-in-95">
+              <div className="bg-primary-950/40 border border-primary-500/30 p-3.5 rounded-xl text-center space-y-1.5">
+                <div className="w-9 h-9 bg-primary-600/30 border border-primary-500/40 rounded-lg flex items-center justify-center mx-auto text-primary-300">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <h3 className="text-xs font-bold text-white">Create Your Password</h3>
+                <p className="text-xs text-slate-400">
+                  Your email was added by the school. Choose your password to complete setup.
+                </p>
+              </div>
+
+              <div className="space-y-1 sm:space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 ml-1 uppercase tracking-wider">
+                  Email Address
+                </label>
+                <div className="relative group">
+                  <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    required
+                    type="email"
+                    value={inviteEmail || email}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="teacher@school.edu"
+                    className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all text-xs sm:text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1 sm:space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 ml-1 uppercase tracking-wider">
+                  Choose New Password
+                </label>
+                <div className="relative group">
+                  <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    required
+                    type="password"
+                    value={invitePassword}
+                    onChange={(e) => setInvitePassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-primary-500 text-white placeholder:text-slate-500 transition-all text-xs sm:text-sm"
+                  />
+                </div>
+                <PasswordStrengthIndicator password={invitePassword} />
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthStep('credentials');
+                    setInvitePassword('');
+                    setError(null);
+                  }}
+                  className="px-3.5 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/10 cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || !invitePassword}
+                  className="flex-1 bg-primary-600 hover:bg-primary-500 text-white py-2.5 sm:py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-primary-900/40 border border-primary-400/20 disabled:opacity-50 cursor-pointer"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Saving...
+                    </>
+                  ) : (
+                    <>
+                      Set Password & Sign In <CheckCircle2 className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
+
           {/* Bottom Switch Mode / Options */}
           {authStep === 'credentials' && (
             <div className="mt-4 pt-3.5 sm:mt-5 sm:pt-4 border-t border-white/10 text-center">
@@ -642,7 +768,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                 </button>
               </div>
 
-              <div className="mt-2.5 pt-2 border-t border-white/5">
+              <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-col gap-1.5 items-center">
                 {forgotPasswordStep === 'none' ? (
                   <button
                     type="button"
@@ -651,7 +777,25 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                   >
                     Forgot Password?
                   </button>
-                ) : (
+                ) : null}
+
+                {forgotPasswordStep === 'none' && isLogin ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInviteEmail(email);
+                      setAuthStep('set_password');
+                      setError(null);
+                      setSuccessMessage(null);
+                    }}
+                    className="text-xs text-slate-400 hover:text-slate-200 font-medium hover:underline cursor-pointer"
+                  >
+                    Invited by school? Choose your password
+                  </button>
+                ) : null}
+              </div>
+
+              {forgotPasswordStep !== 'none' && (
                   <div className="space-y-3 animate-in slide-in-from-bottom-2 text-left">
                     {forgotPasswordStep === 'email' ? (
                       <div className="space-y-2.5">
@@ -730,7 +874,6 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                   </div>
                 )}
               </div>
-            </div>
           )}
 
         </div>

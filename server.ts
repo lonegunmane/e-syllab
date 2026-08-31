@@ -59,9 +59,9 @@ function getValidResendFromEmail(): string {
     if (!isPublicDomain && lower.includes('@')) {
       return custom;
     }
-    console.warn(`[Resend] RESEND_FROM_EMAIL ("${custom}") uses a public webmail domain that cannot be verified on Resend. Falling back to "E-SYLLAB Security <onboarding@resend.dev>".`);
+    console.warn(`[Resend] RESEND_FROM_EMAIL ("${custom}") uses a public webmail domain that cannot be verified on Resend. Falling back to "E-SYLLAB <onboarding@resend.dev>".`);
   }
-  return "E-SYLLAB Security <onboarding@resend.dev>";
+  return "E-SYLLAB <onboarding@resend.dev>";
 }
 
 async function sendResendEmail({
@@ -89,10 +89,10 @@ async function sendResendEmail({
     });
 
     // If there was an error (e.g. domain not verified) and we didn't use onboarding@resend.dev, try the standard sandbox address
-    if (result.error && primaryFrom !== "E-SYLLAB Security <onboarding@resend.dev>") {
-      console.warn(`[Resend] Delivery with "${primaryFrom}" failed (${result.error.name}: ${result.error.message}). Retrying with "E-SYLLAB Security <onboarding@resend.dev>"...`);
+    if (result.error && primaryFrom !== "E-SYLLAB <onboarding@resend.dev>") {
+      console.warn(`[Resend] Delivery with "${primaryFrom}" failed (${result.error.name}: ${result.error.message}). Retrying with "E-SYLLAB <onboarding@resend.dev>"...`);
       result = await client.emails.send({
-        from: "E-SYLLAB Security <onboarding@resend.dev>",
+        from: "E-SYLLAB <onboarding@resend.dev>",
         to,
         subject,
         html,
@@ -100,13 +100,18 @@ async function sendResendEmail({
     }
 
     if (result.error) {
-      console.warn("[Resend] Email delivery failed:", result.error.name, result.error.message);
+      const isSandboxRestriction = result.error.name === 'validation_error' && result.error.message?.includes('testing emails');
+      if (isSandboxRestriction) {
+        console.info(`[Resend Notice] Recipient ${to} is not the Resend account owner in sandbox mode. Generated local code successfully.`);
+      } else {
+        console.warn("[Resend] Email delivery failed:", result.error.name, result.error.message);
+      }
       return { success: false, error: result.error.message };
     }
 
     return { success: true };
   } catch (err: any) {
-    console.warn("[Resend] Email delivery threw exception:", err?.message || err);
+    console.warn("[Resend] Email delivery exception:", err?.message || err);
     return { success: false, error: err?.message || "Email delivery failed" };
   }
 }
@@ -479,7 +484,7 @@ function evaluateAttendanceLocation(
 
       res.json({
         success: true,
-        signature: confirmedOnChain ? signature : null,
+        signature: (confirmedOnChain && signature) ? signature : null,
         slot,
         offlineHash,
         confirmedOnChain,
@@ -489,8 +494,8 @@ function evaluateAttendanceLocation(
         distanceMeters: locEval.distanceMeters,
         explorerUrl: (confirmedOnChain && signature) ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
         message: confirmedOnChain
-          ? "Attendance verified and recorded on Solana Devnet."
-          : "Attendance recorded in school database. Solana on-chain attestation was unavailable.",
+          ? "Saved. This cannot be changed."
+          : "Saved at school. Waiting to lock.",
       });
     } catch (err: any) {
       console.error("[Blockchain] Record error:", err);
@@ -956,30 +961,39 @@ function evaluateAttendanceLocation(
       }
     }
 
+    // Rate limit check
+    const rateCheck = await serverDb.checkEmailRateLimit(trimmedEmail, 5);
+    if (!rateCheck.allowed) {
+      return res.status(429).json({
+        success: false,
+        error: `Too many sign-in code requests. Please wait ${rateCheck.retryAfterMinutes || 60} minutes before trying again.`,
+      });
+    }
+
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     await serverDb.saveOtp(trimmedEmail, purpose, code, 10 * 60 * 1000, 5);
 
     // Send via Resend email service if configured
     const sendResult = await sendResendEmail({
       to: trimmedEmail,
-      subject: `Your E-SYLLAB ${purpose === 'LOGIN' ? 'Login' : 'Account Verification'} Code`,
+      subject: "Your E-SYLLAB sign-in code",
       html: `
         <div style="font-family: Arial, sans-serif; padding: 24px; border: 1px solid #1e293b; border-radius: 16px; max-width: 440px; margin: auto; background-color: #0b0f19; color: #f8fafc;">
           <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
             <div style="background: #7c3aed; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #ffffff; font-size: 22px;">E</div>
             <div>
               <h2 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800;">E-SYLLAB</h2>
-              <p style="color: #a7f3d0; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">Extra Login Step</p>
+              <p style="color: #c084fc; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">School Sign-In</p>
             </div>
           </div>
           <p style="color: #cbd5e1; font-size: 14px; line-height: 1.5;">
-            Use the following 6-digit code to complete your ${purpose === 'LOGIN' ? 'sign in' : 'account creation'}:
+            Your school sign-in code is:
           </p>
-          <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #c084fc; padding: 18px 0; text-align: center; font-family: monospace; background: #1e1b4b; border-radius: 12px; margin: 16px 0; border: 1px solid #4c1d95;">
+          <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #a855f7; padding: 18px 0; text-align: center; font-family: monospace; background: #1e1b4b; border-radius: 12px; margin: 16px 0; border: 1px solid #4c1d95;">
             ${code}
           </div>
           <p style="color: #94a3b8; font-size: 12px; margin-top: 16px; line-height: 1.4;">
-            🔒 This code is valid for 10 minutes. For security reasons, do not share this code with anyone.
+            Your school sign-in code is ${code}. It works for 10 minutes. If you did not try to sign in, ignore this.
           </p>
         </div>
       `,
@@ -993,7 +1007,7 @@ function evaluateAttendanceLocation(
       message: sendResult.success
         ? `Security verification code sent to ${trimmedEmail}`
         : `Security code generated for ${trimmedEmail}`,
-      devCode: (process.env.NODE_ENV !== 'production' || !sendResult.success) ? code : undefined
+      devCode: (!sendResult.success || !isProduction) ? code : undefined
     });
   });
 
@@ -1015,6 +1029,16 @@ function evaluateAttendanceLocation(
     }
 
     const trimmedEmail = email.trim().toLowerCase();
+
+    // Check if email was invited by school
+    const isPending = await serverDb.isPendingInvite(trimmedEmail);
+    if (isPending) {
+      return res.status(400).json({
+        success: false,
+        error: "This email was added by the school. Please choose 'I was added by the school' or sign in to set your password.",
+      });
+    }
+
     const isNonProd = process.env.NODE_ENV !== 'production';
 
     const otpVerify = await serverDb.verifyAndConsumeOtp(trimmedEmail, 'REGISTER', twoFactorCode, isNonProd);
@@ -1062,48 +1086,96 @@ function evaluateAttendanceLocation(
     }
   });
 
-  // POST /api/admin/create-user - Admin user creation with security code support
+  // POST /api/admin/create-user - Admin invites teacher or admin (Name + Email only, no password)
   app.post("/api/admin/create-user", authenticateToken, authorizeRole(UserRole.ADMIN), async (req, res) => {
-    const { name, email, role, password, avatar, twoFactorCode } = req.body;
+    const { name, email, role, avatar } = req.body;
 
-    if (!name || !email || !role || !password) {
-      return res.status(400).json({ success: false, error: "Name, email, role, and password required" });
+    if (!name || !email || !role) {
+      return res.status(400).json({ success: false, error: "Full name, email address, and role are required." });
     }
 
+    const trimmedEmail = email.trim().toLowerCase();
+
+    if (role !== UserRole.TEACHER && role !== UserRole.ADMIN) {
+      return res.status(400).json({ success: false, error: "Only TEACHER or ADMIN roles can be invited." });
+    }
+
+    if (role === UserRole.ADMIN) {
+      const activeAdmins = await serverDb.getUsersByRole(UserRole.ADMIN);
+      if (activeAdmins.length >= 2) {
+        return res.status(400).json({ success: false, error: "Maximum limit of 2 administrator accounts reached." });
+      }
+    }
+
+    try {
+      const existingUser = await serverDb.findUserByEmail(trimmedEmail);
+      if (existingUser) {
+        const isPending = await serverDb.isPendingInvite(trimmedEmail);
+        if (!isPending) {
+          return res.status(400).json({ success: false, error: "An active account with this email already exists." });
+        }
+      }
+
+      const invite = await serverDb.createOrUpdateInvite(name.trim(), trimmedEmail, role as UserRole, req.user!.userId);
+
+      return res.json({
+        success: true,
+        message: `${name.trim()} can now open E-SYLLAB, enter this email, and choose their password.`,
+        user: {
+          name: name.trim(),
+          email: trimmedEmail,
+          role: invite.role,
+        },
+      });
+    } catch (err: any) {
+      console.error("[Auth] Admin invite user error:", err);
+      return res.status(400).json({ success: false, error: err.message || "Failed to invite user." });
+    }
+  });
+
+  // POST /api/auth/accept-invite - Invited faculty/admin sets password on first sign in
+  app.post("/api/auth/accept-invite", async (req, res) => {
+    const { email, password, name } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: "Email and password are required." });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.isValid) {
       return res.status(400).json({ success: false, error: passwordValidation.errorMessage });
     }
 
-    const trimmedEmail = email.trim().toLowerCase();
-
-    // If verification code is supplied during creation, verify it
-    if (twoFactorCode) {
-      const isNonProd = process.env.NODE_ENV !== 'production';
-      const otpVerify = await serverDb.verifyAndConsumeOtp(trimmedEmail, 'REGISTER', twoFactorCode, isNonProd);
-      if (!otpVerify.valid) {
-        return res.status(400).json({ success: false, error: otpVerify.error || "That security code isn't right, please try again." });
-      }
-    }
-
     try {
-      const userPayload = {
-        name,
-        email: trimmedEmail,
-        role: role as UserRole,
-        avatar: avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
-      };
+      const user = await serverDb.acceptInvite(trimmedEmail, password, name);
 
-      const createdUser = await serverDb.registerUser(userPayload, password);
+      // Generate JWT token
+      const token = jwt.sign(
+        {
+          userId: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        } as JwtPayload,
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRY }
+      );
 
-      res.json({
+      // Record session
+      const userAgent = (req.headers['user-agent'] as string) || '';
+      const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || '127.0.0.1';
+      await serverDb.createSession(user.id, parseDevice(userAgent), ipAddress, token);
+
+      return res.json({
         success: true,
-        user: createdUser,
-        message: `New ${role} account created successfully.`,
+        token,
+        user,
+        message: "Password created successfully! Welcome to E-SYLLAB.",
       });
     } catch (err: any) {
-      console.error("[Auth] Admin create user error:", err);
-      res.status(400).json({ success: false, error: err.message || "Failed to create user" });
+      console.error("[Auth] Accept invite error:", err);
+      return res.status(400).json({ success: false, error: err.message || "Could not set password for this account." });
     }
   });
 
@@ -1123,6 +1195,16 @@ function evaluateAttendanceLocation(
         return res.status(403).json({ success: false, error: "This account has been deactivated" });
       }
 
+      // Check if this is an invited user who hasn't set their password yet
+      const isPending = await serverDb.isPendingInvite(trimmedEmail);
+      if (isPending) {
+        return res.status(200).json({
+          success: false,
+          mustSetPassword: true,
+          error: "This email was added by the school. Create your password to continue.",
+        });
+      }
+
       const authResult = await serverDb.authenticateUser(trimmedEmail, password);
       
       if (!authResult) {
@@ -1135,11 +1217,8 @@ function evaluateAttendanceLocation(
 
       const { user, needsPasswordReset } = authResult;
 
-      // Seeded admin 2FA bypass check (both ADMIN_SEED_EMAIL and ADMIN_SEED_EMAIL_2 bypass 2FA)
-      const adminSeedEmail1 = process.env.ADMIN_SEED_EMAIL?.trim().toLowerCase() || 'admin@gmail.com';
-      const adminSeedEmail2 = process.env.ADMIN_SEED_EMAIL_2?.trim().toLowerCase() || 'admin2@gmail.com';
-
-      if (trimmedEmail === adminSeedEmail1 || trimmedEmail === adminSeedEmail2 || trimmedEmail === 'admin@gmail.com') {
+      // If email is already verified: issue JWT directly (no 2FA needed)
+      if (user.emailVerifiedAt) {
         const token = jwt.sign(
           {
             userId: user.id,
@@ -1165,31 +1244,41 @@ function evaluateAttendanceLocation(
         });
       }
 
-      // Credentials valid! Generate code for Login
+      // First time sign-in: require 2FA OTP code
+      // Rate limiting: max 5 sends per email per hour
+      const rateCheck = await serverDb.checkEmailRateLimit(trimmedEmail, 5);
+      if (!rateCheck.allowed) {
+        return res.status(429).json({
+          success: false,
+          error: `Too many sign-in code requests. Please wait ${rateCheck.retryAfterMinutes || 60} minutes before trying again.`,
+        });
+      }
+
+      // Generate 6-digit code for Login (10 min expiry)
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       await serverDb.saveOtp(trimmedEmail, 'LOGIN', code, 10 * 60 * 1000, 5);
 
       // Attempt to send email via Resend
       const sendResult = await sendResendEmail({
         to: trimmedEmail,
-        subject: "Your E-SYLLAB Security Login Code",
+        subject: "Your E-SYLLAB sign-in code",
         html: `
           <div style="font-family: Arial, sans-serif; padding: 24px; border: 1px solid #1e293b; border-radius: 16px; max-width: 440px; margin: auto; background-color: #0b0f19; color: #f8fafc;">
             <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
               <div style="background: #7c3aed; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #ffffff; font-size: 22px;">E</div>
               <div>
                 <h2 style="color: #ffffff; margin: 0; font-size: 18px; font-weight: 800;">E-SYLLAB</h2>
-                <p style="color: #c084fc; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">Extra Login Step</p>
+                <p style="color: #c084fc; margin: 0; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">School Sign-In</p>
               </div>
             </div>
             <p style="color: #cbd5e1; font-size: 14px; line-height: 1.5;">
-              Security login code for account <strong>${user.name}</strong> (${user.role}):
+              Your school sign-in code is:
             </p>
             <div style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #a855f7; padding: 18px 0; text-align: center; font-family: monospace; background: #1e1b4b; border-radius: 12px; margin: 16px 0; border: 1px solid #4c1d95;">
               ${code}
             </div>
             <p style="color: #94a3b8; font-size: 12px; margin-top: 16px; line-height: 1.4;">
-              🔒 This code expires in 10 minutes. If you did not initiate this sign-in request, please secure your password immediately.
+              Your school sign-in code is ${code}. It works for 10 minutes. If you did not try to sign in, ignore this.
             </p>
           </div>
         `,
@@ -1197,7 +1286,7 @@ function evaluateAttendanceLocation(
 
       console.log(`[Security OTP] Login code ${code} generated for ${user.email} (${user.role}) - Email delivered: ${sendResult.success}`);
 
-      res.json({
+      return res.json({
         success: true,
         requires2FA: true,
         email: user.email,
@@ -1205,9 +1294,9 @@ function evaluateAttendanceLocation(
         needsPasswordReset,
         emailSent: sendResult.success,
         message: sendResult.success
-          ? "Security code sent to your registered email address."
+          ? "A 6-digit sign-in code was sent to " + user.email
           : "Security code generated for your account.",
-        devCode: (process.env.NODE_ENV !== 'production' || !sendResult.success) ? code : undefined
+        devCode: (!sendResult.success || !isProduction) ? code : undefined,
       });
     } catch (err: any) {
       console.error("[Auth] Login error:", err);
@@ -1240,6 +1329,10 @@ function evaluateAttendanceLocation(
       return res.status(403).json({ success: false, error: "This account has been deactivated" });
     }
 
+    // Mark email verified for subsequent logins
+    await serverDb.markEmailVerified(user.id);
+    const verifiedUser = { ...user, emailVerifiedAt: new Date().toISOString() };
+
     const cred = await serverDb.getCredentialByUserId(user.id);
     const needsPasswordReset = cred ? !!cred.passwordResetRequired : false;
 
@@ -1262,7 +1355,7 @@ function evaluateAttendanceLocation(
 
     res.json({
       success: true,
-      user,
+      user: verifiedUser,
       needsPasswordReset,
       token,
       message: "Sign in successful.",
@@ -1554,6 +1647,421 @@ function evaluateAttendanceLocation(
     res.json({ success: true, message: "User deleted successfully" });
   });
 
+  // GET /api/admin/activity - School-wide activity list (Admin only)
+  app.get("/api/admin/activity", authenticateToken, authorizeRole(UserRole.ADMIN), async (_req, res) => {
+    try {
+      const rows: Array<{
+        id: string;
+        type: 'Attendance' | 'Grade' | 'Assessment' | 'Paper';
+        who: string;
+        whoRole: 'Teacher' | 'Student';
+        className: string;
+        date: string;
+        summary: string;
+        confirmedOnChain: boolean;
+        signature: string | null;
+        explorerUrl?: string;
+        timestamp: string;
+      }> = [];
+
+      // 1. Attendance Records
+      try {
+        const attendanceRecords = await serverDb.getAllAttendanceRecords();
+        for (const att of attendanceRecords) {
+          const isRealSig = isValidSolanaSig(att.signature);
+          const date = att.date || (att.createdAt ? att.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10));
+          const who = att.staffName || 'Teacher';
+          const className = att.className || 'General';
+          rows.push({
+            id: att.id,
+            type: 'Attendance',
+            who,
+            whoRole: 'Teacher',
+            className,
+            date,
+            summary: `Attendance: ${att.status} (${className})`,
+            confirmedOnChain: isRealSig,
+            signature: isRealSig ? att.signature : null,
+            explorerUrl: (isRealSig && att.signature) ? `https://explorer.solana.com/tx/${att.signature}?cluster=devnet` : undefined,
+            timestamp: att.createdAt || new Date().toISOString(),
+          });
+        }
+      } catch (err: any) {
+        console.warn("[Admin Activity] Error loading attendance:", err.message);
+      }
+
+      // 2. Grades
+      try {
+        const grades = await serverDb.getAllGrades();
+        const allLedger = await serverDb.getAllLedgerEntries();
+        for (const g of grades) {
+          const matchingLedger = allLedger.find(e => e.payload?.gradeId === g.id || e.hash === g.id);
+          const rawSig = matchingLedger?.signature || (g as any).signature;
+          const isRealSig = Boolean(isValidSolanaSig(rawSig) && (matchingLedger ? matchingLedger.confirmedOnChain : true));
+          const date = g.recordedAt ? g.recordedAt.slice(0, 10) : (g.createdAt ? g.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10));
+          const who = g.studentName || 'Student';
+          const scoreDisplay = g.score !== undefined ? g.score : g.grade;
+          rows.push({
+            id: g.id,
+            type: 'Grade',
+            who,
+            whoRole: 'Student',
+            className: (g as any).className || 'Class',
+            date,
+            summary: `Grade: ${g.subject} - Score ${scoreDisplay} (${g.grade})`,
+            confirmedOnChain: isRealSig,
+            signature: isRealSig ? rawSig : null,
+            explorerUrl: (isRealSig && rawSig) ? `https://explorer.solana.com/tx/${rawSig}?cluster=devnet` : undefined,
+            timestamp: g.recordedAt || g.createdAt || new Date().toISOString(),
+          });
+        }
+      } catch (err: any) {
+        console.warn("[Admin Activity] Error loading grades:", err.message);
+      }
+
+      // 3. Assessment Scores
+      try {
+        const scores = await serverDb.getAllAssessmentScores();
+        for (const sc of scores) {
+          const ledgerEntry = await serverDb.getLedgerEntryByScoreId(sc.id);
+          const isRealSig = Boolean(ledgerEntry && isValidSolanaSig(ledgerEntry.signature) && ledgerEntry.confirmedOnChain);
+          const date = sc.createdAt ? sc.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10);
+          const who = sc.studentName || 'Student';
+          rows.push({
+            id: sc.id,
+            type: 'Assessment',
+            who,
+            whoRole: 'Student',
+            className: sc.className || 'Class',
+            date,
+            summary: `Assessment: ${sc.assessmentTitle || 'Assessment'} (${sc.subject || 'General'}) - Score ${sc.score}`,
+            confirmedOnChain: isRealSig,
+            signature: (isRealSig && ledgerEntry?.signature) ? ledgerEntry.signature : null,
+            explorerUrl: (isRealSig && ledgerEntry?.signature) ? `https://explorer.solana.com/tx/${ledgerEntry.signature}?cluster=devnet` : undefined,
+            timestamp: sc.createdAt || new Date().toISOString(),
+          });
+        }
+      } catch (err: any) {
+        console.warn("[Admin Activity] Error loading assessments:", err.message);
+      }
+
+      // 4. Vault Documents (Papers)
+      try {
+        const vaultDocs = await serverDb.getAllVaultDocuments();
+        for (const doc of vaultDocs) {
+          const date = doc.createdAt ? doc.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10);
+          const who = doc.teacherName || 'Teacher';
+          rows.push({
+            id: doc.id,
+            type: 'Paper',
+            who,
+            whoRole: 'Teacher',
+            className: 'School Vault',
+            date,
+            summary: `Paper: ${doc.title} (${doc.type}) - ${doc.status}`,
+            confirmedOnChain: false,
+            signature: null,
+            explorerUrl: undefined,
+            timestamp: doc.createdAt || new Date().toISOString(),
+          });
+        }
+      } catch (err: any) {
+        console.warn("[Admin Activity] Error loading vault docs:", err.message);
+      }
+
+      // Sort newest first
+      rows.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+      res.json({
+        success: true,
+        count: rows.length,
+        activity: rows,
+      });
+    } catch (err: any) {
+      console.error("[Admin Activity] Error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/admin/activity/:id/check - Verify single record on-chain (Admin only)
+  app.post("/api/admin/activity/:id/check", authenticateToken, authorizeRole(UserRole.ADMIN), async (req, res) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      return res.status(400).json({ match: false, locked: false, message: "This record does not match school records." });
+    }
+
+    try {
+      // 1. Check Attendance Record
+      const att = await serverDb.findAttendanceRecordById(id);
+      if (att) {
+        let isLocked = false;
+        const validSig = isValidSolanaSig(att.signature) ? att.signature : null;
+        if (validSig) {
+          try {
+            const connection = getConnection();
+            const tx = await connection.getTransaction(validSig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+            if (tx && !tx.meta?.err) {
+              isLocked = true;
+            }
+          } catch (err: any) {
+            console.warn("[Check Activity] Solana check notice:", err.message);
+          }
+        }
+        return res.json({
+          match: true,
+          locked: isLocked,
+          message: isLocked ? "Matches record saved at school and locked on public ledger." : "Matches record saved at school. Waiting to lock.",
+          explorerUrl: isLocked && validSig ? `https://explorer.solana.com/tx/${validSig}?cluster=devnet` : undefined,
+        });
+      }
+
+      // 2. Check Grade Record
+      const grade = await serverDb.findGradeById(id);
+      if (grade) {
+        let isLocked = false;
+        let validSig: string | null = null;
+        const ledgerEntries = await serverDb.getAllLedgerEntries();
+        const matchingLedger = ledgerEntries.find(e => e.payload?.gradeId === id || e.hash === id);
+        if (matchingLedger && isValidSolanaSig(matchingLedger.signature) && matchingLedger.confirmedOnChain) {
+          validSig = matchingLedger.signature;
+        } else if (isValidSolanaSig((grade as any).signature)) {
+          validSig = (grade as any).signature;
+        }
+
+        if (validSig) {
+          try {
+            const connection = getConnection();
+            const tx = await connection.getTransaction(validSig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+            if (tx && !tx.meta?.err) {
+              isLocked = true;
+            }
+          } catch (err: any) {
+            console.warn("[Check Activity] Grade on-chain check notice:", err.message);
+          }
+        }
+
+        return res.json({
+          match: true,
+          locked: isLocked,
+          message: isLocked ? "Matches record saved at school and locked on public ledger." : "Matches record saved at school. Waiting to lock.",
+          explorerUrl: isLocked && validSig ? `https://explorer.solana.com/tx/${validSig}?cluster=devnet` : undefined,
+        });
+      }
+
+      // 3. Check Assessment Score
+      const scoreLedger = await serverDb.getLedgerEntryByScoreId(id);
+      if (scoreLedger) {
+        let isLocked = false;
+        const validSig = isValidSolanaSig(scoreLedger.signature) && scoreLedger.confirmedOnChain ? scoreLedger.signature : null;
+        if (validSig) {
+          try {
+            const connection = getConnection();
+            const tx = await connection.getTransaction(validSig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+            if (tx && !tx.meta?.err) {
+              isLocked = true;
+            }
+          } catch (err: any) {
+            console.warn("[Check Activity] Assessment on-chain check notice:", err.message);
+          }
+        }
+        return res.json({
+          match: true,
+          locked: isLocked,
+          message: isLocked ? "Matches record saved at school and locked on public ledger." : "Matches record saved at school. Waiting to lock.",
+          explorerUrl: isLocked && validSig ? `https://explorer.solana.com/tx/${validSig}?cluster=devnet` : undefined,
+        });
+      }
+
+      // Also check general ledger entries by hash
+      const ledgerEntry = await serverDb.getLedgerEntryByHash(id);
+      if (ledgerEntry) {
+        let isLocked = false;
+        const validSig = isValidSolanaSig(ledgerEntry.signature) && ledgerEntry.confirmedOnChain ? ledgerEntry.signature : null;
+        if (validSig) {
+          try {
+            const connection = getConnection();
+            const tx = await connection.getTransaction(validSig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+            if (tx && !tx.meta?.err) {
+              isLocked = true;
+            }
+          } catch (err: any) {
+            console.warn("[Check Activity] Ledger on-chain check notice:", err.message);
+          }
+        }
+        return res.json({
+          match: true,
+          locked: isLocked,
+          message: isLocked ? "Matches record saved at school and locked on public ledger." : "Matches record saved at school. Waiting to lock.",
+          explorerUrl: isLocked && validSig ? `https://explorer.solana.com/tx/${validSig}?cluster=devnet` : undefined,
+        });
+      }
+
+      // 4. Check Vault Document
+      const vaultDoc = await serverDb.findVaultDocById(id);
+      if (vaultDoc) {
+        return res.json({
+          match: true,
+          locked: false,
+          message: "Matches paper saved at school.",
+          explorerUrl: undefined,
+        });
+      }
+
+      // Not found
+      return res.json({
+        match: false,
+        locked: false,
+        message: "This record does not match school records.",
+      });
+    } catch (err: any) {
+      console.error("[Check Activity] Error:", err);
+      res.status(500).json({ match: false, locked: false, message: "Error checking record." });
+    }
+  });
+
+  // POST /api/admin/activity/lock-waiting - Retry Solana Memo for waiting items (Admin only)
+  app.post("/api/admin/activity/lock-waiting", authenticateToken, authorizeRole(UserRole.ADMIN), async (_req, res) => {
+    try {
+      const connection = getConnection();
+      const schoolKeypair = getSchoolKeypair();
+      const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+
+      // Check RPC connection first
+      try {
+        await Promise.race([
+          connection.getSlot("confirmed"),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout connecting to public network")), 5000))
+        ]);
+      } catch (connErr: any) {
+        return res.json({
+          success: true,
+          attempted: 0,
+          locked: 0,
+          failed: 0,
+          rpcUnreachable: true,
+          message: "Cannot lock on public ledger right now. Saved at school.",
+        });
+      }
+
+      let attempted = 0;
+      let locked = 0;
+      let failed = 0;
+
+      // 1. Process waiting attendance records
+      const allAttendance = await serverDb.getAllAttendanceRecords();
+      const waitingAttendance = allAttendance.filter(a => !isValidSolanaSig(a.signature));
+
+      for (const att of waitingAttendance) {
+        attempted++;
+        try {
+          const memoPayload = JSON.stringify({
+            app: "E-SYLLAB",
+            type: "ATTENDANCE",
+            id: att.id,
+            staffId: att.staffId,
+            staffName: att.staffName,
+            date: att.date,
+            time: att.time,
+            className: att.className,
+            status: att.status,
+            schoolId: att.schoolId,
+            timestamp: att.createdAt || new Date().toISOString(),
+          });
+
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+          const ix = new TransactionInstruction({
+            keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+            programId: MEMO_PROGRAM_ID,
+            data: new TextEncoder().encode(memoPayload) as any,
+          });
+
+          const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+          tx.add(ix);
+          tx.sign(schoolKeypair);
+
+          const sig = await connection.sendRawTransaction(tx.serialize());
+          await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+
+          await serverDb.updateAttendanceSignature(att.id, sig);
+          await serverDb.deleteFromSyncQueue(att.id);
+
+          locked++;
+        } catch (err: any) {
+          console.warn(`[Lock Waiting] Failed for attendance ${att.id}:`, err.message);
+          failed++;
+        }
+      }
+
+      // 2. Process waiting ledger entries
+      const allLedger = await serverDb.getAllLedgerEntries();
+      const waitingLedger = allLedger.filter(e => !e.confirmedOnChain || !isValidSolanaSig(e.signature));
+
+      for (const entry of waitingLedger) {
+        attempted++;
+        try {
+          const memoPayload = JSON.stringify({
+            app: "E-SYLLAB",
+            type: entry.type,
+            hash: entry.hash,
+            payload: entry.payload,
+            timestamp: entry.createdAt || new Date().toISOString(),
+          });
+
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+          const ix = new TransactionInstruction({
+            keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+            programId: MEMO_PROGRAM_ID,
+            data: new TextEncoder().encode(memoPayload) as any,
+          });
+
+          const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+          tx.add(ix);
+          tx.sign(schoolKeypair);
+
+          const sig = await connection.sendRawTransaction(tx.serialize());
+          await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+
+          const txInfo = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+          await serverDb.recordLedgerEntry({
+            hash: entry.hash,
+            type: entry.type,
+            signature: sig,
+            slot: txInfo?.slot || 0,
+            payload: entry.payload,
+            confirmedOnChain: true,
+            createdAt: entry.createdAt,
+          });
+
+          locked++;
+        } catch (err: any) {
+          console.warn(`[Lock Waiting] Failed for ledger ${entry.hash}:`, err.message);
+          failed++;
+        }
+      }
+
+      const message = locked > 0
+        ? `Successfully locked ${locked} record${locked > 1 ? 's' : ''} on the public ledger.`
+        : "Cannot lock on public ledger right now. Saved at school.";
+
+      return res.json({
+        success: true,
+        attempted,
+        locked,
+        failed,
+        message,
+      });
+    } catch (err: any) {
+      console.error("[Lock Waiting] Error:", err);
+      return res.json({
+        success: true,
+        attempted: 0,
+        locked: 0,
+        failed: 0,
+        message: "Cannot lock on public ledger right now. Saved at school.",
+      });
+    }
+  });
+
   // ════════════════════════════════════════════
   //  ACADEMIC LEDGER ROUTES (GRADES & CREDENTIALS)
   // ════════════════════════════════════════════
@@ -1573,7 +2081,7 @@ function evaluateAttendanceLocation(
       /^[1-9A-HJ-NP-Za-km-z]+$/.test(s);
   };
 
-  // GET /api/blockchain/ledger/all - Fetch all anchored ledger events
+  // GET /api/blockchain/ledger/all - Fetch all records (Admin check records)
   app.get("/api/blockchain/ledger/all", authenticateToken, async (_req, res) => {
     try {
       const records: any[] = [];
@@ -1583,15 +2091,27 @@ function evaluateAttendanceLocation(
       for (const entry of ledgerEntries) {
         const isRealSig = isValidSolanaSig(entry.signature) && entry.confirmedOnChain;
         const payload = entry.payload || {};
+        const rawType = (entry.type || payload.type || 'GRADE').toUpperCase();
+        let displayType: 'Attendance' | 'Grade' | 'Paper' = 'Grade';
+        if (rawType.includes('ATTEND')) displayType = 'Attendance';
+        else if (rawType.includes('PAPER') || rawType.includes('VAULT') || rawType.includes('DOC')) displayType = 'Paper';
+
+        const person = payload.studentName || payload.studentId || payload.teacherName || payload.staffName || payload.issuedBy || 'Student';
+        const date = (payload.timestamp || entry.createdAt || new Date().toISOString()).slice(0, 10);
+
         records.push({
+          id: (entry as any).id || entry.hash,
           offlineHash: entry.hash,
-          type: entry.type || payload.type || 'ACADEMIC_RECORD',
+          type: displayType,
+          person,
+          date,
           signature: isRealSig ? entry.signature : null,
           slot: entry.slot || 0,
           confirmedOnChain: isRealSig,
-          explorerUrl: isRealSig && entry.signature ? `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet` : undefined,
+          explorerUrl: (isRealSig && entry.signature) ? `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet` : undefined,
           timestamp: payload.timestamp || entry.createdAt || new Date().toISOString(),
-          status: isRealSig ? 'CONFIRMED' : 'PENDING',
+          status: isRealSig ? 'Locked' : 'Waiting',
+          details: payload.details || `${displayType} record for ${person}`,
           ...payload,
         });
       }
@@ -1601,14 +2121,18 @@ function evaluateAttendanceLocation(
         const liveAttendance = await serverDb.getAllAttendanceRecords();
         for (const att of liveAttendance) {
           const isRealSig = isValidSolanaSig(att.signature);
+          const date = att.date || (att.createdAt ? att.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10));
+          const person = att.staffName || 'Teacher';
           records.push({
+            id: att.id,
             offlineHash: att.offlineHash || att.id,
-            type: "ATTENDANCE",
-            status: isRealSig ? "CONFIRMED" : "PENDING",
+            type: "Attendance",
+            person,
+            date,
+            status: isRealSig ? "Locked" : "Waiting",
             confirmedOnChain: isRealSig,
             staffId: att.staffId,
             staffName: att.staffName,
-            date: att.date,
             time: att.time,
             className: att.className,
             attendanceStatus: att.status,
@@ -1617,8 +2141,8 @@ function evaluateAttendanceLocation(
             timestamp: att.createdAt || new Date().toISOString(),
             signature: isRealSig ? att.signature : null,
             slot: 0,
-            details: `Staff attendance record for ${att.staffName || 'Faculty'} (${att.className || 'General'})`,
-            explorerUrl: isRealSig && att.signature ? `https://explorer.solana.com/tx/${att.signature}?cluster=devnet` : undefined,
+            details: `Attendance for ${person} (${att.className || 'General'}) - ${att.status}`,
+            explorerUrl: (isRealSig && att.signature) ? `https://explorer.solana.com/tx/${att.signature}?cluster=devnet` : undefined,
           });
         }
       } catch (attErr) {
@@ -1628,14 +2152,18 @@ function evaluateAttendanceLocation(
       // 3. Add pending queue items
       const queueItems = await serverDb.getSyncQueue();
       for (const item of queueItems) {
+        const date = item.date || (item.createdAt ? item.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10));
+        const person = item.staffName || 'Teacher';
         records.push({
+          id: item.id,
           offlineHash: item.offlineHash || `queue-${item.id}`,
-          type: "ATTENDANCE",
-          status: "PENDING",
+          type: "Attendance",
+          person,
+          date,
+          status: "Waiting",
           confirmedOnChain: false,
           staffId: item.staffId,
           staffName: item.staffName,
-          date: item.date,
           time: item.time,
           className: item.className,
           attendanceStatus: item.status,
@@ -1644,9 +2172,35 @@ function evaluateAttendanceLocation(
           timestamp: item.queuedAt || item.localTimestamp || item.createdAt || new Date().toISOString(),
           signature: null,
           slot: 0,
-          details: `Queued offline attendance attestation for ${item.staffName}`,
+          details: `Queued attendance for ${person}`,
           explorerUrl: undefined,
         });
+      }
+
+      // 4. Add Vault Documents (Papers)
+      try {
+        const vaultDocs = await serverDb.getAllVaultDocuments();
+        for (const doc of vaultDocs) {
+          const date = doc.createdAt ? doc.createdAt.slice(0, 10) : new Date().toISOString().slice(0, 10);
+          const person = doc.teacherName || 'Teacher';
+          records.push({
+            id: doc.id,
+            offlineHash: doc.hash || (doc as any).evidenceHash || doc.id,
+            type: "Paper",
+            person,
+            date,
+            status: "Waiting",
+            confirmedOnChain: false,
+            timestamp: doc.createdAt || new Date().toISOString(),
+            signature: null,
+            slot: 0,
+            title: doc.title,
+            details: `Paper: ${doc.title} (${doc.type || (doc as any).category || 'Document'}) - ${doc.status}`,
+            explorerUrl: undefined,
+          });
+        }
+      } catch (vaultErr) {
+        console.warn("[Ledger] Could not load vault documents:", vaultErr);
       }
 
       // Sort newest first
@@ -1856,46 +2410,111 @@ function evaluateAttendanceLocation(
   app.post("/api/blockchain/ledger/verify", authenticateToken, async (req, res) => {
     const { offlineHash } = req.body;
     if (!offlineHash || typeof offlineHash !== 'string') {
-      return res.status(400).json({ success: false, error: "Missing or invalid offlineHash" });
+      return res.status(400).json({ success: false, error: "Missing or invalid record code" });
     }
 
     try {
-      const entry = await serverDb.getLedgerEntryByHash(offlineHash.trim());
-      if (!entry) {
+      const code = offlineHash.trim();
+
+      // 1. Check ledger entries
+      const entry = await serverDb.getLedgerEntryByHash(code);
+      if (entry) {
+        const isRealSig = isValidSolanaSig(entry.signature) && entry.confirmedOnChain;
+        let onChainVerified = false;
+
+        if (isRealSig && entry.signature) {
+          try {
+            const connection = getConnection();
+            const tx = await connection.getTransaction(entry.signature, {
+              commitment: "confirmed",
+              maxSupportedTransactionVersion: 0,
+            });
+            if (tx && !tx.meta?.err) {
+              onChainVerified = true;
+            }
+          } catch (chainErr: any) {
+            console.warn("[Verify] On-chain check note:", chainErr.message);
+          }
+        }
+
+        const confirmedOnChain = Boolean(onChainVerified || (isRealSig && entry.confirmedOnChain));
         return res.json({
-          isValid: false,
-          message: "Hash not found in the academic ledger. This record may not have been issued by E-SYLLAB, or it may have been tampered with.",
+          success: true,
+          isValid: true,
+          confirmedOnChain,
+          record: entry.payload,
+          signature: (isRealSig && confirmedOnChain) ? entry.signature : null,
+          slot: entry.slot || 0,
+          explorerUrl: (isRealSig && confirmedOnChain && entry.signature) ? `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet` : undefined,
+          message: "This record matches",
         });
       }
 
-      const isRealSig = isValidSolanaSig(entry.signature) && entry.confirmedOnChain;
-      let onChainVerified = false;
-
-      if (isRealSig && entry.signature) {
-        try {
-          const connection = getConnection();
-          const tx = await connection.getTransaction(entry.signature, {
-            commitment: "confirmed",
-            maxSupportedTransactionVersion: 0,
-          });
-          if (tx && !tx.meta?.err) {
-            onChainVerified = true;
+      // 2. Check attendance records
+      const allAttendance = await serverDb.getAllAttendanceRecords();
+      const att = allAttendance.find(a => a.offlineHash === code || a.id === code || a.signature === code);
+      if (att) {
+        const isRealSig = isValidSolanaSig(att.signature);
+        let onChainVerified = false;
+        if (isRealSig && att.signature) {
+          try {
+            const connection = getConnection();
+            const tx = await connection.getTransaction(att.signature, {
+              commitment: "confirmed",
+              maxSupportedTransactionVersion: 0,
+            });
+            if (tx && !tx.meta?.err) {
+              onChainVerified = true;
+            }
+          } catch (chainErr: any) {
+            console.warn("[Verify] Attendance on-chain check note:", chainErr.message);
           }
-        } catch (chainErr: any) {
-          console.warn("[Verify] On-chain check note:", chainErr.message);
         }
+
+        const confirmedOnChain = Boolean(onChainVerified || isRealSig);
+        return res.json({
+          success: true,
+          isValid: true,
+          confirmedOnChain,
+          signature: (isRealSig && confirmedOnChain) ? att.signature : null,
+          explorerUrl: (isRealSig && confirmedOnChain && att.signature) ? `https://explorer.solana.com/tx/${att.signature}?cluster=devnet` : undefined,
+          message: "This record matches",
+        });
       }
 
-      res.json({
-        isValid: true,
-        confirmedOnChain: onChainVerified || entry.confirmedOnChain,
-        record: entry.payload,
-        signature: isRealSig ? entry.signature : null,
-        slot: entry.slot || 0,
-        explorerUrl: (isRealSig && entry.signature) ? `https://explorer.solana.com/tx/${entry.signature}?cluster=devnet` : undefined,
-        message: onChainVerified || entry.confirmedOnChain
-          ? "Record verified — this credential is authentic and confirmed on Solana Devnet."
-          : "Record verified against school database. Pending on-chain network confirmation.",
+      // 3. Check vault documents (papers)
+      const allVault = await serverDb.getAllVaultDocuments();
+      const vDoc = allVault.find(d => d.id === code || d.hash === code || (d as any).evidenceHash === code);
+      if (vDoc) {
+        return res.json({
+          success: true,
+          isValid: true,
+          confirmedOnChain: false,
+          signature: null,
+          message: "This record matches",
+        });
+      }
+
+      // 4. Check sync queue
+      const syncQueue = await serverDb.getSyncQueue();
+      const qItem = syncQueue.find(q => q.id === code || q.offlineHash === code);
+      if (qItem) {
+        return res.json({
+          success: true,
+          isValid: true,
+          confirmedOnChain: false,
+          signature: null,
+          message: "This record matches",
+        });
+      }
+
+      // Not found
+      return res.json({
+        success: true,
+        isValid: false,
+        confirmedOnChain: false,
+        signature: null,
+        message: "This record does not match",
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });

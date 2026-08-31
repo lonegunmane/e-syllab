@@ -63,10 +63,11 @@ export function getPool(): pg.Pool {
     });
 
     pool.on('error', (err) => {
-      console.warn('[Database] PostgreSQL pool background notice:', err.message || err);
-      if (isPostgresConnectionOrAuthError(err)) {
+      if (isPostgresConnectionOrAuthError(err) || !isPostgresAvailable) {
         isPostgresAvailable = false;
+        return;
       }
+      console.log('[Database] PostgreSQL pool notice:', err.message || err);
     });
   }
   return pool;
@@ -103,10 +104,21 @@ export interface AcademicLedgerRecord {
   createdAt: string;
 }
 
+export interface InvitedUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  invitedBy?: string;
+  createdAt: string;
+  acceptedAt?: string | null;
+}
+
 // ─── High-Reliability In-Memory Store Fallback ────────────────────────────────
 interface MemoryStore {
   users: Map<string, User>;
   credentials: Map<string, AuthCredential>;
+  invitedUsers: Map<string, InvitedUser>;
   curriculum: Map<string, CurriculumResource>;
   messages: Map<string, Message>;
   grades: Map<string, GradeRecord>;
@@ -121,11 +133,13 @@ interface MemoryStore {
   syncQueue: Map<string, SyncQueueRecord>;
   academicLedger: Map<string, AcademicLedgerRecord>;
   otps: Map<string, { id: string; email: string; purpose: string; code: string; expiresAt: number; attempts: number; maxAttempts: number; createdAt: string }>;
+  rateLimits: Map<string, { count: number; windowStart: number }>;
 }
 
 const memStore: MemoryStore = {
   users: new Map(),
   credentials: new Map(),
+  invitedUsers: new Map(),
   curriculum: new Map(),
   messages: new Map(),
   grades: new Map(),
@@ -144,6 +158,7 @@ const memStore: MemoryStore = {
   syncQueue: new Map(),
   academicLedger: new Map(),
   otps: new Map(),
+  rateLimits: new Map(),
 };
 
 function seedMemoryStore(): void {
@@ -289,37 +304,10 @@ function seedMemoryStore(): void {
     updatedAt: now,
   });
 
-  // Sample Curriculum
-  memStore.curriculum.set('curr-1', {
-    id: 'curr-1',
-    title: 'Mathematics Core Syllabus 2025',
-    subject: 'Mathematics',
-    gradeLevel: 'Grade 10',
-    description: 'Official 2025 syllabus for Algebra and Geometry fundamentals.',
-    category: ResourceCategory.DOCUMENT,
-    authorRole: UserRole.ADMIN,
-    createdAt: now,
-  });
-
-  // Sample Attendance: Zero attendance rows seeded initially to ensure 100% honest demo
+  // Sample Curriculum: Empty by default; only real user/admin-created curriculum is shown
+  // Sample Attendance: Zero attendance rows seeded initially to ensure 100% real data
   // Live attendance is created via teacher check-in or offline sync.
-  const seedAtt: any[] = [];
-  seedAtt.forEach((a) => memStore.attendanceRecords.set(a.id, a));
-
-  // Seed default timetables only if memory store is empty
-  if (memStore.timetables.size === 0) {
-    const initialTimetables: TimetableEntry[] = [
-      { id: 'tt-1', className: 'Grade 10A', dayOfWeek: 'Monday', period: 'Period 1 (08:00 - 08:45)', subject: 'Mathematics', teacherId: '2', room: 'Room 101', createdAt: now, updatedAt: now },
-      { id: 'tt-2', className: 'Grade 10A', dayOfWeek: 'Monday', period: 'Period 2 (08:50 - 09:35)', subject: 'Science Physics', teacherId: '2', room: 'Lab-2', createdAt: now, updatedAt: now },
-      { id: 'tt-3', className: 'Grade 10A', dayOfWeek: 'Tuesday', period: 'Period 1 (08:00 - 08:45)', subject: 'English Literature', teacherId: '2', room: 'Room 101', createdAt: now, updatedAt: now },
-      { id: 'tt-4', className: 'Grade 10A', dayOfWeek: 'Wednesday', period: 'Period 2 (08:50 - 09:35)', subject: 'Mathematics', teacherId: '2', room: 'Room 101', createdAt: now, updatedAt: now },
-      { id: 'tt-5', className: 'Grade 10A', dayOfWeek: 'Thursday', period: 'Period 1 (08:00 - 08:45)', subject: 'Computer Science', teacherId: '2', room: 'IT-1', createdAt: now, updatedAt: now },
-      { id: 'tt-6', className: 'Grade 10A', dayOfWeek: 'Friday', period: 'Period 1 (08:00 - 08:45)', subject: 'Science Physics', teacherId: '2', room: 'Lab-2', createdAt: now, updatedAt: now },
-      { id: 'tt-7', className: 'Grade 11B', dayOfWeek: 'Monday', period: 'Period 1 (08:00 - 08:45)', subject: 'Chemistry', teacherId: '2', room: 'Lab-1', createdAt: now, updatedAt: now },
-      { id: 'tt-8', className: 'Grade 12A', dayOfWeek: 'Monday', period: 'Period 2 (08:50 - 09:35)', subject: 'Mathematics', teacherId: '2', room: 'Room 302', createdAt: now, updatedAt: now },
-    ];
-    initialTimetables.forEach((t) => memStore.timetables.set(t.id, t));
-  }
+  // Timetables: Empty by default; created only via Admin schedule tools
 }
 
 // Pre-seed memory store immediately on load
@@ -351,7 +339,13 @@ export const serverDb = {
       await this.seedTimetables();
     } catch (err: any) {
       isPostgresAvailable = false;
-      console.warn(`[Database] PostgreSQL note (${err?.message || err}). Operating in high-reliability server memory database.`);
+      if (pool) {
+        try {
+          await pool.end();
+        } catch (_) {}
+        pool = null;
+      }
+      console.log(`[Database] PostgreSQL unavailable (${err?.message || err}). Operating in high-reliability server memory database.`);
     }
   },
 
@@ -380,10 +374,13 @@ export const serverDb = {
           "isProfileComplete" BOOLEAN DEFAULT FALSE,
           active BOOLEAN DEFAULT TRUE,
           "consentGivenAt" TEXT,
+          "emailVerifiedAt" TEXT,
           "createdAt" TEXT NOT NULL,
           "updatedAt" TEXT NOT NULL
         )
       `);
+
+      await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailVerifiedAt" TEXT;`);
 
       await p.query(`
         CREATE TABLE IF NOT EXISTS auth_credentials (
@@ -595,6 +592,27 @@ export const serverDb = {
       `);
       await p.query(`CREATE INDEX IF NOT EXISTS idx_academic_ledger_type ON academic_ledger(type)`);
       await p.query(`CREATE INDEX IF NOT EXISTS idx_academic_ledger_created_at ON academic_ledger("createdAt" DESC)`);
+
+      await p.query(`
+        CREATE TABLE IF NOT EXISTS invited_users (
+          id TEXT PRIMARY KEY,
+          email TEXT NOT NULL UNIQUE,
+          name TEXT NOT NULL,
+          role TEXT NOT NULL CHECK(role IN ('TEACHER', 'ADMIN')),
+          "invitedBy" TEXT,
+          "createdAt" TEXT NOT NULL,
+          "acceptedAt" TEXT
+        )
+      `);
+      await p.query(`CREATE INDEX IF NOT EXISTS idx_invited_users_email ON invited_users(LOWER(email))`);
+
+      await p.query(`
+        CREATE TABLE IF NOT EXISTS auth_email_rate_limits (
+          email TEXT PRIMARY KEY,
+          count INTEGER NOT NULL,
+          "windowStart" BIGINT NOT NULL
+        )
+      `);
     } catch (err: any) {
       if (isPostgresConnectionOrAuthError(err)) {
         isPostgresAvailable = false;
@@ -666,42 +684,8 @@ export const serverDb = {
   },
 
   async seedTimetables(): Promise<void> {
+    // Keep existing rows intact and do not inject hardcoded demo lessons
     if (!isPostgresAvailable) return;
-    try {
-      const p = getPool();
-      // Check if timetables table already has data — NEVER wipe admin-created rows
-      const countRes = await p.query('SELECT COUNT(*) as count FROM timetables');
-      const count = parseInt(countRes.rows[0]?.count || '0', 10);
-      if (count > 0) {
-        return;
-      }
-
-      // Table is completely empty: seed initial default schedules
-      const initialTimetables = [
-        { id: 'tt-1', className: 'Grade 10A', dayOfWeek: 'Monday', period: 'Period 1 (08:00 - 08:45)', subject: 'Mathematics', teacherId: '2', room: 'Room 101' },
-        { id: 'tt-2', className: 'Grade 10A', dayOfWeek: 'Monday', period: 'Period 2 (08:50 - 09:35)', subject: 'Science Physics', teacherId: '2', room: 'Lab-2' },
-        { id: 'tt-3', className: 'Grade 10A', dayOfWeek: 'Tuesday', period: 'Period 1 (08:00 - 08:45)', subject: 'English Literature', teacherId: '2', room: 'Room 101' },
-        { id: 'tt-4', className: 'Grade 10A', dayOfWeek: 'Wednesday', period: 'Period 2 (08:50 - 09:35)', subject: 'Mathematics', teacherId: '2', room: 'Room 101' },
-        { id: 'tt-5', className: 'Grade 10A', dayOfWeek: 'Thursday', period: 'Period 1 (08:00 - 08:45)', subject: 'Computer Science', teacherId: '2', room: 'IT-1' },
-        { id: 'tt-6', className: 'Grade 10A', dayOfWeek: 'Friday', period: 'Period 1 (08:00 - 08:45)', subject: 'Science Physics', teacherId: '2', room: 'Lab-2' },
-        { id: 'tt-7', className: 'Grade 11B', dayOfWeek: 'Monday', period: 'Period 1 (08:00 - 08:45)', subject: 'Chemistry', teacherId: '2', room: 'Lab-1' },
-        { id: 'tt-8', className: 'Grade 12A', dayOfWeek: 'Monday', period: 'Period 2 (08:50 - 09:35)', subject: 'Mathematics', teacherId: '2', room: 'Room 302' },
-      ];
-
-      const now = new Date().toISOString();
-      for (const item of initialTimetables) {
-        await p.query(
-          `INSERT INTO timetables (id, "className", "dayOfWeek", period, subject, "teacherId", room, "createdAt", "updatedAt")
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           ON CONFLICT (id) DO NOTHING`,
-          [item.id, item.className, item.dayOfWeek, item.period, item.subject, item.teacherId, item.room, now, now]
-        );
-      }
-    } catch (err: any) {
-      if (isPostgresConnectionOrAuthError(err)) {
-        isPostgresAvailable = false;
-      }
-    }
   },
 
   // ─── User Operations ───────────────────────────────────────────────────────
@@ -1038,6 +1022,239 @@ export const serverDb = {
     }
   },
 
+  // ─── Invited Users (Faculty & Staff Onboarding) ───────────────────────────
+  async createOrUpdateInvite(name: string, email: string, role: UserRole, invitedBy?: string): Promise<InvitedUser> {
+    const trimmedEmail = email.trim().toLowerCase();
+    const id = this.generateId();
+    const now = new Date().toISOString();
+
+    const invite: InvitedUser = {
+      id,
+      email: trimmedEmail,
+      name,
+      role,
+      invitedBy,
+      createdAt: now,
+      acceptedAt: null,
+    };
+
+    if (isPostgresAvailable) {
+      try {
+        const p = getPool();
+        await p.query(
+          `INSERT INTO invited_users (id, email, name, role, "invitedBy", "createdAt", "acceptedAt")
+           VALUES ($1, $2, $3, $4, $5, $6, NULL)
+           ON CONFLICT (email) DO UPDATE SET
+             name = EXCLUDED.name,
+             role = EXCLUDED.role,
+             "invitedBy" = EXCLUDED."invitedBy",
+             "acceptedAt" = NULL`,
+          [id, trimmedEmail, name, role, invitedBy || null, now]
+        );
+      } catch (err: any) {
+        if (isPostgresConnectionOrAuthError(err)) {
+          isPostgresAvailable = false;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    memStore.invitedUsers.set(trimmedEmail, invite);
+
+    // If user already exists in users table, set passwordResetRequired = true
+    const existingUser = await this.findUserByEmail(trimmedEmail);
+    if (!existingUser) {
+      // Create user entry so they are visible and have isProfileComplete: false
+      const userId = this.generateId();
+      const placeholderUser: User = {
+        id: userId,
+        email: trimmedEmail,
+        name,
+        role,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+        isProfileComplete: false,
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      if (isPostgresAvailable) {
+        try {
+          const p = getPool();
+          await p.query(
+            `INSERT INTO users (id, email, name, role, avatar, "isProfileComplete", active, "createdAt", "updatedAt")
+             VALUES ($1, $2, $3, $4, $5, FALSE, TRUE, $6, $7)
+             ON CONFLICT (id) DO NOTHING`,
+            [userId, trimmedEmail, encryptField(name), role, placeholderUser.avatar, now, now]
+          );
+          await p.query(
+            `INSERT INTO auth_credentials ("userId", "passwordHash", "passwordResetRequired", "createdAt", "updatedAt")
+             VALUES ($1, $2, TRUE, $3, $4)
+             ON CONFLICT ("userId") DO UPDATE SET "passwordResetRequired" = TRUE, "updatedAt" = EXCLUDED."updatedAt"`,
+            [userId, 'INVITED_PENDING_PASSWORD', now, now]
+          );
+        } catch (err: any) {
+          if (isPostgresConnectionOrAuthError(err)) {
+            isPostgresAvailable = false;
+          }
+        }
+      }
+
+      memStore.users.set(userId, placeholderUser);
+      memStore.credentials.set(userId, {
+        userId,
+        passwordHash: 'INVITED_PENDING_PASSWORD',
+        lastLogin: null,
+        passwordResetRequired: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    return invite;
+  },
+
+  async findInviteByEmail(email: string): Promise<InvitedUser | null> {
+    const trimmed = email.trim().toLowerCase();
+    if (isPostgresAvailable) {
+      try {
+        const p = getPool();
+        const { rows } = await p.query('SELECT * FROM invited_users WHERE LOWER(email) = LOWER($1)', [trimmed]);
+        if (rows.length > 0) {
+          const r = rows[0];
+          return {
+            id: r.id,
+            email: r.email,
+            name: r.name,
+            role: r.role,
+            invitedBy: r.invitedBy || r.invitedby,
+            createdAt: r.createdAt || r.createdat,
+            acceptedAt: r.acceptedAt || r.acceptedat || null,
+          };
+        }
+      } catch (err: any) {
+        if (isPostgresConnectionOrAuthError(err)) {
+          isPostgresAvailable = false;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const invite = memStore.invitedUsers.get(trimmed);
+    return invite ? { ...invite } : null;
+  },
+
+  async isPendingInvite(email: string): Promise<boolean> {
+    const trimmed = email.trim().toLowerCase();
+    const invite = await this.findInviteByEmail(trimmed);
+    if (invite && !invite.acceptedAt) {
+      return true;
+    }
+    const user = await this.findUserByEmail(trimmed);
+    if (user) {
+      const cred = await this.getCredentialByUserId(user.id);
+      if (cred && (cred.passwordHash === 'INVITED_PENDING_PASSWORD' || (cred.passwordResetRequired && invite && !invite.acceptedAt))) {
+        return true;
+      }
+    }
+    return false;
+  },
+
+  async acceptInvite(email: string, password: string, name?: string): Promise<User> {
+    const validation = validatePassword(password);
+    if (!validation.isValid) {
+      throw new Error(validation.errorMessage);
+    }
+
+    const trimmed = email.trim().toLowerCase();
+    const invite = await this.findInviteByEmail(trimmed);
+    let user = await this.findUserByEmail(trimmed);
+
+    if (!invite && !user) {
+      throw new Error("No pending invitation found for this email. Ask your school administrator to add your email.");
+    }
+
+    const isPending = await this.isPendingInvite(trimmed);
+    if (!isPending && !invite) {
+      throw new Error("No pending invitation found for this email.");
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const now = new Date().toISOString();
+
+    if (user) {
+      // User already created, update password credentials and active status
+      if (isPostgresAvailable) {
+        try {
+          const p = getPool();
+          if (name && name.trim()) {
+            await p.query('UPDATE users SET name = $1, "updatedAt" = $2 WHERE id = $3', [encryptField(name.trim()), now, user.id]);
+          }
+          await p.query(
+            `INSERT INTO auth_credentials ("userId", "passwordHash", "passwordResetRequired", "createdAt", "updatedAt")
+             VALUES ($1, $2, FALSE, $3, $4)
+             ON CONFLICT ("userId") DO UPDATE SET "passwordHash" = EXCLUDED."passwordHash", "passwordResetRequired" = FALSE, "updatedAt" = EXCLUDED."updatedAt"`,
+            [user.id, passwordHash, now, now]
+          );
+          await p.query('UPDATE invited_users SET "acceptedAt" = $1 WHERE LOWER(email) = LOWER($2)', [now, trimmed]);
+        } catch (err: any) {
+          if (isPostgresConnectionOrAuthError(err)) {
+            isPostgresAvailable = false;
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      if (name && name.trim()) {
+        user.name = name.trim();
+      }
+      user.updatedAt = now;
+      memStore.users.set(user.id, user);
+      memStore.credentials.set(user.id, {
+        userId: user.id,
+        passwordHash,
+        lastLogin: now,
+        passwordResetRequired: false,
+        createdAt: now,
+        updatedAt: now,
+      });
+      if (memStore.invitedUsers.has(trimmed)) {
+        memStore.invitedUsers.get(trimmed)!.acceptedAt = now;
+      }
+      return user;
+    } else {
+      // Create user
+      const role = invite?.role || UserRole.TEACHER;
+      const userName = name?.trim() || invite?.name || 'Faculty Member';
+      const created = await this.registerUser({
+        name: userName,
+        email: trimmed,
+        role,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(userName)}`,
+        isProfileComplete: false,
+        active: true,
+      }, password);
+
+      if (isPostgresAvailable) {
+        try {
+          const p = getPool();
+          await p.query('UPDATE invited_users SET "acceptedAt" = $1 WHERE LOWER(email) = LOWER($2)', [now, trimmed]);
+        } catch (err: any) {
+          if (isPostgresConnectionOrAuthError(err)) {
+            isPostgresAvailable = false;
+          }
+        }
+      }
+      if (memStore.invitedUsers.has(trimmed)) {
+        memStore.invitedUsers.get(trimmed)!.acceptedAt = now;
+      }
+      return created;
+    }
+  },
+
   // ─── Authentication ────────────────────────────────────────────────────────
   async authenticateUser(
     email: string,
@@ -1323,6 +1540,77 @@ export const serverDb = {
     }
 
     memStore.otps.delete(id);
+  },
+
+  async markEmailVerified(userId: string): Promise<void> {
+    const now = new Date().toISOString();
+    if (isPostgresAvailable) {
+      try {
+        const p = getPool();
+        await p.query('UPDATE users SET "emailVerifiedAt" = $1, "updatedAt" = $2 WHERE id = $3', [now, now, userId]);
+      } catch (err: any) {
+        if (isPostgresConnectionOrAuthError(err)) {
+          isPostgresAvailable = false;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const u = memStore.users.get(userId);
+    if (u) {
+      memStore.users.set(userId, { ...u, emailVerifiedAt: now, updatedAt: now });
+    }
+  },
+
+  async checkEmailRateLimit(email: string, maxPerHour = 5): Promise<{ allowed: boolean; retryAfterMinutes?: number }> {
+    const trimmedEmail = email.trim().toLowerCase();
+    const now = Date.now();
+    const oneHour = 60 * 60 * 1000;
+
+    if (isPostgresAvailable) {
+      try {
+        const p = getPool();
+        const { rows } = await p.query('SELECT count, "windowStart" FROM auth_email_rate_limits WHERE email = $1', [trimmedEmail]);
+        if (rows.length > 0) {
+          const count = Number(rows[0].count);
+          const windowStart = Number(rows[0].windowStart || rows[0].windowstart);
+          if (now - windowStart < oneHour) {
+            if (count >= maxPerHour) {
+              const retryAfterMinutes = Math.ceil((oneHour - (now - windowStart)) / (60 * 1000));
+              return { allowed: false, retryAfterMinutes };
+            }
+            await p.query('UPDATE auth_email_rate_limits SET count = count + 1 WHERE email = $1', [trimmedEmail]);
+          } else {
+            await p.query('UPDATE auth_email_rate_limits SET count = 1, "windowStart" = $1 WHERE email = $2', [now, trimmedEmail]);
+          }
+        } else {
+          await p.query('INSERT INTO auth_email_rate_limits (email, count, "windowStart") VALUES ($1, 1, $2)', [trimmedEmail, now]);
+        }
+      } catch (err: any) {
+        if (isPostgresConnectionOrAuthError(err)) {
+          isPostgresAvailable = false;
+        }
+      }
+    }
+
+    // Memory store fallback
+    const mem = memStore.rateLimits.get(trimmedEmail);
+    if (mem) {
+      if (now - mem.windowStart < oneHour) {
+        if (mem.count >= maxPerHour) {
+          const retryAfterMinutes = Math.ceil((oneHour - (now - mem.windowStart)) / (60 * 1000));
+          return { allowed: false, retryAfterMinutes };
+        }
+        mem.count += 1;
+      } else {
+        memStore.rateLimits.set(trimmedEmail, { count: 1, windowStart: now });
+      }
+    } else {
+      memStore.rateLimits.set(trimmedEmail, { count: 1, windowStart: now });
+    }
+
+    return { allowed: true };
   },
 
   // ─── Curriculum ────────────────────────────────────────────────────────────
@@ -2025,6 +2313,7 @@ export const serverDb = {
     const enrolledSubjects = row.enrolledSubjects || row.enrolledsubjects;
     const isProfileComplete = row.isProfileComplete ?? row.isprofilecomplete;
     const consentGivenAt = row.consentGivenAt || row.consentgivenat;
+    const emailVerifiedAt = row.emailVerifiedAt || row.emailverifiedat;
     const residentialAddress = row.residentialAddress || row.residentialaddress;
     const blockchainId = row.blockchainId || row.blockchainid;
 
@@ -2048,6 +2337,7 @@ export const serverDb = {
       isProfileComplete: Boolean(isProfileComplete),
       active: row.active !== undefined && row.active !== null ? Boolean(row.active) : true,
       consentGivenAt: consentGivenAt || undefined,
+      emailVerifiedAt: emailVerifiedAt || null,
     };
   },
 
@@ -2649,6 +2939,109 @@ export const serverDb = {
     }
     memStore.assessmentScores.set(assessmentId, list);
     return createdRecords;
+  },
+
+  async findAttendanceRecordById(id: string): Promise<any | null> {
+    if (isPostgresAvailable) {
+      try {
+        const p = getPool();
+        const { rows } = await p.query('SELECT * FROM attendance_records WHERE id = $1', [id]);
+        if (rows.length > 0) {
+          const row = rows[0];
+          return {
+            id: row.id,
+            staffId: row.staffId || row.staffid,
+            staffName: row.staffName || row.staffname || 'Staff Member',
+            date: row.date,
+            time: row.time || '',
+            className: row.className || row.classname || '',
+            status: row.status,
+            schoolId: row.schoolId || row.schoolid || '',
+            latitude: row.latitude !== null && row.latitude !== undefined ? Number(row.latitude) : null,
+            longitude: row.longitude !== null && row.longitude !== undefined ? Number(row.longitude) : null,
+            locationFlagged: Boolean(row.locationFlagged ?? row.locationflagged),
+            distanceMeters: row.distanceMeters !== null && row.distanceMeters !== undefined ? Number(row.distanceMeters) : null,
+            signature: row.signature || '',
+            offlineHash: row.offlineHash || row.offlinehash || '',
+            createdAt: row.createdAt || row.createdat,
+          };
+        }
+      } catch (err: any) {
+        if (isPostgresConnectionOrAuthError(err)) {
+          isPostgresAvailable = false;
+        }
+      }
+    }
+    const mem = memStore.attendanceRecords.get(id);
+    return mem ? { ...mem } : null;
+  },
+
+  async updateAttendanceSignature(id: string, signature: string): Promise<boolean> {
+    if (isPostgresAvailable) {
+      try {
+        const p = getPool();
+        await p.query('UPDATE attendance_records SET signature = $1 WHERE id = $2', [signature, id]);
+      } catch (err: any) {
+        if (isPostgresConnectionOrAuthError(err)) {
+          isPostgresAvailable = false;
+        }
+      }
+    }
+    const mem = memStore.attendanceRecords.get(id);
+    if (mem) {
+      memStore.attendanceRecords.set(id, { ...mem, signature });
+      return true;
+    }
+    return true;
+  },
+
+  async getAllAssessmentScores(): Promise<Array<AssessmentScore & { studentName?: string; assessmentTitle?: string; subject?: string; className?: string }>> {
+    if (isPostgresAvailable) {
+      try {
+        const p = getPool();
+        const { rows } = await p.query(`
+          SELECT sc.*, u.name as "rawStudentName", a.title as "aTitle", a.subject as "aSubject", a."className" as "aClassName"
+          FROM assessment_scores sc
+          LEFT JOIN users u ON sc."studentId" = u.id
+          LEFT JOIN assessments a ON sc."assessmentId" = a.id
+          ORDER BY sc."createdAt" DESC
+        `);
+        return rows.map((row) => ({
+          id: row.id,
+          assessmentId: row.assessmentId || row.assessmentid,
+          studentId: row.studentId || row.studentid,
+          score: Number(row.score),
+          feedback: row.feedback || undefined,
+          createdAt: row.createdAt || row.createdat,
+          studentName: row.rawStudentName ? decryptField(row.rawStudentName) : 'Student',
+          assessmentTitle: row.aTitle || 'Assessment',
+          subject: row.aSubject || 'General',
+          className: row.aClassName || 'Class',
+        }));
+      } catch (err: any) {
+        if (isPostgresConnectionOrAuthError(err)) {
+          isPostgresAvailable = false;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const results: Array<AssessmentScore & { studentName?: string; assessmentTitle?: string; subject?: string; className?: string }> = [];
+    for (const [aId, list] of memStore.assessmentScores.entries()) {
+      const assmt = memStore.assessments.get(aId);
+      for (const s of list) {
+        const u = memStore.users.get(s.studentId);
+        results.push({
+          ...s,
+          studentName: u ? u.name : 'Student',
+          assessmentTitle: assmt ? assmt.title : 'Assessment',
+          subject: assmt ? assmt.subject : 'General',
+          className: assmt ? assmt.className : 'Class',
+        });
+      }
+    }
+    return results.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   },
 
   async getAssessmentScores(assessmentId: string): Promise<(AssessmentScore & { studentName?: string })[]> {

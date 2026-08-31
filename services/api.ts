@@ -100,7 +100,7 @@ export async function register(
 
 export async function createUserByAdmin(
   userData: { name: string; email: string; role: UserRole; avatar?: string }, 
-  password: string,
+  password?: string,
   twoFactorCode?: string
 ) {
   const response = await authFetch(`${API_BASE_URL}/admin/create-user`, {
@@ -108,12 +108,45 @@ export async function createUserByAdmin(
     body: JSON.stringify({ ...userData, password, twoFactorCode })
   });
 
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.error || "Could not create user account, please try again.");
+  const text = await response.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("Cannot reach the school server. Open http://localhost:3000 after npm run dev.");
   }
 
-  return await response.json();
+  if (!response.ok || data.success === false) {
+    throw new Error(data.error || "Could not invite user account, please try again.");
+  }
+
+  return data;
+}
+
+export async function acceptInvite(email: string, password: string, name?: string) {
+  const response = await fetch(`${API_BASE_URL}/auth/accept-invite`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ email, password, name })
+  });
+
+  const text = await response.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("Cannot reach the school server. Open http://localhost:3000 after npm run dev.");
+  }
+
+  if (!response.ok || data.success === false) {
+    throw new Error(data.error || "Could not set password for this account. Please try again.");
+  }
+
+  if (data.token) {
+    setToken(data.token);
+  }
+
+  return data;
 }
 
 export async function login(email: string, password: string) {
@@ -123,18 +156,26 @@ export async function login(email: string, password: string) {
     body: JSON.stringify({ email, password })
   });
 
-  if (!response.ok) {
-    const data = await response.json();
+  const text = await response.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("Cannot reach the school server. Open http://localhost:3000 after npm run dev.");
+  }
+
+  if (data.mustSetPassword) {
+    return data;
+  }
+
+  if (!response.ok || data.success === false) {
     throw new Error(data.error || "That username or password doesn’t look right");
   }
 
-  const data = await response.json();
-  
-  // If token returned directly (e.g. bypass or 2FA pre-cleared)
   if (data.token) {
     setToken(data.token);
   }
-  
+
   return data;
 }
 
@@ -607,6 +648,38 @@ export async function verifyLedgerRecord(offlineHash: string) {
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(data.error || "Failed to verify ledger record");
+  }
+  return response.json();
+}
+
+// ─── Admin Activity Records Methods ────────────────────────────────────────
+export async function getAdminActivity() {
+  const response = await authFetch(`${API_BASE_URL}/admin/activity`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch school activity records");
+  }
+  return response.json();
+}
+
+export async function checkAdminActivity(id: string) {
+  const response = await authFetch(`${API_BASE_URL}/admin/activity/${encodeURIComponent(id)}/check`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to check activity record");
+  }
+  return response.json();
+}
+
+export async function lockWaitingActivity() {
+  const response = await authFetch(`${API_BASE_URL}/admin/activity/lock-waiting`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to lock waiting records");
   }
   return response.json();
 }
