@@ -54,32 +54,27 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
     setIsSaving(true);
     setErrorMessage(null);
 
-    const payload = {
-      teachingGrades: selectedGrades,
-      teachingClasses: selectedClasses,
-      teachingSubjects: selectedSubjects,
-      isProfileComplete: true,
-    };
-
     try {
-      const response = await updateProfile(payload);
-      if (response.success && response.user) {
-        const fullUser: User = {
-          ...user,
-          ...response.user,
-          teachingGrades: selectedGrades,
-          teachingClasses: selectedClasses,
-          teachingSubjects: selectedSubjects,
-          isProfileComplete: true,
-        };
-        db.updateUserProfile(user.id, fullUser);
-        onComplete(fullUser);
-      } else {
-        setErrorMessage(response.error || "Could not save your setup. Check the school server and try again.");
-      }
+      const result = await updateProfile({
+        isProfileComplete: true,
+        teachingGrades: selectedGrades,
+        teachingClasses: selectedClasses,
+        teachingSubjects: selectedSubjects,
+      });
+
+      const updatedUser: User = (result && result.user) ? result.user : {
+        ...user,
+        teachingGrades: selectedGrades,
+        teachingClasses: selectedClasses,
+        teachingSubjects: selectedSubjects,
+        isProfileComplete: true,
+      };
+
+      db.updateUserProfile(user.id, updatedUser);
+      onComplete(updatedUser);
     } catch (err: any) {
       console.error("[TeacherSetup] Profile update error:", err);
-      setErrorMessage(err?.message || "Could not save your setup. Check the school server and try again.");
+      setErrorMessage("Could not save your setup. Check the school server and try again.");
     } finally {
       setIsSaving(false);
     }

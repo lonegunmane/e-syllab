@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import express, { Request, Response, NextFunction } from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -8,7 +7,7 @@ import { PublicKey, Keypair, Transaction, TransactionInstruction } from "@solana
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { serverDb } from "./services/serverDatabase.js";
-import { UserRole, DocumentStatus } from "./types.js";
+import { User, UserRole, DocumentStatus } from "./types.js";
 import { validatePassword } from "./services/passwordValidation.js";
 import {
   buildAttendanceTransaction,
@@ -1574,23 +1573,36 @@ function evaluateAttendanceLocation(
       return res.status(401).json({ success: false, error: "Unauthorized" });
     }
 
-    const { name, avatar, contact, school, gender, residentialAddress, teachingGrades, teachingClasses, teachingSubjects, grade, className, enrolledSubjects, isProfileComplete } = req.body;
+    const {
+      name,
+      avatar,
+      contact,
+      school,
+      gender,
+      residentialAddress,
+      teachingGrades,
+      teachingClasses,
+      teachingSubjects,
+      grade,
+      className,
+      enrolledSubjects,
+      isProfileComplete
+    } = req.body;
 
-    const updates = {
-      ...(name && { name }),
-      ...(avatar && { avatar }),
-      ...(contact && { contact }),
-      ...(school && { school }),
-      ...(gender && { gender }),
-      ...(residentialAddress && { residentialAddress }),
-      ...(teachingGrades && { teachingGrades }),
-      ...(teachingClasses && { teachingClasses }),
-      ...(teachingSubjects && { teachingSubjects }),
-      ...(grade && { grade }),
-      ...(className && { className }),
-      ...(enrolledSubjects && { enrolledSubjects }),
-      ...(isProfileComplete !== undefined && { isProfileComplete }),
-    };
+    const updates: Partial<User> = {};
+    if (name !== undefined) updates.name = name;
+    if (avatar !== undefined) updates.avatar = avatar;
+    if (contact !== undefined) updates.contact = contact;
+    if (school !== undefined) updates.school = school;
+    if (gender !== undefined) updates.gender = gender;
+    if (residentialAddress !== undefined) updates.residentialAddress = residentialAddress;
+    if (teachingGrades !== undefined) updates.teachingGrades = teachingGrades;
+    if (teachingClasses !== undefined) updates.teachingClasses = teachingClasses;
+    if (teachingSubjects !== undefined) updates.teachingSubjects = teachingSubjects;
+    if (grade !== undefined) updates.grade = grade;
+    if (className !== undefined) updates.className = className;
+    if (enrolledSubjects !== undefined) updates.enrolledSubjects = enrolledSubjects;
+    if (isProfileComplete !== undefined) updates.isProfileComplete = Boolean(isProfileComplete);
 
     const updatedUser = await serverDb.updateUserProfile(req.user.userId, updates);
     

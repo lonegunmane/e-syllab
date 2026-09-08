@@ -381,6 +381,13 @@ export const serverDb = {
       `);
 
       await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "emailVerifiedAt" TEXT;`);
+      await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "teachingGrades" TEXT;`);
+      await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "teachingClasses" TEXT;`);
+      await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "teachingSubjects" TEXT;`);
+      await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS grade TEXT;`);
+      await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "className" TEXT;`);
+      await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "enrolledSubjects" TEXT;`);
+      await p.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "isProfileComplete" BOOLEAN DEFAULT FALSE;`);
 
       await p.query(`
         CREATE TABLE IF NOT EXISTS auth_credentials (
@@ -893,6 +900,12 @@ export const serverDb = {
           values.push(userId);
 
           await p.query(`UPDATE users SET ${setClauses.join(', ')} WHERE id = $${paramIndex}`, values);
+        }
+
+        const reloaded = await this.findUserById(userId);
+        if (reloaded) {
+          memStore.users.set(userId, reloaded);
+          return reloaded;
         }
       } catch (err: any) {
         if (isPostgresConnectionOrAuthError(err)) {
@@ -2317,6 +2330,20 @@ export const serverDb = {
     const residentialAddress = row.residentialAddress || row.residentialaddress;
     const blockchainId = row.blockchainId || row.blockchainid;
 
+    const parseArraySafe = (val: any): string[] | undefined => {
+      if (!val) return undefined;
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'string') {
+        try {
+          const parsed = JSON.parse(val);
+          return Array.isArray(parsed) ? parsed : undefined;
+        } catch {
+          return undefined;
+        }
+      }
+      return undefined;
+    };
+
     return {
       id: row.id,
       email: row.email,
@@ -2328,12 +2355,12 @@ export const serverDb = {
       school: row.school,
       gender: row.gender ? (decryptField(row.gender) as any) : undefined,
       residentialAddress: residentialAddress ? decryptField(residentialAddress) : undefined,
-      teachingGrades: teachingGrades ? (typeof teachingGrades === 'string' ? JSON.parse(teachingGrades) : teachingGrades) : undefined,
-      teachingClasses: teachingClasses ? (typeof teachingClasses === 'string' ? JSON.parse(teachingClasses) : teachingClasses) : undefined,
-      teachingSubjects: teachingSubjects ? (typeof teachingSubjects === 'string' ? JSON.parse(teachingSubjects) : teachingSubjects) : undefined,
+      teachingGrades: parseArraySafe(teachingGrades),
+      teachingClasses: parseArraySafe(teachingClasses),
+      teachingSubjects: parseArraySafe(teachingSubjects),
       grade: row.grade,
       className: row.className || row.classname,
-      enrolledSubjects: enrolledSubjects ? (typeof enrolledSubjects === 'string' ? JSON.parse(enrolledSubjects) : enrolledSubjects) : undefined,
+      enrolledSubjects: parseArraySafe(enrolledSubjects),
       isProfileComplete: Boolean(isProfileComplete),
       active: row.active !== undefined && row.active !== null ? Boolean(row.active) : true,
       consentGivenAt: consentGivenAt || undefined,
