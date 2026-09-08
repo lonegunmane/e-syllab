@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { User, UserRole } from '../types';
 import { db } from '../services/database';
-import { ShieldCheck, BookOpen, GraduationCap, Users } from 'lucide-react';
+import { updateProfile } from '../services/api';
+import { ShieldCheck, BookOpen, GraduationCap, Users, Loader2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface TeacherSetupModalProps {
@@ -28,6 +29,8 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
   const [selectedGrades, setSelectedGrades] = useState<string[]>(grades);
   const [selectedClasses, setSelectedClasses] = useState<string[]>(classes);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(subjects);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const toggleGrade = (grade: string) => {
     setSelectedGrades(prev => 
@@ -47,17 +50,39 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
     );
   };
 
-  const handleFinish = () => {
-    const updatedUser = {
-      ...user,
+  const handleFinish = async () => {
+    setIsSaving(true);
+    setErrorMessage(null);
+
+    const payload = {
       teachingGrades: selectedGrades,
       teachingClasses: selectedClasses,
       teachingSubjects: selectedSubjects,
-      isProfileComplete: true
+      isProfileComplete: true,
     };
-    
-    db.updateUserProfile(user.id, updatedUser);
-    onComplete(updatedUser);
+
+    try {
+      const response = await updateProfile(payload);
+      if (response.success && response.user) {
+        const fullUser: User = {
+          ...user,
+          ...response.user,
+          teachingGrades: selectedGrades,
+          teachingClasses: selectedClasses,
+          teachingSubjects: selectedSubjects,
+          isProfileComplete: true,
+        };
+        db.updateUserProfile(user.id, fullUser);
+        onComplete(fullUser);
+      } else {
+        setErrorMessage(response.error || "Could not save your setup. Check the school server and try again.");
+      }
+    } catch (err: any) {
+      console.error("[TeacherSetup] Profile update error:", err);
+      setErrorMessage(err?.message || "Could not save your setup. Check the school server and try again.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -185,11 +210,18 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
               </motion.div>
             )}
           </AnimatePresence>
+
+          {errorMessage && (
+            <div className="mt-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
         </div>
 
         <div className="p-8 border-t border-white/5 flex items-center justify-between bg-slate-900/50">
           <button 
-            disabled={step === 1}
+            disabled={step === 1 || isSaving}
             onClick={() => setStep(prev => prev - 1)}
             className={`px-6 py-2.5 rounded-xl font-bold transition-all ${
               step === 1 ? 'opacity-0 pointer-events-none' : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -206,10 +238,19 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
                 handleFinish();
               }
             }}
-            disabled={(step === 1 && selectedGrades.length === 0) || (step === 2 && selectedClasses.length === 0) || (step === 3 && selectedSubjects.length === 0)}
-            className="px-8 py-2.5 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-primary-900/40"
+            disabled={isSaving || (step === 1 && selectedGrades.length === 0) || (step === 2 && selectedClasses.length === 0) || (step === 3 && selectedSubjects.length === 0)}
+            className="px-8 py-2.5 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-primary-900/40 flex items-center gap-2"
           >
-            {step === 3 ? 'Complete Setup' : 'Continue'}
+            {isSaving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : step === 3 ? (
+              'Complete Setup'
+            ) : (
+              'Continue'
+            )}
           </button>
         </div>
       </motion.div>

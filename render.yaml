@@ -5,14 +5,12 @@ services:
     region: oregon
     plan: free
     branch: main
-    buildCommand: npm install && npm run build:server
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm run start
-    healthCheckPath: /api/blockchain/status
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3000
       - key: RESEND_API_KEY
         sync: false
       - key: DATABASE_URL

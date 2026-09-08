@@ -1,5 +1,7 @@
 node_modules/
 dist/
+server-bundle.cjs
+server-bundle.cjs.map
 .env
 .env.local
 school-keypair.json

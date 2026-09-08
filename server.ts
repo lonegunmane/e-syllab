@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express, { Request, Response, NextFunction } from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
@@ -252,6 +253,16 @@ async function startServer() {
 
     if (req.method === "OPTIONS") return res.sendStatus(200);
     next();
+  });
+
+  // Health check endpoint for Render, Cloud Run, and deployment probes
+  app.get(["/health", "/api/health"], (_req, res) => {
+    res.json({
+      status: "ok",
+      service: "e-syllab-server",
+      timestamp: new Date().toISOString(),
+      uptime: Math.round(process.uptime()),
+    });
   });
 
   // ════════════════════════════════════════════
