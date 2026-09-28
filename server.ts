@@ -1,8 +1,12 @@
+import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
 import express, { Request, Response, NextFunction } from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Resend } from "resend";
+import PDFDocument from "pdfkit";
 import { PublicKey, Keypair, Transaction, TransactionInstruction } from "@solana/web3.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
@@ -19,26 +23,117 @@ import {
 
 const rootDir = process.cwd();
 
-// ─── School signing keypair (used to auto-sync offline records) ──────────────
-// Generate once with: node generate-keypair.js
-// Then add the printed line to .env.local:
-//   SCHOOL_SIGNING_KEYPAIR=[12,45,67,...]
-let _fallbackSchoolKeypair: Keypair | null = null;
-function getSchoolKeypair(): Keypair {
+// ─── School signing keypair (used to lock attendance records on-chain) ────────
+let _hasLoggedMissingWallet = false;
+let _cachedSchoolKeypair: Keypair | null = null;
+
+function getSchoolKeypair(): Keypair | null {
+  if (_cachedSchoolKeypair) return _cachedSchoolKeypair;
+
   const raw = process.env.SCHOOL_SIGNING_KEYPAIR;
   if (raw) {
     try {
       const secretKey = Uint8Array.from(JSON.parse(raw));
-      return Keypair.fromSecretKey(secretKey);
+      _cachedSchoolKeypair = Keypair.fromSecretKey(secretKey);
+      return _cachedSchoolKeypair;
     } catch (err) {
       console.warn("[Server] Could not load SCHOOL_SIGNING_KEYPAIR from env:", err);
     }
   }
-  if (!_fallbackSchoolKeypair) {
-    _fallbackSchoolKeypair = Keypair.generate();
-    console.log("[Server] Generated ephemeral SCHOOL_SIGNING_KEYPAIR:", _fallbackSchoolKeypair.publicKey.toBase58());
+
+  if (!_hasLoggedMissingWallet) {
+    console.log("School lock wallet is not loaded");
+    _hasLoggedMissingWallet = true;
   }
-  return _fallbackSchoolKeypair;
+  return null;
+}
+
+// ─── Blockchain Signature & Error Helpers ─────────────────────────────────────
+
+function isValidSolanaSig(sig?: string | null): boolean {
+  if (!sig || typeof sig !== "string") return false;
+  const s = sig.trim();
+  return (
+    s.length >= 44 &&
+    !s.startsWith("ledger-") &&
+    !s.startsWith("cred-") &&
+    !s.startsWith("queue-") &&
+    !s.startsWith("recorded-") &&
+    !s.startsWith("pending-") &&
+    !s.startsWith("dummy-") &&
+    !s.startsWith("att-") &&
+    !s.startsWith("mock-") &&
+    /^[1-9A-HJ-NP-Za-km-z]+$/.test(s)
+  );
+}
+
+// Simple English lock reasons as specified by user instructions:
+// - no coins → "The lock account has no test coins"
+// - 429/timeout/blockhash → "The lock network is busy. Try again in a minute"
+// - missing key → "The school lock wallet is not set"
+function getLockReason(rawError?: string | null): string {
+  if (!rawError) return "The school lock wallet is not set";
+  const lower = rawError.toLowerCase();
+  if (
+    lower.includes("no coins") ||
+    lower.includes("insufficient") ||
+    lower.includes("debit an account") ||
+    lower.includes("0x1") ||
+    lower.includes("lamport")
+  ) {
+    return "The lock account has no test coins";
+  }
+  if (
+    lower.includes("missing key") ||
+    lower.includes("not set") ||
+    lower.includes("not loaded") ||
+    lower.includes("wallet is not")
+  ) {
+    return "The school lock wallet is not set";
+  }
+  if (
+    lower.includes("429") ||
+    lower.includes("timeout") ||
+    lower.includes("timed out") ||
+    lower.includes("blockhash") ||
+    lower.includes("busy") ||
+    lower.includes("network") ||
+    lower.includes("rate") ||
+    lower.includes("fetch") ||
+    lower.includes("econnrefused") ||
+    lower.includes("connection")
+  ) {
+    return "The lock network is busy. Try again in a minute";
+  }
+  return "The lock network is busy. Try again in a minute";
+}
+
+async function confirmTransactionWithTimeout(
+  connection: any,
+  signature: string,
+  blockhash: string,
+  lastValidBlockHeight: number,
+  timeoutMs: number = 60000
+): Promise<{ confirmed: boolean; slot?: number; error?: string }> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const statuses = await connection.getSignatureStatuses([signature]);
+      const status = statuses?.value?.[0];
+      if (status) {
+        if (status.err) {
+          return { confirmed: false, error: `Transaction failed on chain: ${JSON.stringify(status.err)}` };
+        }
+        if (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized") {
+          return { confirmed: true, slot: status.slot };
+        }
+      }
+    } catch (err: any) {
+      console.warn("[Blockchain] Polling status check:", err.message);
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return { confirmed: false, error: "The lock network is busy. Try again in a minute" };
 }
 
 // ─── Resend ───────────────────────────────────────────────────────────────────
@@ -410,7 +505,17 @@ function evaluateAttendanceLocation(
     try {
       const flaggedOnly = req.query.flagged === 'true';
       const records = await serverDb.getAllAttendanceRecords(flaggedOnly);
-      res.json({ success: true, count: records.length, records });
+      const sanitized = records.map(r => {
+        const isLocked = Boolean(r.confirmedOnChain) && isValidSolanaSig(r.signature);
+        return {
+          ...r,
+          confirmedOnChain: isLocked,
+          signature: isLocked ? r.signature : null,
+          lockReason: isLocked ? null : (r.lockReason || (r.lockError ? getLockReason(r.lockError) : "The school lock wallet is not set")),
+          explorerUrl: isLocked && r.signature ? `https://explorer.solana.com/tx/${r.signature}?cluster=devnet` : undefined,
+        };
+      });
+      res.json({ success: true, count: sanitized.length, records: sanitized });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -431,55 +536,69 @@ function evaluateAttendanceLocation(
 
       const offlineHash = await computeOfflineHash(staffId, date, status, { latitude: locEval.latitude, longitude: locEval.longitude });
       const schoolKeypair = getSchoolKeypair();
-      const memoPayload = JSON.stringify({
-        app: "E-SYLLAB", version: "1.0", type: "ATTENDANCE",
-        staffId, staffName: staffName || staffId, schoolId,
-        date, time: time || "", className: className || "",
-        status,
-        latitude: locEval.latitude,
-        longitude: locEval.longitude,
-        locationFlagged: locEval.locationFlagged,
-        distanceMeters: locEval.distanceMeters,
-        offlineHash, syncedFromOffline: false,
-        localTimestamp: localTimestamp || new Date().toISOString(),
-        recordedAt: new Date().toISOString(),
-      });
-
-      const connection = getConnection();
-      const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
       let signature = "";
       let slot = 0;
       let confirmedOnChain = false;
+      let lockError: string | null = null;
+      let lockReason: string | null = null;
 
-      try {
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-        const ix = new TransactionInstruction({
-          keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
-          programId: MEMO_PROGRAM_ID,
-          data: new TextEncoder().encode(memoPayload) as any,
+      if (!schoolKeypair) {
+        lockError = "School lock wallet is not loaded";
+        lockReason = "The school lock wallet is not set";
+      } else {
+        const memoPayload = JSON.stringify({
+          app: "E-SYLLAB", version: "1.0", type: "ATTENDANCE",
+          staffId, staffName: staffName || staffId, schoolId,
+          date, time: time || "", className: className || "",
+          status,
+          latitude: locEval.latitude,
+          longitude: locEval.longitude,
+          locationFlagged: locEval.locationFlagged,
+          distanceMeters: locEval.distanceMeters,
+          offlineHash, syncedFromOffline: false,
+          localTimestamp: localTimestamp || new Date().toISOString(),
+          recordedAt: new Date().toISOString(),
         });
 
-        const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
-        tx.add(ix);
-        tx.sign(schoolKeypair);
+        const connection = getConnection();
+        const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
-        signature = await connection.sendRawTransaction(tx.serialize());
-        await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-        const txInfo = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
-        slot = txInfo?.slot ?? 0;
-        confirmedOnChain = true;
-      } catch (solanaErr: any) {
-        console.warn("[Blockchain] On-chain submission failed or timed out:", solanaErr.message);
-        signature = "";
-        confirmedOnChain = false;
-        slot = 0;
+        try {
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+          const ix = new TransactionInstruction({
+            keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+            programId: MEMO_PROGRAM_ID,
+            data: new TextEncoder().encode(memoPayload) as any,
+          });
+
+          const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+          tx.add(ix);
+          tx.sign(schoolKeypair);
+
+          signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: true });
+          const confirmRes = await confirmTransactionWithTimeout(connection, signature, blockhash, lastValidBlockHeight, 60000);
+          if (confirmRes.confirmed) {
+            slot = confirmRes.slot ?? 0;
+            confirmedOnChain = true;
+          } else {
+            throw new Error(confirmRes.error || "Confirmation failed");
+          }
+        } catch (solanaErr: any) {
+          console.warn("[Blockchain] On-chain submission failed or timed out:", solanaErr.message);
+          lockError = solanaErr.message || String(solanaErr);
+          lockReason = getLockReason(lockError);
+          signature = "";
+          confirmedOnChain = false;
+          slot = 0;
+        }
       }
 
-      console.log(`[Blockchain] Attendance Recorded | ${staffId} | ${className || "—"} | ${date} | status: ${status} | flagged: ${locEval.locationFlagged} | onChain: ${confirmedOnChain}`);
+      console.log(`[Blockchain] Attendance Recorded | ${staffId} | ${className || "—"} | ${date} | status: ${status} | flagged: ${locEval.locationFlagged} | onChain: ${confirmedOnChain} | lockReason: ${lockReason || "None"}`);
 
+      let recordId = `rec-${Date.now()}`;
       try {
-        await serverDb.recordAttendance({
+        const saved = await serverDb.recordAttendance({
           staffId, staffName, date, time, className, status, schoolId,
           latitude: locEval.latitude,
           longitude: locEval.longitude,
@@ -487,28 +606,189 @@ function evaluateAttendanceLocation(
           distanceMeters: locEval.distanceMeters,
           signature: confirmedOnChain ? signature : "",
           offlineHash,
+          lockError,
+          lockReason,
+          confirmedOnChain,
+          slot,
         });
+        if (saved?.id) recordId = saved.id;
       } catch (dbErr) {
         console.warn("[Blockchain] DB record error:", dbErr);
       }
 
+      const isLocked = confirmedOnChain && isValidSolanaSig(signature);
+
       res.json({
         success: true,
-        signature: (confirmedOnChain && signature) ? signature : null,
-        slot,
+        id: recordId,
+        signature: isLocked ? signature : null,
+        slot: isLocked ? slot : 0,
         offlineHash,
-        confirmedOnChain,
+        confirmedOnChain: isLocked,
+        lockError,
+        lockReason,
         latitude: locEval.latitude,
         longitude: locEval.longitude,
         locationFlagged: locEval.locationFlagged,
         distanceMeters: locEval.distanceMeters,
-        explorerUrl: (confirmedOnChain && signature) ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
-        message: confirmedOnChain
+        explorerUrl: (isLocked && signature) ? `https://explorer.solana.com/tx/${signature}?cluster=devnet` : undefined,
+        message: isLocked
           ? "Saved. This cannot be changed."
           : "Saved at school. Waiting to lock.",
       });
     } catch (err: any) {
       console.error("[Blockchain] Record error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // POST /api/blockchain/attendance/retry - TEACHER or ADMIN
+  // Retries locking attendance rows on Solana where confirmedOnChain is false
+  app.post("/api/blockchain/attendance/retry", authenticateToken, authorizeRole(UserRole.TEACHER, UserRole.ADMIN), async (req, res) => {
+    try {
+      const schoolKeypair = getSchoolKeypair();
+      if (!schoolKeypair) {
+        return res.status(400).json({
+          success: false,
+          error: "School lock wallet is not loaded",
+          lockReason: "The school lock wallet is not set",
+        });
+      }
+
+      const { id } = req.body || {};
+      let rowsToRetry: any[] = [];
+
+      if (id) {
+        const row = await serverDb.findAttendanceRecordById(id);
+        if (!row) {
+          return res.status(404).json({ success: false, error: "Record not found" });
+        }
+        if (row.confirmedOnChain && isValidSolanaSig(row.signature)) {
+          return res.json({ success: true, message: "Record is already locked on-chain", record: row });
+        }
+        rowsToRetry = [row];
+      } else {
+        const allRecords = await serverDb.getAllAttendanceRecords();
+        rowsToRetry = allRecords.filter(r => !r.confirmedOnChain || !isValidSolanaSig(r.signature));
+      }
+
+      if (rowsToRetry.length === 0) {
+        return res.json({ success: true, count: 0, retried: 0, succeeded: 0, failed: 0, results: [] });
+      }
+
+      const connection = getConnection();
+      const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+      const results: any[] = [];
+
+      for (const rec of rowsToRetry) {
+        try {
+          const offlineHash = rec.offlineHash || await computeOfflineHash(
+            rec.staffId,
+            rec.date,
+            rec.status as any,
+            rec.latitude !== null && rec.longitude !== null ? { latitude: rec.latitude, longitude: rec.longitude } : null
+          );
+
+          const memoPayload = JSON.stringify({
+            app: "E-SYLLAB", version: "1.0", type: "ATTENDANCE",
+            staffId: rec.staffId, staffName: rec.staffName || rec.staffId, schoolId: rec.schoolId || "ZMB-KAPASA-001",
+            date: rec.date, time: rec.time || "", className: rec.className || "",
+            status: rec.status,
+            latitude: rec.latitude ?? null,
+            longitude: rec.longitude ?? null,
+            locationFlagged: rec.locationFlagged ?? false,
+            distanceMeters: rec.distanceMeters ?? null,
+            offlineHash, syncedFromOffline: false,
+            localTimestamp: rec.createdAt || new Date().toISOString(),
+            recordedAt: new Date().toISOString(),
+          });
+
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+          const ix = new TransactionInstruction({
+            keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+            programId: MEMO_PROGRAM_ID,
+            data: new TextEncoder().encode(memoPayload) as any,
+          });
+
+          const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+          tx.add(ix);
+          tx.sign(schoolKeypair);
+
+          const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: true });
+          const confirmRes = await confirmTransactionWithTimeout(connection, signature, blockhash, lastValidBlockHeight, 60000);
+          if (!confirmRes.confirmed) {
+            throw new Error(confirmRes.error || "Confirmation timed out after 60s");
+          }
+
+          const slot = confirmRes.slot ?? 0;
+          const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+
+          await serverDb.updateAttendanceLockStatus(rec.id, {
+            signature,
+            confirmedOnChain: true,
+            slot,
+            lockError: null,
+            lockReason: null,
+          });
+
+          results.push({
+            id: rec.id,
+            success: true,
+            confirmedOnChain: true,
+            signature,
+            slot,
+            explorerUrl,
+          });
+          console.log(`[Attendance Retry] ✓ Locked ${rec.id} (${rec.staffName}) → ${signature}`);
+        } catch (err: any) {
+          const lockError = err.message || String(err);
+          const lockReason = getLockReason(lockError);
+          await serverDb.updateAttendanceLockStatus(rec.id, {
+            confirmedOnChain: false,
+            lockError,
+            lockReason,
+          });
+          results.push({
+            id: rec.id,
+            success: false,
+            confirmedOnChain: false,
+            lockError,
+            lockReason,
+          });
+          console.warn(`[Attendance Retry] ✗ Failed ${rec.id} (${rec.staffName}): ${lockError}`);
+        }
+      }
+
+      res.json({
+        success: true,
+        count: rowsToRetry.length,
+        retried: results.length,
+        succeeded: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
+        results,
+      });
+    } catch (err: any) {
+      console.error("[Attendance Retry] Error:", err);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/blockchain/attendance/my-records - Current authenticated user's records
+  app.get("/api/blockchain/attendance/my-records", authenticateToken, async (req, res) => {
+    try {
+      const records = await serverDb.getUserAttendanceRecords(req.user!.userId);
+      const sanitized = records.map(r => {
+        const isLocked = Boolean(r.confirmedOnChain) && isValidSolanaSig(r.signature);
+        return {
+          ...r,
+          confirmedOnChain: isLocked,
+          signature: isLocked ? r.signature : null,
+          lockReason: isLocked ? null : (r.lockReason || (r.lockError ? getLockReason(r.lockError) : "The school lock wallet is not set")),
+          explorerUrl: isLocked && r.signature ? `https://explorer.solana.com/tx/${r.signature}?cluster=devnet` : undefined,
+        };
+      });
+      res.json({ success: true, count: sanitized.length, records: sanitized });
+    } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
   });
@@ -1550,6 +1830,70 @@ function evaluateAttendanceLocation(
     res.send(JSON.stringify(exportData, null, 2));
   });
 
+  // GET /api/terms/pdf - Download School Terms of Use in PDF format (using PDFKit)
+  app.get("/api/terms/pdf", (req: Request, res: Response) => {
+    try {
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment; filename="Chinsali_Girls_Secondary_School_Terms_of_Use.pdf"');
+
+      doc.pipe(res);
+
+      doc.fontSize(18).fillColor('#1e293b').text('Chinsali Girls Secondary School', { align: 'center' });
+      doc.fontSize(11).fillColor('#64748b').text('Chinsali, Zambia', { align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(14).fillColor('#0284c7').text('Terms of Use & Platform Guidelines', { align: 'center' });
+      doc.fontSize(9).fillColor('#94a3b8').text('Academic Year 2026 • Ministry of Education, Republic of Zambia', { align: 'center' });
+      doc.moveDown(1);
+
+      const termsList = [
+        {
+          title: '1. Acceptance of Educational Terms',
+          body: 'By signing in to and accessing E-SYLLAB, students, teachers, and administrators agree to comply with school administrative regulations and these terms of use. E-SYLLAB is provided exclusively for educational administration, curriculum tracking, attendance verification, and academic learning at Chinsali Girls Secondary School.'
+        },
+        {
+          title: '2. Permitted Use & Account Responsibility',
+          body: 'Each user is issued personalized credentials. You are strictly prohibited from sharing your login credentials, impersonating another student or faculty member, or attempting to bypass role-based permissions. Teachers and administrators are responsible for the accuracy of records submitted under their accounts.'
+        },
+        {
+          title: '3. Academic Integrity & Record Authenticity',
+          body: 'All attendance entries, grade submissions, and vault documents are cryptographically tracked to preserve institutional integrity. Any unauthorized attempt to tamper with academic scores, attendance histories, or cryptographic proofs constitutes gross misconduct under school disciplinary codes.'
+        },
+        {
+          title: '4. Compliance with the Zambian Data Protection Act No. 3 of 2021',
+          body: 'E-SYLLAB operates in full compliance with the Data Protection Act No. 3 of 2021 of the Republic of Zambia. The platform processes personal identifiable information (PII) including names, educational records, attendance logs, and contact details solely for lawful educational purposes with appropriate security safeguards.'
+        },
+        {
+          title: '5. Curriculum Standards & Intellectual Property',
+          body: 'Curriculum materials, assessment frameworks, and syllabus guidelines are structured in alignment with the Examinations Council of Zambia (ECZ) national secondary curriculum framework. Course materials uploaded by teachers remain the institutional property of Chinsali Girls Secondary School.'
+        },
+        {
+          title: '6. Service Availability & Offline Continuity',
+          body: 'E-SYLLAB includes local offline storage to guarantee that attendance marking and timetable access function even when school internet connectivity is interrupted. Local records saved on school devices will automatically synchronize once connectivity is restored.'
+        },
+        {
+          title: '7. Amendments & Inquiries',
+          body: 'These terms may be updated periodically in consultation with school management boards and the Ministry of Education. Inquiries regarding platform policies should be directed to the school administration office at Chinsali Girls Secondary School, Chinsali, Zambia.'
+        }
+      ];
+
+      termsList.forEach(item => {
+        doc.fontSize(11).fillColor('#0f172a').font('Helvetica-Bold').text(item.title);
+        doc.moveDown(0.2);
+        doc.fontSize(9.5).fillColor('#334155').font('Helvetica').text(item.body, { lineGap: 2 });
+        doc.moveDown(0.7);
+      });
+
+      doc.moveDown(0.5);
+      doc.fontSize(8.5).fillColor('#64748b').font('Helvetica-Oblique').text('Official Policy Document • Chinsali Girls Secondary School, Chinsali, Zambia', { align: 'center' });
+
+      doc.end();
+    } catch (err: any) {
+      console.error('[Server] Failed to generate terms PDF:', err);
+      res.status(500).json({ success: false, error: 'Failed to generate terms PDF.' });
+    }
+  });
+
   // GET /api/profile - Get current user profile (requires authentication)
   app.get("/api/profile", authenticateToken, async (req, res) => {
     if (!req.user) {
@@ -1833,7 +2177,10 @@ function evaluateAttendanceLocation(
         return res.json({
           match: true,
           locked: isLocked,
-          message: isLocked ? "Matches record saved at school and locked on public ledger." : "Matches record saved at school. Waiting to lock.",
+          lockReason: isLocked ? null : (att.lockReason || null),
+          message: isLocked
+            ? "Matches record saved at school and locked on public ledger."
+            : (att.lockReason ? `Matches record saved at school. Waiting to lock (${att.lockReason}).` : "Matches record saved at school. Waiting to lock."),
           explorerUrl: isLocked && validSig ? `https://explorer.solana.com/tx/${validSig}?cluster=devnet` : undefined,
         });
       }
@@ -1945,8 +2292,18 @@ function evaluateAttendanceLocation(
   // POST /api/admin/activity/lock-waiting - Retry Solana Memo for waiting items (Admin only)
   app.post("/api/admin/activity/lock-waiting", authenticateToken, authorizeRole(UserRole.ADMIN), async (_req, res) => {
     try {
-      const connection = getConnection();
       const schoolKeypair = getSchoolKeypair();
+      if (!schoolKeypair) {
+        return res.json({
+          success: true,
+          attempted: 0,
+          locked: 0,
+          failed: 0,
+          message: "The school lock wallet is not set",
+        });
+      }
+
+      const connection = getConnection();
       const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
       // Check RPC connection first
@@ -1972,7 +2329,7 @@ function evaluateAttendanceLocation(
 
       // 1. Process waiting attendance records
       const allAttendance = await serverDb.getAllAttendanceRecords();
-      const waitingAttendance = allAttendance.filter(a => !isValidSolanaSig(a.signature));
+      const waitingAttendance = allAttendance.filter(a => !a.confirmedOnChain || !isValidSolanaSig(a.signature));
 
       for (const att of waitingAttendance) {
         attempted++;
@@ -2002,14 +2359,30 @@ function evaluateAttendanceLocation(
           tx.add(ix);
           tx.sign(schoolKeypair);
 
-          const sig = await connection.sendRawTransaction(tx.serialize());
-          await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+          const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: true });
+          const confirmRes = await confirmTransactionWithTimeout(connection, sig, blockhash, lastValidBlockHeight, 60000);
+          if (!confirmRes.confirmed) {
+            throw new Error(confirmRes.error || "Confirmation timed out after 60s");
+          }
 
-          await serverDb.updateAttendanceSignature(att.id, sig);
+          await serverDb.updateAttendanceLockStatus(att.id, {
+            signature: sig,
+            confirmedOnChain: true,
+            slot: confirmRes.slot ?? 0,
+            lockError: null,
+            lockReason: null,
+          });
           await serverDb.deleteFromSyncQueue(att.id);
 
           locked++;
         } catch (err: any) {
+          const lockError = err.message || String(err);
+          const lockReason = getLockReason(lockError);
+          await serverDb.updateAttendanceLockStatus(att.id, {
+            confirmedOnChain: false,
+            lockError,
+            lockReason,
+          });
           console.warn(`[Lock Waiting] Failed for attendance ${att.id}:`, err.message);
           failed++;
         }
@@ -2088,21 +2461,6 @@ function evaluateAttendanceLocation(
   // ════════════════════════════════════════════
   //  ACADEMIC LEDGER ROUTES (GRADES & CREDENTIALS)
   // ════════════════════════════════════════════
-
-  // Helper to check if a signature string is a valid Solana transaction signature
-  const isValidSolanaSig = (sig?: string | null) => {
-    if (!sig || typeof sig !== 'string') return false;
-    const s = sig.trim();
-    return s.length >= 44 &&
-      !s.startsWith('ledger-') &&
-      !s.startsWith('cred-') &&
-      !s.startsWith('queue-') &&
-      !s.startsWith('recorded-') &&
-      !s.startsWith('pending-') &&
-      !s.startsWith('dummy-') &&
-      !s.startsWith('att-') &&
-      /^[1-9A-HJ-NP-Za-km-z]+$/.test(s);
-  };
 
   // GET /api/blockchain/ledger/all - Fetch all records (Admin check records)
   app.get("/api/blockchain/ledger/all", authenticateToken, async (_req, res) => {
@@ -2280,29 +2638,31 @@ function evaluateAttendanceLocation(
       let slot = 0;
       let confirmedOnChain = false;
 
-      try {
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-        const ix = new TransactionInstruction({
-          keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
-          programId: MEMO_PROGRAM_ID,
-          data: new TextEncoder().encode(memoPayload) as any,
-        });
+      if (schoolKeypair) {
+        try {
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+          const ix = new TransactionInstruction({
+            keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+            programId: MEMO_PROGRAM_ID,
+            data: new TextEncoder().encode(memoPayload) as any,
+          });
 
-        const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
-        tx.add(ix);
-        tx.sign(schoolKeypair);
+          const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+          tx.add(ix);
+          tx.sign(schoolKeypair);
 
-        const sig = await connection.sendRawTransaction(tx.serialize());
-        await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
-        const txInfo = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
-        slot = txInfo?.slot ?? 0;
-        signature = sig;
-        confirmedOnChain = true;
-      } catch (solanaErr: any) {
-        console.warn("[Ledger] Grade submission on-chain notice:", solanaErr.message);
-        signature = null;
-        slot = 0;
-        confirmedOnChain = false;
+          const sig = await connection.sendRawTransaction(tx.serialize());
+          await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+          const txInfo = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+          slot = txInfo?.slot ?? 0;
+          signature = sig;
+          confirmedOnChain = true;
+        } catch (solanaErr: any) {
+          console.warn("[Ledger] Grade submission on-chain notice:", solanaErr.message);
+          signature = null;
+          slot = 0;
+          confirmedOnChain = false;
+        }
       }
 
       await serverDb.recordLedgerEntry({
@@ -2368,29 +2728,31 @@ function evaluateAttendanceLocation(
       let slot = 0;
       let confirmedOnChain = false;
 
-      try {
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-        const ix = new TransactionInstruction({
-          keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
-          programId: MEMO_PROGRAM_ID,
-          data: new TextEncoder().encode(memoPayload) as any,
-        });
+      if (schoolKeypair) {
+        try {
+          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+          const ix = new TransactionInstruction({
+            keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+            programId: MEMO_PROGRAM_ID,
+            data: new TextEncoder().encode(memoPayload) as any,
+          });
 
-        const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
-        tx.add(ix);
-        tx.sign(schoolKeypair);
+          const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+          tx.add(ix);
+          tx.sign(schoolKeypair);
 
-        const sig = await connection.sendRawTransaction(tx.serialize());
-        await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
-        const txInfo = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
-        slot = txInfo?.slot ?? 0;
-        signature = sig;
-        confirmedOnChain = true;
-      } catch (solanaErr: any) {
-        console.warn("[Ledger] Credential submission on-chain notice:", solanaErr.message);
-        signature = null;
-        slot = 0;
-        confirmedOnChain = false;
+          const sig = await connection.sendRawTransaction(tx.serialize());
+          await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+          const txInfo = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+          slot = txInfo?.slot ?? 0;
+          signature = sig;
+          confirmedOnChain = true;
+        } catch (solanaErr: any) {
+          console.warn("[Ledger] Credential submission on-chain notice:", solanaErr.message);
+          signature = null;
+          slot = 0;
+          confirmedOnChain = false;
+        }
       }
 
       await serverDb.recordLedgerEntry({
@@ -2678,29 +3040,31 @@ function evaluateAttendanceLocation(
         let slot = 0;
         let confirmedOnChain = false;
 
-        try {
-          const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
-          const ix = new TransactionInstruction({
-            keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
-            programId: MEMO_PROGRAM_ID,
-            data: new TextEncoder().encode(memoPayload) as any,
-          });
+        if (schoolKeypair) {
+          try {
+            const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+            const ix = new TransactionInstruction({
+              keys: [{ pubkey: schoolKeypair.publicKey, isSigner: true, isWritable: false }],
+              programId: MEMO_PROGRAM_ID,
+              data: new TextEncoder().encode(memoPayload) as any,
+            });
 
-          const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
-          tx.add(ix);
-          tx.sign(schoolKeypair);
+            const tx = new Transaction({ feePayer: schoolKeypair.publicKey, blockhash, lastValidBlockHeight });
+            tx.add(ix);
+            tx.sign(schoolKeypair);
 
-          const sig = await connection.sendRawTransaction(tx.serialize());
-          await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
-          const txInfo = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
-          slot = txInfo?.slot ?? 0;
-          signature = sig;
-          confirmedOnChain = true;
-        } catch (solanaErr: any) {
-          console.warn("[Ledger] Assessment score submission on-chain notice:", solanaErr.message);
-          signature = null;
-          slot = 0;
-          confirmedOnChain = false;
+            const sig = await connection.sendRawTransaction(tx.serialize());
+            await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+            const txInfo = await connection.getTransaction(sig, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+            slot = txInfo?.slot ?? 0;
+            signature = sig;
+            confirmedOnChain = true;
+          } catch (solanaErr: any) {
+            console.warn("[Ledger] Assessment score submission on-chain notice:", solanaErr.message);
+            signature = null;
+            slot = 0;
+            confirmedOnChain = false;
+          }
         }
 
         await serverDb.recordLedgerEntry({
@@ -3330,17 +3694,26 @@ function evaluateAttendanceLocation(
     app.get("*all", (_req, res) => res.sendFile(path.join(distPath, "index.html")));
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  app.listen(PORT, "0.0.0.0", async () => {
     console.log(`\n🚀 E-SYLLAB Server → http://localhost:${PORT}`);
     console.log(`⛓  Blockchain API  → http://localhost:${PORT}/api/blockchain`);
     console.log(`📡 Solana Devnet connected`);
     if (process.env.NODE_ENV !== "production") {
       console.warn("WARNING: test OTP bypass is active (non-production only).");
     }
-    if (getSchoolKeypair()) {
-      console.log(`🔑 School signing key loaded — offline sync enabled\n`);
+    const schoolKp = getSchoolKeypair();
+    if (schoolKp) {
+      const pub = schoolKp.publicKey.toBase58();
+      try {
+        const conn = getConnection();
+        const lamports = await conn.getBalance(schoolKp.publicKey, "confirmed");
+        const sol = (lamports / 1_000_000_000).toFixed(4);
+        console.log(`School lock wallet public address: ${pub} | Devnet balance: ${sol} SOL`);
+      } catch (err: any) {
+        console.log(`School lock wallet public address: ${pub} | Devnet balance check failed: ${err.message}`);
+      }
     } else {
-      console.warn(`⚠  SCHOOL_SIGNING_KEYPAIR not set — offline sync disabled\n`);
+      console.log("The school lock wallet is not set");
     }
   });
 }

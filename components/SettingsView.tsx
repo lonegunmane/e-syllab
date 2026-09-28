@@ -5,7 +5,8 @@ import {
   Calendar, AlertTriangle, MessageSquare, Check, Sparkles, Smartphone,
   Layers, ChevronDown, ChevronUp, Code2, WifiOff, FileCheck, Shield,
   FileText, Trash2, LogOut, Upload, Laptop, Globe, Key, AlertCircle,
-  GraduationCap, BookOpen, Hash, Download, MapPin, Crosshair, Navigation
+  GraduationCap, BookOpen, Hash, Download, MapPin, Crosshair, Navigation,
+  Pencil
 } from 'lucide-react';
 import { User, UserRole, UserSession, SchoolLocationConfig } from '../types';
 import { db } from '../services/database';
@@ -14,6 +15,8 @@ import {
   getNotificationPreferences, saveNotificationPreferences, NotificationPreferences
 } from '../services/settingsService';
 import { getSessions, revokeSession, deleteAccount, clearToken, exportPersonalData, getSchoolLocation, updateSchoolLocation } from '../services/api';
+import { downloadTermsPdf } from '../services/termsPdfHelper';
+import { normalizeGradeToForm } from '../services/formLabels';
 
 interface SettingsViewProps {
   user: User;
@@ -31,14 +34,14 @@ type SettingsSection =
   | 'privacy' 
   | 'about';
 
-// Preloaded DiceBear avatars using the project's standard avataaars pattern
+// Preloaded illustrated portrait avatars (friendly drawn Bitmoji/Snapchat style portraits)
 const PRELOADED_AVATARS = [
-  { id: 'av-1', name: 'Kondwani', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Kondwani' },
-  { id: 'av-2', name: 'Chipo',    url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Chipo' },
-  { id: 'av-3', name: 'Mutale',   url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mutale' },
-  { id: 'av-4', name: 'Bwalya',   url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Bwalya' },
-  { id: 'av-5', name: 'Thandiwe', url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Thandiwe' },
-  { id: 'av-6', name: 'Mapalo',   url: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mapalo' },
+  { id: 'av-1', name: 'Kondwani', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Kondwani' },
+  { id: 'av-2', name: 'Chipo',    url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Chipo' },
+  { id: 'av-3', name: 'Mutale',   url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Mutale' },
+  { id: 'av-4', name: 'Bwalya',   url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Bwalya' },
+  { id: 'av-5', name: 'Thandiwe', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Thandiwe' },
+  { id: 'av-6', name: 'Mapalo',   url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=Mapalo' },
 ];
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, onLogout }) => {
@@ -46,6 +49,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   // ── Profile Form State ──────────────────────────────────────────────────────
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [formData, setFormData] = useState({
     name: user.name || '',
     contact: user.contact || '',
@@ -82,6 +86,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
   const [isExportingData, setIsExportingData] = useState(false);
   const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
   const [exportErrorMessage, setExportErrorMessage] = useState<string | null>(null);
+
+  // ── Terms PDF Download State ───────────────────────────────────────────────
+  const [isDownloadingTerms, setIsDownloadingTerms] = useState(false);
+  const [termsDownloadSuccess, setTermsDownloadSuccess] = useState(false);
 
   // ── School Location & Geofence State (Admin Only) ─────────────────────────
   const [schoolLocation, setSchoolLocation] = useState<SchoolLocationConfig>({
@@ -283,6 +291,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
 
   // Handle Custom Avatar File Upload
   const handleCustomAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isEditingProfile) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -296,20 +305,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
       const dataUrl = reader.result as string;
       setCustomAvatarPreview(dataUrl);
       setSelectedAvatar(dataUrl);
-      setProfileMessage({ type: 'success', text: 'Custom picture uploaded! Click "Save Changes" below to apply.' });
+      setProfileMessage({ type: 'success', text: 'Custom picture selected! Click "Save Changes" below to apply.' });
     };
     reader.readAsDataURL(file);
   };
 
   // Handle Avatar Selection from Preloaded Grid
   const handleSelectPreloadedAvatar = (avatarUrl: string) => {
+    if (!isEditingProfile) return;
     setCustomAvatarPreview(null);
     setSelectedAvatar(avatarUrl);
+  };
+
+  // Cancel Profile Editing and restore original values
+  const handleCancelEdit = () => {
+    setFormData({
+      name: user.name || '',
+      contact: user.contact || '',
+      gender: (user.gender === 'Female' ? 'Female' : 'Male'),
+      residentialAddress: user.residentialAddress || '',
+    });
+    setSelectedAvatar(user.avatar || PRELOADED_AVATARS[0].url);
+    setCustomAvatarPreview(null);
+    setIsEditingProfile(false);
+    setProfileMessage(null);
   };
 
   // Handle Profile Form Submit
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isEditingProfile) return;
     setIsSavingProfile(true);
     setProfileMessage(null);
 
@@ -326,6 +351,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
 
       if (updatedUser) {
         onUpdateUser(updatedUser);
+        setIsEditingProfile(false);
+        setCustomAvatarPreview(null);
         setProfileMessage({ 
           type: 'success', 
           text: 'Profile and avatar updated successfully!' 
@@ -373,6 +400,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
       setExportErrorMessage(err.message || "Failed to export personal data. Please try again.");
     } finally {
       setIsExportingData(false);
+    }
+  };
+
+  // Handle Terms of Use PDF Download (Chinsali Girls Secondary School)
+  const handleDownloadTermsPdf = async () => {
+    setIsDownloadingTerms(true);
+    try {
+      await downloadTermsPdf();
+      setTermsDownloadSuccess(true);
+      setTimeout(() => setTermsDownloadSuccess(false), 5000);
+    } catch (err: any) {
+      console.error('Failed to download terms PDF:', err);
+      alert('Could not download terms PDF. Please try again.');
+    } finally {
+      setIsDownloadingTerms(false);
     }
   };
 
@@ -432,7 +474,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
     { id: 'profile', label: 'Profile', icon: UserIcon, description: 'Personal info & avatar' },
     { id: 'display', label: 'Display', icon: currentTheme === 'dark' ? Moon : Sun, description: 'Light & Dark theme' },
     { id: 'notifications', label: 'Notifications', icon: Bell, description: 'Alerts & reminders' },
-    { id: 'devices', label: 'Connected Devices', icon: Smartphone, description: 'Active login sessions' },
+    { id: 'devices', label: 'Connected Devices', icon: Smartphone, description: 'Places you are signed in' },
     ...(user.role === UserRole.ADMIN ? [
       { id: 'location' as SettingsSection, label: 'School Location', icon: MapPin, description: 'Campus geofence & GPS' },
     ] : []),
@@ -442,44 +484,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
   ];
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in pb-12">
+    <div className="max-w-6xl mx-auto space-y-3 animate-in fade-in pb-4">
       
-      {/* Header Banner */}
-      <div className="glass-card p-6 md:p-8 rounded-3xl relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Header Banner - Compact layout */}
+      <div className="glass-card px-4 py-2.5 md:px-5 md:py-3 rounded-2xl relative overflow-hidden">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <div className="flex items-center gap-3 mb-1">
-              <span className="px-3 py-1 bg-primary-600/20 text-primary-300 border border-primary-500/30 rounded-full text-xs font-bold uppercase tracking-wider">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="px-2 py-0.5 bg-primary-600/20 text-primary-300 border border-primary-500/30 rounded-full text-[10px] font-bold uppercase tracking-wider">
                 Settings
               </span>
               <span className="text-xs text-slate-400">
                 Signed in as <strong className="text-white capitalize">{user.name}</strong> ({user.role})
               </span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-lg md:text-xl font-extrabold text-white tracking-tight">
               Settings &amp; Preferences
             </h1>
-            <p className="text-sm text-slate-400 mt-1 max-w-xl">
-              Customize your personal profile, choose your avatar, toggle display themes, manage connected devices, and review school policies.
-            </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="px-4 py-2 bg-white/5 rounded-2xl border border-white/10 flex items-center gap-2.5 text-xs text-slate-300">
+          <div className="flex items-center gap-2.5 text-xs">
+            <div className="px-3 py-1 bg-white/5 rounded-xl border border-white/10 flex items-center gap-2 text-slate-300">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Theme: <strong className="text-white capitalize">{currentTheme} Mode</strong></span>
+              <span className="font-semibold text-white">Chinsali Girls Secondary School</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* Main Settings Layout: Left Navigation + Right Content */}
-      <div className="flex flex-col md:flex-row gap-6 items-start">
+      <div className="flex flex-col md:flex-row gap-3 md:gap-4 items-start">
         
         {/* Left-Side Navigation Sidebar */}
-        <aside className="w-full md:w-64 md:shrink-0 space-y-3">
-          <div className="glass-card p-2.5 rounded-3xl space-y-1">
-            <div className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:block">
+        <aside className="w-full md:w-52 lg:w-56 md:shrink-0 space-y-2">
+          <div className="glass-card p-1.5 md:p-2 rounded-2xl space-y-0.5">
+            <div className="px-2.5 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:block">
               Navigation
             </div>
             <div className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0">
@@ -490,37 +529,33 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                   <button
                     key={item.id}
                     onClick={() => setActiveSection(item.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-xs md:text-sm text-left transition-all whitespace-nowrap md:whitespace-normal cursor-pointer ${
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl font-bold text-xs md:text-sm text-left transition-all whitespace-nowrap md:whitespace-normal cursor-pointer ${
                       isActive
-                        ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/40'
+                        ? 'bg-primary-600 text-white shadow-md shadow-primary-900/40'
                         : 'text-slate-400 hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-primary-400'}`} />
                     <div className="min-w-0">
-                      <p className="leading-tight">{item.label}</p>
-                      <p className={`text-[10px] font-normal hidden md:block mt-0.5 ${isActive ? 'text-primary-100' : 'text-slate-500'}`}>
-                        {item.description}
-                      </p>
+                      <p className="leading-tight text-xs font-semibold">{item.label}</p>
                     </div>
                   </button>
                 );
               })}
 
               {/* Log Out Button in Settings Sidebar */}
-              <div className="pt-2 border-t border-white/5 mt-1">
+              <div className="pt-1.5 border-t border-white/5 mt-0.5">
                 <button
                   onClick={() => {
                     if (window.confirm('Are you sure you want to sign out of your account?')) {
                       handleTriggerLogout();
                     }
                   }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-xs md:text-sm text-left text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-all cursor-pointer group"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl font-bold text-xs md:text-sm text-left text-slate-400 hover:text-rose-400 hover:bg-rose-950/30 transition-all cursor-pointer group"
                 >
                   <LogOut className="w-4 h-4 shrink-0 text-slate-500 group-hover:text-rose-400" />
                   <div className="min-w-0">
-                    <p className="leading-tight">Log Out</p>
-                    <p className="text-[10px] font-normal text-slate-500 hidden md:block mt-0.5">End your session</p>
+                    <p className="leading-tight text-xs font-semibold">Log Out</p>
                   </div>
                 </button>
               </div>
@@ -530,54 +565,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
         </aside>
 
         {/* Right-Side Section Content */}
-        <main className="flex-1 min-w-0 w-full space-y-6">
+        <main className="flex-1 min-w-0 w-full space-y-3">
 
           {/* ══════════════════════════════════════════════════════════════════════
               SECTION 1: PROFILE
              ══════════════════════════════════════════════════════════════════════ */}
           {activeSection === 'profile' && (
-            <div className="space-y-6 animate-in fade-in">
+            <div className="space-y-3 animate-in fade-in">
               
-              {/* Header & Identity Overview Card */}
-              <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
-                  <div>
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                      <UserIcon className="w-5 h-5 text-primary-400" />
-                      Personal Profile &amp; Account Settings
-                    </h2>
-                    <p className="text-sm text-slate-400 mt-1">
-                      Customize your public profile, update contact details, and review read-only school credentials.
-                    </p>
+              {/* Unified Profile & Institutional Account Details Card */}
+              <div className="glass-card p-4 md:p-5 rounded-2xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-primary-600/20 text-primary-400 border border-primary-500/30">
+                      <UserIcon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold text-white flex items-center gap-2">
+                        Personal Profile &amp; Account Details
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        Manage your profile and view your school details.
+                      </p>
+                    </div>
                   </div>
-                  <span className="px-3 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full text-xs font-bold flex items-center gap-1.5 self-start sm:self-auto">
+                  <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full text-[11px] font-bold flex items-center gap-1.5 self-start sm:self-auto">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     Active Account
                   </span>
                 </div>
 
-                {/* Identity Summary Card */}
-                <div className="p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4">
-                  <img
-                    src={selectedAvatar}
-                    alt={user.name}
-                    className="w-16 h-16 rounded-2xl object-cover border-2 border-primary-500/40 shadow-md bg-slate-900 shrink-0"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-base font-bold text-white truncate">{formData.name || user.name}</h3>
-                      <span className="px-2.5 py-0.5 rounded-full bg-primary-600/30 text-primary-300 border border-primary-500/40 text-[10px] font-extrabold uppercase tracking-wide">
-                        {user.role}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 truncate mt-0.5">{user.email}</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{user.school || 'E-SYLLAB Academy'}</p>
-                  </div>
-                </div>
-
                 {/* Status Message Alert */}
                 {profileMessage && (
-                  <div className={`p-4 rounded-2xl text-xs font-semibold flex items-center gap-2.5 animate-in slide-in-from-top-2 border ${
+                  <div className={`p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 animate-in slide-in-from-top-1 border ${
                     profileMessage.type === 'success'
                       ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/30'
                       : 'bg-rose-950/40 text-rose-300 border-rose-500/30'
@@ -590,343 +610,344 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                     <span>{profileMessage.text}</span>
                   </div>
                 )}
-              </div>
-
-              {/* ─────────────────────────────────────────────────────────────────
-                  UNIFIED PROFILE & INSTITUTIONAL ACCOUNT DETAILS
-                 ───────────────────────────────────────────────────────────────── */}
-              <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6">
-                <div className="flex items-center justify-between pb-4 border-b border-white/10">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-2xl bg-primary-600/20 text-primary-400 border border-primary-500/30">
-                      <Sparkles className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-bold text-white flex items-center gap-2">
-                        Profile &amp; Account Details
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Manage your personal profile and view verified institutional credentials.
-                      </p>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Avatar Selection Section */}
-                <div className="p-5 bg-white/5 border border-white/10 rounded-2xl space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <h4 className="text-xs font-bold text-primary-400 uppercase tracking-widest flex items-center gap-2">
-                        <Sparkles className="w-3.5 h-3.5" /> Profile Picture &amp; Avatar
-                      </h4>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Upload your custom photo or pick from 6 preloaded avatars.
-                      </p>
-                    </div>
-                    <label className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/40 rounded-xl text-xs font-bold cursor-pointer transition-all duration-200 hover:scale-105 active:scale-95 self-start sm:self-auto">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Upload Custom Photo</span>
+                <div className="p-3 bg-white/[0.03] border border-white/5 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[10px] font-bold text-primary-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" /> Avatar Selection
+                      {!isEditingProfile && <span className="text-[9px] font-normal text-slate-500 normal-case">(Locked — click Edit to change)</span>}
+                    </label>
+                    <label className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all duration-200 ${
+                      !isEditingProfile
+                        ? 'bg-white/5 text-slate-500 border border-white/5 cursor-not-allowed opacity-50 pointer-events-none'
+                        : 'bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/40 cursor-pointer hover:scale-105 active:scale-95'
+                    }`}>
+                      <Upload className="w-3 h-3" />
+                      <span>Upload Photo</span>
                       <input
                         type="file"
                         accept="image/*"
+                        disabled={!isEditingProfile}
                         onChange={handleCustomAvatarUpload}
                         className="hidden"
                       />
                     </label>
                   </div>
 
-                  {/* Preloaded Avatars 6-item Grid with subtle motion */}
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2.5 block">
-                      Choose from Preloaded Avatars:
-                    </label>
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-                      {PRELOADED_AVATARS.map((av) => {
-                        const isSelected = selectedAvatar === av.url;
-                        return (
-                          <button
-                            key={av.id}
-                            type="button"
-                            onClick={() => handleSelectPreloadedAvatar(av.url)}
-                            className={`p-2.5 rounded-2xl border-2 transition-all duration-200 flex flex-col items-center gap-1.5 cursor-pointer relative group transform hover:scale-105 hover:-translate-y-1 hover:shadow-xl hover:shadow-primary-950/40 active:scale-95 ${
-                              isSelected
-                                ? 'border-primary-500 bg-primary-950/50 shadow-md shadow-primary-950/60 ring-2 ring-primary-500/40 scale-105 animate-in zoom-in-95'
-                                : 'border-white/10 bg-white/5 hover:border-primary-500/40 hover:bg-white/10'
-                            }`}
-                          >
-                            <img
-                              src={av.url}
-                              alt={av.name}
-                              className="w-12 h-12 rounded-xl object-cover bg-slate-900/60 transition-transform duration-200 group-hover:scale-105"
-                            />
-                            <span className={`text-[10px] font-semibold truncate transition-colors ${isSelected ? 'text-primary-300 font-bold' : 'text-slate-400 group-hover:text-slate-200'}`}>
-                              {av.name}
-                            </span>
-                            {isSelected && (
-                              <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-primary-600 text-white rounded-full flex items-center justify-center shadow-md animate-in zoom-in-75 duration-150 ring-2 ring-slate-900">
-                                <Check className="w-3 h-3 stroke-[3]" />
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  {/* Preloaded Avatars 6-item Grid */}
+                  <div className="grid grid-cols-6 gap-2">
+                    {PRELOADED_AVATARS.map((av) => {
+                      const isSelected = selectedAvatar === av.url;
+                      return (
+                        <button
+                          key={av.id}
+                          type="button"
+                          disabled={!isEditingProfile}
+                          onClick={() => handleSelectPreloadedAvatar(av.url)}
+                          className={`p-1.5 rounded-xl border transition-all duration-200 flex flex-col items-center gap-1 relative group ${
+                            isSelected
+                              ? 'border-primary-500 bg-primary-950/60 ring-2 ring-primary-500/40 scale-105'
+                              : !isEditingProfile
+                                ? 'border-white/5 bg-white/[0.02] opacity-50 cursor-not-allowed'
+                                : 'border-white/10 bg-white/5 hover:border-primary-500/40 hover:bg-white/10 cursor-pointer'
+                          } ${!isEditingProfile && isSelected ? 'opacity-100 cursor-default' : ''}`}
+                        >
+                          <img
+                            src={av.url}
+                            alt={av.name}
+                            className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg object-cover bg-slate-900/60"
+                          />
+                          <span className={`text-[9px] font-medium truncate max-w-full ${isSelected ? 'text-primary-300 font-bold' : 'text-slate-400'}`}>
+                            {av.name}
+                          </span>
+                          {isSelected && (
+                            <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary-600 text-white rounded-full flex items-center justify-center shadow-md ring-1 ring-slate-900">
+                              <Check className="w-2.5 h-2.5 stroke-[3]" />
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
 
                   {customAvatarPreview && (
-                    <div className="flex items-center gap-3 p-2.5 bg-primary-950/30 border border-primary-500/30 rounded-xl text-xs text-primary-300 animate-in fade-in">
-                      <img src={customAvatarPreview} alt="Custom Preview" className="w-8 h-8 rounded-lg object-cover border border-primary-500" />
-                      <span>Custom image selected. Click &quot;Save Profile Changes&quot; below to apply.</span>
+                    <div className="flex items-center gap-2 p-2 bg-primary-950/30 border border-primary-500/30 rounded-lg text-xs text-primary-300 animate-in fade-in">
+                      <img src={customAvatarPreview} alt="Custom Preview" className="w-6 h-6 rounded-md object-cover border border-primary-500" />
+                      <span>Custom picture selected. Click &quot;Save Changes&quot; to apply.</span>
                     </div>
                   )}
                 </div>
 
-                {/* Unified Form: Editable Information + Protected Institutional Details */}
-                <form onSubmit={handleProfileSubmit} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {/* Form: 2-column layout (Editable Info on Left, Read-only Institutional Credentials on Right) */}
+                <form onSubmit={handleProfileSubmit} className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     
-                    {/* ── Editable Fields ── */}
-                    {/* Full Name */}
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1.5 mb-1.5 uppercase tracking-wider ml-1">
-                        <UserIcon className="w-3.5 h-3.5 text-primary-400" />
-                        Full Name
-                      </label>
-                      <input
-                        type="text"
-                        name="name"
-                        required
-                        value={formData.name}
-                        onChange={handleInputChange}
-                        placeholder="e.g. Kondwani Phiri"
-                        className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 text-white transition-all placeholder:text-slate-600"
-                      />
-                    </div>
-
-                    {/* Contact Number */}
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1.5 mb-1.5 uppercase tracking-wider ml-1">
-                        <Phone className="w-3.5 h-3.5 text-primary-400" />
-                        Contact Number
-                      </label>
-                      <input
-                        type="tel"
-                        name="contact"
-                        value={formData.contact}
-                        onChange={handleInputChange}
-                        placeholder="e.g. +260 97 1234567"
-                        className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 text-white transition-all placeholder:text-slate-600"
-                      />
-                    </div>
-
-                    {/* Gender Preference Dropdown */}
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1.5 mb-1.5 uppercase tracking-wider ml-1">
-                        <UserIcon className="w-3.5 h-3.5 text-primary-400" />
-                        Gender Preference
-                      </label>
-                      <select
-                        name="gender"
-                        value={formData.gender}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 text-white transition-all"
-                      >
-                        <option value="Male" className="bg-[#1a1635] text-white">Male</option>
-                        <option value="Female" className="bg-[#1a1635] text-white">Female</option>
-                      </select>
-                    </div>
-
-                    {/* Residential Address */}
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1.5 mb-1.5 uppercase tracking-wider ml-1">
-                        <Home className="w-3.5 h-3.5 text-primary-400" />
-                        Residential Address
-                      </label>
-                      <input
-                        type="text"
-                        name="residentialAddress"
-                        value={formData.residentialAddress}
-                        onChange={handleInputChange}
-                        placeholder="e.g. Plot 412, Woodlands, Lusaka"
-                        className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 text-white transition-all placeholder:text-slate-600"
-                      />
-                    </div>
-
-                    {/* ── Protected / Institutional Fields (Non-editable with Lock icon) ── */}
-
-                    {/* Email Address */}
-                    <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
-                      <div className="flex items-center justify-between text-slate-400">
-                        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                          <Mail className="w-3.5 h-3.5 text-primary-400" /> Email Address
-                        </span>
-                        <Lock className="w-3 h-3 text-slate-500" />
-                      </div>
-                      <p className="text-sm font-semibold text-white truncate">{user.email || 'N/A'}</p>
-                      <p className="text-[10px] text-slate-500">Primary authentication credential</p>
-                    </div>
-
-                    {/* Account Role */}
-                    <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
-                      <div className="flex items-center justify-between text-slate-400">
-                        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                          <Shield className="w-3.5 h-3.5 text-amber-400" /> Account Role
-                        </span>
-                        <Lock className="w-3 h-3 text-slate-500" />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-extrabold uppercase">
-                          {user.role}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-slate-500">System authorization tier</p>
-                    </div>
-
-                    {/* School / Institution */}
-                    <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
-                      <div className="flex items-center justify-between text-slate-400">
-                        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                          <School className="w-3.5 h-3.5 text-emerald-400" /> Institution
-                        </span>
-                        <Lock className="w-3 h-3 text-slate-500" />
-                      </div>
-                      <p className="text-sm font-semibold text-white truncate">{user.school || 'E-SYLLAB Academy'}</p>
-                      <p className="text-[10px] text-slate-500">Affiliated education center</p>
-                    </div>
-
-                    {/* Role Specific Read-Only: Student Grade or Teacher Assignments */}
-                    {user.role === UserRole.STUDENT && (
-                      <>
-                        <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
-                          <div className="flex items-center justify-between text-slate-400">
-                            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                              <GraduationCap className="w-3.5 h-3.5 text-cyan-400" /> Academic Grade
-                            </span>
-                            <Lock className="w-3 h-3 text-slate-500" />
-                          </div>
-                          <p className="text-sm font-semibold text-cyan-300">{user.grade || user.gradeLevel || 'Grade 10'}</p>
-                          <p className="text-[10px] text-slate-500">ECZ curriculum cohort</p>
+                    {/* Left Column: Personal Fields (Locked until Edit is clicked) */}
+                    <div className="space-y-2.5">
+                      <div>
+                        <div className="flex items-center justify-between mb-1 ml-1">
+                          <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1 uppercase tracking-wider">
+                            <UserIcon className="w-3 h-3 text-primary-400" /> Full Name
+                          </label>
+                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-500" />}
                         </div>
+                        <input
+                          type="text"
+                          name="name"
+                          required
+                          disabled={!isEditingProfile}
+                          value={formData.name}
+                          onChange={handleInputChange}
+                          placeholder="e.g. Kondwani Phiri"
+                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all placeholder:text-slate-600 ${
+                            !isEditingProfile
+                              ? 'bg-white/[0.02] border border-white/5 text-slate-300 cursor-not-allowed opacity-90'
+                              : 'bg-white/5 border border-white/10 focus:border-primary-500 text-white'
+                          }`}
+                        />
+                      </div>
 
-                        <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
-                          <div className="flex items-center justify-between text-slate-400">
-                            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                              <BookOpen className="w-3.5 h-3.5 text-indigo-400" /> Class Section
-                            </span>
-                            <Lock className="w-3 h-3 text-slate-500" />
-                          </div>
-                          <p className="text-sm font-semibold text-white">{user.className || 'General Stream'}</p>
-                          <p className="text-[10px] text-slate-500">Assigned classroom cohort</p>
+                      <div>
+                        <div className="flex items-center justify-between mb-1 ml-1">
+                          <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1 uppercase tracking-wider">
+                            <Phone className="w-3 h-3 text-primary-400" /> Contact Number
+                          </label>
+                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-500" />}
                         </div>
-                      </>
-                    )}
+                        <input
+                          type="tel"
+                          name="contact"
+                          disabled={!isEditingProfile}
+                          value={formData.contact}
+                          onChange={handleInputChange}
+                          placeholder="e.g. +260 97 1234567"
+                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all placeholder:text-slate-600 ${
+                            !isEditingProfile
+                              ? 'bg-white/[0.02] border border-white/5 text-slate-300 cursor-not-allowed opacity-90'
+                              : 'bg-white/5 border border-white/10 focus:border-primary-500 text-white'
+                          }`}
+                        />
+                      </div>
 
-                    {user.role === UserRole.TEACHER && (
-                      <>
-                        <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
+                      <div>
+                        <div className="flex items-center justify-between mb-1 ml-1">
+                          <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1 uppercase tracking-wider">
+                            <UserIcon className="w-3 h-3 text-primary-400" /> Gender Preference
+                          </label>
+                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-500" />}
+                        </div>
+                        <select
+                          name="gender"
+                          disabled={!isEditingProfile}
+                          value={formData.gender}
+                          onChange={handleInputChange}
+                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all ${
+                            !isEditingProfile
+                              ? 'bg-white/[0.02] border border-white/5 text-slate-300 cursor-not-allowed opacity-90'
+                              : 'bg-white/5 border border-white/10 focus:border-primary-500 text-white'
+                          }`}
+                        >
+                          <option value="Male" className="bg-[#1a1635] text-white">Male</option>
+                          <option value="Female" className="bg-[#1a1635] text-white">Female</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1 ml-1">
+                          <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1 uppercase tracking-wider">
+                            <Home className="w-3 h-3 text-primary-400" /> Residential Address
+                          </label>
+                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-500" />}
+                        </div>
+                        <input
+                          type="text"
+                          name="residentialAddress"
+                          disabled={!isEditingProfile}
+                          value={formData.residentialAddress}
+                          onChange={handleInputChange}
+                          placeholder="e.g. Plot 412, Woodlands, Lusaka"
+                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all placeholder:text-slate-600 ${
+                            !isEditingProfile
+                              ? 'bg-white/[0.02] border border-white/5 text-slate-300 cursor-not-allowed opacity-90'
+                              : 'bg-white/5 border border-white/10 focus:border-primary-500 text-white'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Right Column: Protected Institutional Fields (Read-Only) */}
+                    <div className="space-y-2.5">
+                      
+                      {/* School / Institution - SCREENSHOT 3 FIX */}
+                      <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-0.5 relative">
+                        <div className="flex items-center justify-between text-slate-400">
+                          <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                            <School className="w-3 h-3 text-emerald-400" /> Institution
+                          </span>
+                          <Lock className="w-3 h-3 text-slate-500" />
+                        </div>
+                        <p className="text-xs font-bold text-white truncate">Chinsali Girls Secondary School</p>
+                        <p className="text-[10px] text-slate-400">Chinsali, Zambia</p>
+                      </div>
+
+                      {/* Email Address */}
+                      <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-0.5 relative">
+                        <div className="flex items-center justify-between text-slate-400">
+                          <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-primary-400" /> Email Address
+                          </span>
+                          <Lock className="w-3 h-3 text-slate-500" />
+                        </div>
+                        <p className="text-xs font-semibold text-white truncate">{user.email || 'N/A'}</p>
+                        <p className="text-[10px] text-slate-500">Used to sign in</p>
+                      </div>
+
+                      {/* Account Role */}
+                      <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-0.5 relative">
+                        <div className="flex items-center justify-between text-slate-400">
+                          <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                            <Shield className="w-3 h-3 text-amber-400" /> Account Role
+                          </span>
+                          <Lock className="w-3 h-3 text-slate-500" />
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-extrabold uppercase">
+                            {user.role}
+                          </span>
+                          <span className="text-[10px] text-slate-500">Your role</span>
+                        </div>
+                      </div>
+
+                      {/* Role Specific Read-Only */}
+                      {user.role === UserRole.STUDENT && (
+                        <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-0.5 relative">
                           <div className="flex items-center justify-between text-slate-400">
-                            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                              <BookOpen className="w-3.5 h-3.5 text-cyan-400" /> Teaching Subjects
+                            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                              <GraduationCap className="w-3 h-3 text-cyan-400" /> Class
                             </span>
                             <Lock className="w-3 h-3 text-slate-500" />
                           </div>
-                          <p className="text-sm font-semibold text-cyan-300 truncate">
-                            {user.teachingSubjects && user.teachingSubjects.length > 0
-                              ? user.teachingSubjects.join(', ')
-                              : 'All STEM & Humanities'}
+                          <p className="text-xs font-semibold text-cyan-300">
+                            {normalizeGradeToForm(user.grade || user.gradeLevel) || 'Form 3'} • {user.className || 'Class A'}
                           </p>
-                          <p className="text-[10px] text-slate-500">Curriculum instruction areas</p>
+                          <p className="text-[10px] text-slate-500">Class</p>
                         </div>
+                      )}
 
-                        <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative">
+                      {user.role === UserRole.TEACHER && (
+                        <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-0.5 relative">
                           <div className="flex items-center justify-between text-slate-400">
-                            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                              <GraduationCap className="w-3.5 h-3.5 text-indigo-400" /> Teaching Grades
+                            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                              <BookOpen className="w-3 h-3 text-cyan-400" /> Teaching Assignment
                             </span>
                             <Lock className="w-3 h-3 text-slate-500" />
                           </div>
-                          <p className="text-sm font-semibold text-white truncate">
-                            {user.teachingGrades && user.teachingGrades.length > 0
-                              ? user.teachingGrades.join(', ')
-                              : 'Grades 8 - 12'}
+                          <p className="text-xs font-semibold text-cyan-300 truncate">
+                            {user.teachingSubjects && user.teachingSubjects.length > 0 ? user.teachingSubjects.join(', ') : 'All STEM & Humanities'}
                           </p>
-                          <p className="text-[10px] text-slate-500">Instruction levels</p>
+                          <p className="text-[10px] text-slate-500">Instruction levels: {user.teachingGrades && user.teachingGrades.length > 0 ? user.teachingGrades.map(g => normalizeGradeToForm(g)).join(', ') : 'Forms 1 - 5'}</p>
                         </div>
-                      </>
-                    )}
+                      )}
 
-                    {/* System Reference ID / Blockchain Address */}
-                    <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 space-y-1 relative md:col-span-2">
-                      <div className="flex items-center justify-between text-slate-400">
-                        <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
-                          <Hash className="w-3.5 h-3.5 text-slate-400" /> Account Identifier
-                        </span>
-                        <Lock className="w-3 h-3 text-slate-500" />
-                      </div>
-                      <p className="font-mono text-xs text-slate-300 truncate">{user.blockchainId || user.id}</p>
-                      <p className="text-[10px] text-slate-500">Immutable ledger reference</p>
                     </div>
 
                   </div>
 
-                  {/* Save Profile Changes Submit Button */}
-                  <div className="flex items-center justify-end pt-4 border-t border-white/10">
-                    <button
-                      type="submit"
-                      disabled={isSavingProfile}
-                      className="flex items-center gap-2 px-8 py-3 bg-primary-600 hover:bg-primary-500 text-white text-sm font-bold rounded-2xl transition-all shadow-lg shadow-primary-900/40 disabled:opacity-50 active:scale-95 cursor-pointer"
-                    >
-                      {isSavingProfile ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Saving Changes...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Save className="w-4 h-4" />
-                          <span>Save Profile Changes</span>
-                        </>
-                      )}
-                    </button>
+                  {/* Profile Edit / Save Actions */}
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                    {!isEditingProfile ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsEditingProfile(true);
+                            setProfileMessage(null);
+                          }}
+                          className="flex items-center gap-1.5 px-4 py-1.5 bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-primary-900/40 active:scale-95 cursor-pointer"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled
+                          className="flex items-center gap-1.5 px-4 py-1.5 bg-white/5 border border-white/10 text-slate-500 text-xs font-bold rounded-xl cursor-not-allowed opacity-50"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>Save Changes</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleCancelEdit}
+                          disabled={isSavingProfile}
+                          className="px-3.5 py-1.5 bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white text-xs font-semibold rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+
+                        <button
+                          type="submit"
+                          disabled={isSavingProfile}
+                          className="flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-emerald-900/40 active:scale-95 cursor-pointer disabled:opacity-50"
+                        >
+                          {isSavingProfile ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Saving Changes...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Save className="w-3.5 h-3.5" />
+                              <span>Save Changes</span>
+                            </>
+                          )}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </form>
               </div>
 
               {/* ─────────────────────────────────────────────────────────────────
-                  CARD 3: DATA PORTABILITY & ACCESS (DOWNLOAD MY DATA)
-                  Zambia Data Protection Act No. 3 of 2021 Compliance
+                  2-COLUMN GRID: DATA PORTABILITY & DANGER ZONE
+                  SCREENSHOT 1 & SCREENSHOT 11 OPTIMIZATION
                  ───────────────────────────────────────────────────────────────── */}
-              <div className="p-6 md:p-8 rounded-3xl border border-primary-500/30 bg-primary-950/20 backdrop-blur-md space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 bg-primary-600/30 border border-primary-500/40 text-primary-300 rounded-2xl shrink-0 shadow-lg shadow-primary-950/50">
-                      <Download className="w-6 h-6 text-primary-400" />
-                    </div>
-                    <div className="space-y-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                
+                {/* Card 1: Data Portability (Download My Data) */}
+                <div className="p-3.5 rounded-2xl border border-primary-500/30 bg-primary-950/20 backdrop-blur-md flex flex-col justify-between gap-2.5">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <h3 className="text-base font-bold text-white">
+                        <Download className="w-4 h-4 text-primary-400 shrink-0" />
+                        <h3 className="text-sm font-bold text-white">
                           Download My Data
                         </h3>
-                        <span className="px-2 py-0.5 bg-primary-500/20 text-primary-300 border border-primary-500/30 rounded-lg text-[10px] font-extrabold uppercase tracking-wider">
-                          Data Portability
-                        </span>
                       </div>
-                      <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
-                        In line with Zambia's <strong>Data Protection Act No. 3 of 2021</strong>, you can download a complete, machine-readable JSON copy of all your personal records held in E-SYLLAB — including your profile details, grades, attendance logs, direct messages, and assessment scores.
-                      </p>
-                      {exportSuccessMessage && (
-                        <div className="mt-2 text-xs text-emerald-400 font-medium flex items-center gap-1.5 animate-in fade-in">
-                          <CheckCircle2 className="w-4 h-4 shrink-0" />
-                          <span>{exportSuccessMessage}</span>
-                        </div>
-                      )}
-                      {exportErrorMessage && (
-                        <div className="mt-2 text-xs text-rose-400 font-medium flex items-center gap-1.5 animate-in fade-in">
-                          <AlertCircle className="w-4 h-4 shrink-0" />
-                          <span>{exportErrorMessage}</span>
-                        </div>
-                      )}
+                      <span className="px-2 py-0.5 bg-primary-500/20 text-primary-300 border border-primary-500/30 rounded-md text-[9px] font-extrabold uppercase tracking-wider">
+                        Your information
+                      </span>
                     </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      In line with Zambia's <strong>Data Protection Act No. 3 of 2021</strong>, download a file of your school records held in the school system — including profile, grades, attendance logs, messages, and assessment scores.
+                    </p>
+                    {exportSuccessMessage && (
+                      <div className="text-xs text-emerald-400 font-medium flex items-center gap-1 animate-in fade-in">
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                        <span>{exportSuccessMessage}</span>
+                      </div>
+                    )}
+                    {exportErrorMessage && (
+                      <div className="text-xs text-rose-400 font-medium flex items-center gap-1 animate-in fade-in">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{exportErrorMessage}</span>
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -934,46 +955,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                     type="button"
                     disabled={isExportingData}
                     onClick={handleExportData}
-                    className="px-6 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-2xl text-xs font-bold transition-all shadow-lg shadow-primary-950/60 hover:shadow-primary-900/80 flex items-center gap-2 cursor-pointer self-start sm:self-auto active:scale-95 shrink-0 disabled:opacity-50"
+                    className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-primary-950/60 hover:shadow-primary-900/80 flex items-center gap-1.5 cursor-pointer self-start active:scale-95 shrink-0 disabled:opacity-50"
                   >
                     {isExportingData ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         <span>Exporting...</span>
                       </>
                     ) : (
                       <>
-                        <Download className="w-4 h-4" />
+                        <Download className="w-3.5 h-3.5" />
                         <span>Download My Data</span>
                       </>
                     )}
                   </button>
                 </div>
-              </div>
 
-              {/* ─────────────────────────────────────────────────────────────────
-                  CARD 4: DANGER ZONE / DESTRUCTIVE ACTION (DELETE ACCOUNT)
-                  Only displayed in this Profile view
-                 ───────────────────────────────────────────────────────────────── */}
-              <div className="p-6 md:p-8 rounded-3xl border-2 border-rose-500/40 bg-rose-950/20 backdrop-blur-md space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 bg-rose-950/60 border border-rose-500/50 text-rose-400 rounded-2xl shrink-0 shadow-lg shadow-rose-950/50">
-                      <AlertTriangle className="w-6 h-6 text-rose-500" />
-                    </div>
-                    <div className="space-y-1">
+                {/* Card 2: Danger Zone (Delete Account) */}
+                <div className="p-3.5 rounded-2xl border border-rose-500/30 bg-rose-950/20 backdrop-blur-md flex flex-col justify-between gap-2.5">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <h3 className="text-base font-bold text-rose-400">
-                          Danger Zone: Delete Account
+                        <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                        <h3 className="text-sm font-bold text-rose-400">
+                          Delete Account
                         </h3>
-                        <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-[10px] font-extrabold uppercase tracking-wider">
-                          Destructive
-                        </span>
                       </div>
-                      <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
-                        Permanently erase your account profile, authentication credentials, academic activity, and active device sessions from the school system. This action cannot be reversed.
-                      </p>
+                      <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-md text-[9px] font-extrabold uppercase tracking-wider">
+                        Permanent
+                      </span>
                     </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Permanently erase your account profile, login details, school activity, and places you are signed in from the school system. This action cannot be reversed.
+                    </p>
                   </div>
 
                   <button
@@ -983,12 +997,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                       setDeleteError(null);
                       setIsDeleteModalOpen(true);
                     }}
-                    className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl text-xs font-bold transition-all shadow-lg shadow-rose-950/60 hover:shadow-rose-900/80 flex items-center gap-2 cursor-pointer self-start sm:self-auto active:scale-95 shrink-0"
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-rose-950/60 hover:shadow-rose-900/80 flex items-center gap-1.5 cursor-pointer self-start active:scale-95 shrink-0"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                     <span>Delete Account</span>
                   </button>
                 </div>
+
               </div>
 
             </div>
@@ -998,15 +1013,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
               SECTION 2: DISPLAY (THEME SWITCHER)
              ══════════════════════════════════════════════════════════════════════ */}
           {activeSection === 'display' && (
-            <div className="glass-card p-6 md:p-8 rounded-3xl space-y-8 animate-in fade-in">
+            <div className="glass-card p-4 md:p-5 rounded-2xl space-y-4 animate-in fade-in">
               
-              <div className="pb-6 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="pb-3 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                    {currentTheme === 'dark' ? <Moon className="w-5 h-5 text-primary-400" /> : <Sun className="w-5 h-5 text-primary-400" />}
+                  <h2 className="text-base md:text-lg font-bold text-white flex items-center gap-2">
+                    {currentTheme === 'dark' ? <Moon className="w-4 h-4 text-primary-400" /> : <Sun className="w-4 h-4 text-primary-400" />}
                     Display &amp; Theme
                   </h2>
-                  <p className="text-sm text-slate-400 mt-1">
+                  <p className="text-xs text-slate-400 mt-0.5">
                     Choose your preferred appearance mode. Your selection applies immediately across all pages.
                   </p>
                 </div>
@@ -1115,15 +1130,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
               SECTION 3: NOTIFICATIONS
              ══════════════════════════════════════════════════════════════════════ */}
           {activeSection === 'notifications' && (
-            <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6 animate-in fade-in">
+            <div className="glass-card p-4 md:p-5 rounded-2xl space-y-4 animate-in fade-in">
               
-              <div className="pb-6 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="pb-3 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                    <Bell className="w-5 h-5 text-primary-400" />
+                  <h2 className="text-base md:text-lg font-bold text-white flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-primary-400" />
                     Notification Preferences
                   </h2>
-                  <p className="text-sm text-slate-400 mt-1">
+                  <p className="text-xs text-slate-400 mt-0.5">
                     Choose which school notices and reminders trigger alerts and badge counters.
                   </p>
                 </div>
@@ -1261,16 +1276,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
               SECTION 4: CONNECTED DEVICES (SESSIONS)
              ══════════════════════════════════════════════════════════════════════ */}
           {activeSection === 'devices' && (
-            <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6 animate-in fade-in">
+            <div className="glass-card p-4 md:p-5 rounded-2xl space-y-4 animate-in fade-in">
               
-              <div className="pb-6 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="pb-3 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                    <Smartphone className="w-5 h-5 text-primary-400" />
-                    Connected Devices &amp; Sessions
+                  <h2 className="text-base md:text-lg font-bold text-white flex items-center gap-2">
+                    <Smartphone className="w-4 h-4 text-primary-400" />
+                    Connected Devices &amp; Signed-in Places
                   </h2>
-                  <p className="text-sm text-slate-400 mt-1">
-                    Manage active sign-in sessions across your phones, tablets, and computers.
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    See and manage places you are signed in across your phones, tablets, and computers.
                   </p>
                 </div>
 
@@ -1372,14 +1387,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
 
                   {sessions.length === 0 && (
                     <div className="py-8 text-center text-slate-500 text-xs italic">
-                      No active sessions found.
+                      No signed-in devices found.
                     </div>
                   )}
                 </div>
               )}
 
               <div className="p-4 bg-white/5 border border-white/10 rounded-2xl text-xs text-slate-400">
-                <span>Revoking a session immediately invalidates that device's security token and requires the user to log in again.</span>
+                <span>Logging out a device immediately signs it out and requires signing in again.</span>
               </div>
 
             </div>
@@ -1389,18 +1404,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
               SECTION: SCHOOL LOCATION & GEOFENCING (ADMIN ONLY)
              ══════════════════════════════════════════════════════════════════════ */}
           {activeSection === 'location' && user.role === UserRole.ADMIN && (
-            <div className="space-y-6 animate-in fade-in">
+            <div className="space-y-3 animate-in fade-in">
               
-              <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-white/10">
+              <div className="glass-card p-4 md:p-5 rounded-2xl space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
                   <div>
-                    <div className="flex items-center gap-2 text-primary-400 text-xs font-bold uppercase tracking-wider mb-1">
-                      <MapPin className="w-4 h-4" /> Campus Geofence Configuration
+                    <div className="flex items-center gap-1.5 text-primary-400 text-[10px] font-bold uppercase tracking-wider mb-0.5">
+                      <MapPin className="w-3.5 h-3.5" /> Campus Geofence Configuration
                     </div>
-                    <h2 className="text-xl md:text-2xl font-extrabold text-white">
+                    <h2 className="text-base md:text-lg font-extrabold text-white">
                       School Location &amp; Attendance Geofencing
                     </h2>
-                    <p className="text-xs text-slate-400 mt-1 max-w-xl">
+                    <p className="text-xs text-slate-400 mt-0.5 max-w-xl">
                       Configure the school's geographical coordinates and verification perimeter. Attendance submitted outside this radius will be flagged for administrative audit.
                     </p>
                   </div>
@@ -1583,76 +1598,121 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
               SECTION 5: TERMS OF USE
              ══════════════════════════════════════════════════════════════════════ */}
           {activeSection === 'terms' && (
-            <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6 animate-in fade-in">
+            <div className="glass-card p-4 md:p-5 rounded-2xl space-y-3.5 animate-in fade-in">
               
-              <div className="pb-6 border-b border-white/10">
-                <div className="flex items-center gap-2 text-primary-400 text-xs font-bold uppercase tracking-wider mb-1">
-                  <FileText className="w-4 h-4" /> Legal &amp; Institutional Governance
+              <div className="pb-3 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-1.5 text-primary-400 text-[10px] font-bold uppercase tracking-wider mb-0.5">
+                    <FileText className="w-3.5 h-3.5" /> Legal &amp; Institutional Governance
+                  </div>
+                  <h2 className="text-base md:text-lg font-extrabold text-white">
+                    Terms of Use &amp; Platform Guidelines
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Chinsali Girls Secondary School • Chinsali, Zambia
+                  </p>
                 </div>
-                <h2 className="text-xl md:text-2xl font-extrabold text-white">
-                  Terms of Use &amp; Platform Guidelines
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Applicable to all students, teaching staff, and administrators using E-SYLLAB in Zambian secondary schools.
-                </p>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleDownloadTermsPdf}
+                    disabled={isDownloadingTerms}
+                    className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-primary-950/60 hover:shadow-primary-900/80 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-95"
+                  >
+                    {isDownloadingTerms ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Generating PDF...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download terms (PDF)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
 
-              <div className="space-y-6 text-xs text-slate-300 leading-relaxed">
+              {termsDownloadSuccess && (
+                <div className="p-2 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center gap-1.5 animate-in fade-in">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Terms of Use PDF downloaded successfully!</span>
+                </div>
+              )}
+
+              {/* 2-Column layout for compact viewing without vertical scroll */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs text-slate-300 leading-relaxed">
                 
-                <section className="space-y-2">
-                  <h3 className="text-sm font-bold text-white">1. Acceptance of Educational Terms</h3>
-                  <p>
-                    By signing in to and accessing E-SYLLAB, you agree to comply with school administrative regulations and these terms of use. E-SYLLAB is provided exclusively for educational administration, curriculum tracking, attendance verification, and academic learning within recognized Zambian educational institutions.
+                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1">
+                  <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className="text-primary-400">1.</span> Acceptance of Educational Terms
+                  </h3>
+                  <p className="text-[11px] text-slate-300 leading-normal">
+                    By signing in to and accessing E-SYLLAB at Chinsali Girls Secondary School, students, teachers, and administrators agree to comply with school administrative regulations and these terms of use. The system is provided exclusively for educational administration, curriculum tracking, attendance verification, and academic learning.
                   </p>
-                </section>
+                </div>
 
-                <section className="space-y-2">
-                  <h3 className="text-sm font-bold text-white">2. Permitted Use &amp; Account Responsibility</h3>
-                  <p>
-                    Each user is issued personalized credentials. You are strictly prohibited from sharing your login credentials, impersonating another student or faculty member, or attempting to bypass role-based permissions. Teachers and administrators are responsible for the accuracy of attendance and grades submitted under their accounts.
+                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1">
+                  <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className="text-primary-400">2.</span> Permitted Use &amp; Account Responsibility
+                  </h3>
+                  <p className="text-[11px] text-slate-300 leading-normal">
+                    Each user is issued personalized credentials. You are strictly prohibited from sharing your login credentials, impersonating another student or faculty member, or attempting to bypass role-based permissions. Teachers and administrators are responsible for the accuracy of records submitted under their accounts.
                   </p>
-                </section>
+                </div>
 
-                <section className="space-y-2">
-                  <h3 className="text-sm font-bold text-white">3. Academic Integrity &amp; Record Authenticity</h3>
-                  <p>
+                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1">
+                  <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className="text-primary-400">3.</span> Academic Integrity &amp; Record Authenticity
+                  </h3>
+                  <p className="text-[11px] text-slate-300 leading-normal">
                     All attendance entries, grade submissions, and vault documents are cryptographically tracked to preserve institutional integrity. Any unauthorized attempt to tamper with academic scores, attendance histories, or cryptographic proofs constitutes gross misconduct under school disciplinary codes.
                   </p>
-                </section>
+                </div>
 
-                <section className="space-y-2">
-                  <h3 className="text-sm font-bold text-white">4. Compliance with the Zambian Data Protection Act No. 3 of 2021</h3>
-                  <p>
-                    E-SYLLAB operates in full compliance with the <strong>Data Protection Act No. 3 of 2021</strong> of the Republic of Zambia. The platform processes personal identifiable information (PII) including names, educational records, attendance logs, and contact details solely for lawful educational purposes with appropriate security safeguards.
+                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1">
+                  <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className="text-primary-400">4.</span> Compliance with Zambia Data Protection Act 2021
+                  </h3>
+                  <p className="text-[11px] text-slate-300 leading-normal">
+                    E-SYLLAB operates in full compliance with the <strong>Data Protection Act No. 3 of 2021</strong> of the Republic of Zambia. The platform processes educational records, attendance logs, and contact details solely for lawful educational purposes with appropriate security safeguards.
                   </p>
-                </section>
+                </div>
 
-                <section className="space-y-2">
-                  <h3 className="text-sm font-bold text-white">5. Curriculum Standards &amp; Intellectual Property</h3>
-                  <p>
-                    Curriculum materials, assessment frameworks, and syllabus guidelines are structured in alignment with the Examinations Council of Zambia (ECZ) national secondary curriculum framework. Course materials uploaded by teachers remain the institutional property of the respective school.
+                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1">
+                  <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className="text-primary-400">5.</span> Curriculum Standards &amp; Intellectual Property
+                  </h3>
+                  <p className="text-[11px] text-slate-300 leading-normal">
+                    Curriculum materials and assessment frameworks align with Examinations Council of Zambia (ECZ) national standards. Course materials uploaded by teachers remain the institutional property of Chinsali Girls Secondary School.
                   </p>
-                </section>
+                </div>
 
-                <section className="space-y-2">
-                  <h3 className="text-sm font-bold text-white">6. Service Availability &amp; Offline Continuity</h3>
-                  <p>
-                    E-SYLLAB includes local offline storage to guarantee that attendance marking and timetable access function even when school internet connectivity is interrupted. Users agree to allow background synchronization when online connectivity is restored.
+                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1">
+                  <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className="text-primary-400">6.</span> Service Availability &amp; Offline Continuity
+                  </h3>
+                  <p className="text-[11px] text-slate-300 leading-normal">
+                    Local offline storage guarantees that attendance marking and timetable access function even when school internet connectivity is interrupted. Saved school records synchronize automatically when connectivity is restored.
                   </p>
-                </section>
+                </div>
 
-                <section className="space-y-2">
-                  <h3 className="text-sm font-bold text-white">7. Amendments &amp; Contact</h3>
-                  <p>
-                    These terms may be updated periodically in consultation with school management boards and the Ministry of Education. Inquiries regarding platform policies should be directed to the school administration office.
+                <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1 md:col-span-2">
+                  <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span className="text-primary-400">7.</span> Amendments &amp; School Inquiries
+                  </h3>
+                  <p className="text-[11px] text-slate-300 leading-normal">
+                    These terms may be updated periodically in consultation with school management boards and the Ministry of Education. Inquiries regarding platform policies should be directed to the Administration Office at Chinsali Girls Secondary School, Chinsali, Zambia.
                   </p>
-                </section>
+                </div>
 
               </div>
 
-              <div className="pt-4 border-t border-white/10 text-slate-500 text-[11px] flex items-center justify-between">
+              <div className="pt-2 border-t border-white/10 text-slate-500 text-[10px] flex items-center justify-between">
                 <span>Last updated: Term 1, 2026</span>
-                <span>Republic of Zambia • Ministry of Education</span>
+                <span>Chinsali Girls Secondary School • Ministry of Education, Zambia</span>
               </div>
 
             </div>
@@ -1662,16 +1722,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
               SECTION 6: PRIVACY POLICY
              ══════════════════════════════════════════════════════════════════════ */}
           {activeSection === 'privacy' && (
-            <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6 animate-in fade-in">
+            <div className="glass-card p-4 md:p-5 rounded-2xl space-y-4 animate-in fade-in">
               
-              <div className="pb-6 border-b border-white/10">
-                <div className="flex items-center gap-2 text-primary-400 text-xs font-bold uppercase tracking-wider mb-1">
-                  <Shield className="w-4 h-4" /> Data Protection &amp; Confidentiality
+              <div className="pb-3 border-b border-white/10">
+                <div className="flex items-center gap-1.5 text-primary-400 text-[10px] font-bold uppercase tracking-wider mb-0.5">
+                  <Shield className="w-3.5 h-3.5" /> Data Protection &amp; Confidentiality
                 </div>
-                <h2 className="text-xl md:text-2xl font-extrabold text-white">
+                <h2 className="text-base md:text-lg font-extrabold text-white">
                   Privacy Policy
                 </h2>
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-xs text-slate-400 mt-0.5">
                   Compliance statement under the Data Protection Act No. 3 of 2021 (Republic of Zambia).
                 </p>
               </div>
@@ -1729,7 +1789,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
                     <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-1.5">
                       <div className="flex items-center gap-2 text-primary-400 font-bold text-xs">
-                        <Download className="w-4 h-4" /> Right of Access &amp; Data Portability
+                        <Download className="w-4 h-4" /> Right of Access &amp; Your Information
                       </div>
                       <p className="text-[11px] text-slate-300 leading-relaxed">
                         <strong>See &amp; Export Your Data:</strong> You have the right to obtain a full copy of all data held about you. Click <em>"Download My Data"</em> in your Profile settings to download a single structured JSON archive containing your profile, grades, attendance logs, messages, and assessment scores.
@@ -1750,7 +1810,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                         <Trash2 className="w-4 h-4" /> Right to Erasure &amp; Deactivation
                       </div>
                       <p className="text-[11px] text-slate-300 leading-relaxed">
-                        <strong>Delete Your Account:</strong> You can request permanent erasure and deactivation of your account, credentials, and active device sessions from the Danger Zone in your Profile settings.
+                        <strong>Delete Your Account:</strong> You can request permanent erasure and deactivation of your account, login details, and places you are signed in from the Danger Zone in your Profile settings.
                       </p>
                     </div>
                   </div>
@@ -1773,14 +1833,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
               SECTION 7: ABOUT
              ══════════════════════════════════════════════════════════════════════ */}
           {activeSection === 'about' && (
-            <div className="glass-card p-6 md:p-8 rounded-3xl space-y-6 animate-in fade-in">
+            <div className="glass-card p-4 md:p-5 rounded-2xl space-y-4 animate-in fade-in">
               
-              <div className="pb-6 border-b border-white/10">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Info className="w-5 h-5 text-primary-400" />
+              <div className="pb-3 border-b border-white/10">
+                <h2 className="text-base md:text-lg font-bold text-white flex items-center gap-2">
+                  <Info className="w-4 h-4 text-primary-400" />
                   About E-SYLLAB
                 </h2>
-                <p className="text-sm text-slate-400 mt-1">
+                <p className="text-xs text-slate-400 mt-0.5">
                   Your school's secure digital learning, attendance, and syllabus tracking system.
                 </p>
               </div>
@@ -1826,7 +1886,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                   </div>
                   <div className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-1">
                     <strong className="text-white block text-xs">3. Delete Account</strong>
-                    <p className="text-[11px] text-slate-400">Permanently erase and deactivate your credentials, profile, and active sessions from the school database.</p>
+                    <p className="text-[11px] text-slate-400">Permanently erase and deactivate your login details, profile, and places you are signed in from the school database.</p>
                   </div>
                 </div>
               </div>
@@ -1983,7 +2043,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">
-              Are you sure you want to permanently delete your account (<strong className="text-white">{user.email}</strong>)? All your personal data and active sessions will be removed immediately.
+              Are you sure you want to permanently delete your account (<strong className="text-white">{user.email}</strong>)? All your personal data and places you are signed in will be removed immediately.
             </p>
 
             {deleteError && (

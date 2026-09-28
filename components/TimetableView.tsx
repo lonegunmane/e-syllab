@@ -7,6 +7,7 @@ import {
 import { User, UserRole, TimetableEntry } from '../types';
 import { getTimetables, createTimetable, updateTimetable, deleteTimetable } from '../services/api';
 import { db } from '../services/database';
+import { normalizeGradeToForm, formsMatch } from '../services/formLabels';
 
 interface TimetableViewProps {
   currentUser: User;
@@ -53,7 +54,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({ currentUser }) => 
   const [teachers, setTeachers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState<string>(
-    currentUser.role === UserRole.STUDENT && currentUser.grade ? currentUser.grade : 'ALL'
+    currentUser.role === UserRole.STUDENT && currentUser.grade ? normalizeGradeToForm(currentUser.grade) : 'ALL'
   );
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -202,7 +203,9 @@ export const TimetableView: React.FC<TimetableViewProps> = ({ currentUser }) => 
 
   // Filter timetables
   const filteredTimetables = timetables.filter(item => {
-    const matchesClass = selectedClass === 'ALL' || item.className.toLowerCase() === selectedClass.toLowerCase();
+    const matchesClass = selectedClass === 'ALL' || 
+      item.className.toLowerCase() === selectedClass.toLowerCase() ||
+      formsMatch(item.className, selectedClass);
     const query = searchQuery.toLowerCase().trim();
     const matchesSearch = !query ||
       item.subject.toLowerCase().includes(query) ||
@@ -212,9 +215,11 @@ export const TimetableView: React.FC<TimetableViewProps> = ({ currentUser }) => 
     return matchesClass && matchesSearch;
   });
 
-  // Extract all unique class names present in data
+  // Extract unique class names present in data, normalizing legacy grades and omitting Class D/E
   const availableClasses = Array.from(new Set(
-    timetables.map(t => t.className).filter(Boolean)
+    timetables
+      .map(t => normalizeGradeToForm(t.className))
+      .filter(c => Boolean(c) && !['D', 'E', 'Class D', 'Class E', 'd', 'e'].includes(c.trim()))
   )).sort();
 
   return (
@@ -529,7 +534,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({ currentUser }) => 
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Grade 10A"
+                    placeholder="e.g. Form 1A or Class A"
                     value={formClassName}
                     onChange={e => setFormClassName(e.target.value)}
                     className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white outline-none focus:border-primary-500 transition-all"

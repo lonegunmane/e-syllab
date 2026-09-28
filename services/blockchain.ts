@@ -8,7 +8,8 @@ import {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const SOLANA_NETWORK = "devnet";
-export const SOLANA_ENDPOINT = clusterApiUrl(SOLANA_NETWORK);
+export const SOLANA_ENDPOINT = (typeof process !== "undefined" && process.env?.SOLANA_RPC_URL) || "https://api.devnet.solana.com";
+export const FALLBACK_SOLANA_ENDPOINT = "https://api.devnet.solana.com";
 
 /**
  * NOTE: PROGRAM_ID and the PDA derivation helpers below are reserved for future custom Anchor/Rust smart contract programs.
@@ -34,6 +35,11 @@ export interface AttendanceRecord {
   longitude?: number | null;
   locationFlagged?: boolean;
   distanceMeters?: number | null;
+  signature?: string;
+  confirmedOnChain?: boolean;
+  lockError?: string | null;
+  lockReason?: string | null;
+  slot?: number;
 }
 
 export interface LocationData {
@@ -65,12 +71,40 @@ export interface BlockchainReceipt {
 // ─── Connection ───────────────────────────────────────────────────────────────
 
 let _connection: Connection | null = null;
+let _fallbackConnection: Connection | null = null;
 
 export function getConnection(): Connection {
   if (!_connection) {
     _connection = new Connection(SOLANA_ENDPOINT, "confirmed" as Commitment);
   }
   return _connection;
+}
+
+export function getFallbackConnection(): Connection {
+  if (!_fallbackConnection) {
+    _fallbackConnection = new Connection(FALLBACK_SOLANA_ENDPOINT, "confirmed" as Commitment);
+  }
+  return _fallbackConnection;
+}
+
+export async function executeWithRpcFallback<T>(
+  action: (conn: Connection) => Promise<T>,
+  actionName: string = "Solana operation"
+): Promise<T> {
+  const primaryConn = getConnection();
+  try {
+    return await action(primaryConn);
+  } catch (primaryErr: any) {
+    console.warn(`[Blockchain] Primary RPC failed for ${actionName}: ${primaryErr.message}. Trying fallback RPC...`);
+    try {
+      const fallbackConn = getFallbackConnection();
+      return await action(fallbackConn);
+    } catch (fallbackErr: any) {
+      console.error(`[Blockchain] Solana Devnet RPC call failed for ${actionName}:`, fallbackErr.message);
+      // DO NOT fake success. Throw the real error.
+      throw fallbackErr;
+    }
+  }
 }
 
 // ─── SHA-256 Hash ─────────────────────────────────────────────────────────────

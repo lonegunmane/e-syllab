@@ -6,6 +6,7 @@ import {
 import { User, LocalNotification, Assignment, UserRole, SystemNotification } from '../types';
 import { notificationService } from '../services/notificationService';
 import { db } from '../services/database';
+import { normalizeGradeToForm, formsMatch } from '../services/formLabels';
 import { getSystemNotifications, markSystemNotificationRead } from '../services/api';
 import { getNotificationPreferences, NotificationPreferences } from '../services/settingsService';
 
@@ -33,7 +34,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   // New assignment form state (for teachers/admins)
   const [title, setTitle] = useState('');
   const [subject, setSubject] = useState('Mathematics');
-  const [gradeLevel, setGradeLevel] = useState(user.grade || 'Grade 10');
+  const [gradeLevel, setGradeLevel] = useState(normalizeGradeToForm(user.grade) || 'Form 3');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('high');
@@ -47,7 +48,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     setNotifications(notifs);
     setPermission(notificationService.getPermissionStatus());
     
-    const userGrade = user.grade || 'Grade 10';
+    const userGrade = normalizeGradeToForm(user.grade) || 'Form 3';
     setAssignments(db.getAssignments(userGrade));
 
     getSystemNotifications().then(res => {
@@ -357,17 +358,18 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Target Grade</label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Target Form</label>
                     <select
                       value={gradeLevel}
                       onChange={e => setGradeLevel(e.target.value)}
                       className="w-full bg-black/40 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-primary-500"
                     >
-                      <option value="All Grades">All Grades</option>
-                      <option value="Grade 9">Grade 9</option>
-                      <option value="Grade 10">Grade 10</option>
-                      <option value="Grade 11">Grade 11</option>
-                      <option value="Grade 12">Grade 12</option>
+                      <option value="All Forms">All Forms</option>
+                      <option value="Form 1">Form 1</option>
+                      <option value="Form 2">Form 2</option>
+                      <option value="Form 3">Form 3</option>
+                      <option value="Form 4">Form 4</option>
+                      <option value="Form 5">Form 5</option>
                     </select>
                   </div>
                 </div>

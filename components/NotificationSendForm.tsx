@@ -3,6 +3,7 @@ import { Bell, Calendar, ShieldAlert, Send, CheckCircle2, AlertCircle, Loader2 }
 import { User, UserRole } from '../types';
 import { db } from '../services/database';
 import { createSystemNotification } from '../services/api';
+import { normalizeGradeToForm, formsMatch } from '../services/formLabels';
 
 interface NotificationSendFormProps {
   currentUser: User;
@@ -14,9 +15,9 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
   const [targetMode, setTargetMode] = useState<'class' | 'user'>('class');
   
   const isAdmin = currentUser.role === UserRole.ADMIN;
-  const teacherClass = currentUser.grade || currentUser.teachingClasses?.[0] || 'Grade 10';
+  const teacherClass = normalizeGradeToForm(currentUser.grade || currentUser.teachingClasses?.[0] || 'Form 3');
 
-  const [selectedClass, setSelectedClass] = useState<string>(isAdmin ? 'Grade 10' : teacherClass);
+  const [selectedClass, setSelectedClass] = useState<string>(isAdmin ? 'Form 3' : teacherClass);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [title, setTitle] = useState<string>('');
   const [message, setMessage] = useState<string>('');
@@ -28,7 +29,7 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
   const allUsers = db.getTable<User>(db.tables.USERS) || [];
   const eligibleUsers = isAdmin
     ? allUsers.filter(u => u.id !== currentUser.id)
-    : allUsers.filter(u => u.role === UserRole.STUDENT && (u.grade === teacherClass || u.gradeLevel === teacherClass));
+    : allUsers.filter(u => u.role === UserRole.STUDENT && (formsMatch(u.grade, teacherClass) || formsMatch(u.gradeLevel, teacherClass)));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,7 +149,7 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
             {targetMode === 'class' ? (
               <div>
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-                  Target Class
+                  Target Form / Class
                 </label>
                 {isAdmin ? (
                   <select
@@ -156,10 +157,11 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
                     onChange={e => setSelectedClass(e.target.value)}
                     className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary-500 cursor-pointer"
                   >
-                    <option value="Grade 9">Grade 9</option>
-                    <option value="Grade 10">Grade 10</option>
-                    <option value="Grade 11">Grade 11</option>
-                    <option value="Grade 12">Grade 12</option>
+                    <option value="Form 1">Form 1</option>
+                    <option value="Form 2">Form 2</option>
+                    <option value="Form 3">Form 3</option>
+                    <option value="Form 4">Form 4</option>
+                    <option value="Form 5">Form 5</option>
                   </select>
                 ) : (
                   <input

@@ -18,6 +18,7 @@ import { BlockchainAttendance } from '../components/BlockchainAttendance';
 import { TimetableView } from '../components/TimetableView';
 import { AssessmentView } from '../components/AssessmentView';
 import { NotificationSendForm } from '../components/NotificationSendForm';
+import { normalizeGradeToForm } from '../services/formLabels';
 
 interface TeacherDashboardProps {
   user: User;
@@ -433,7 +434,7 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
                             )}
                         </div>
                         <button className="w-full py-3 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-900/40">
-                           <Save className="w-4 h-4" /> Publish to Repository
+                           <Save className="w-4 h-4" /> Save to School Files
                         </button>
                     </form>
                 </div>
@@ -476,7 +477,7 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
                 {materials.length === 0 && !isAdding && (
                     <div className="col-span-full py-16 text-center text-slate-500 bg-white/5 rounded-3xl border-2 border-dashed border-white/10 italic">
                         <FileText className="w-12 h-12 mx-auto mb-4 opacity-10" />
-                        <p className="font-medium text-slate-500">Repository is empty.</p>
+                        <p className="font-medium text-slate-500">No files saved yet.</p>
                         <button onClick={() => setIsAdding(true)} className="mt-4 text-primary-400 text-sm font-bold hover:underline">Add first material</button>
                     </div>
                 )}
@@ -700,7 +701,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onUpda
                     <div className="p-2 rounded-lg bg-primary-950/40 text-primary-400 group-hover:scale-110 transition-transform border border-white/5">
                       <FileText className="w-5 h-5" />
                     </div>
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md border bg-primary-950/40 text-primary-400 border-primary-500/20">Live Repo</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md border bg-primary-950/40 text-primary-400 border-primary-500/20">Live files</span>
                   </div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Documents</p>
                   <p className="text-2xl font-bold text-white mt-1"><span>{vaultDocs.length}</span></p>
@@ -708,7 +709,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onUpda
               </div>
               <div className="glass-card rounded-3xl overflow-hidden">
                 <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                  <h2 className="font-bold text-white">Teacher Vault</h2>
+                  <h2 className="font-bold text-white">Teacher Files</h2>
                   <button onClick={handleUploadClick} className="px-4 py-2 bg-primary-600 text-white text-xs font-bold rounded-xl flex items-center gap-2 hover:bg-primary-700 transition-all active:scale-95 shadow-lg shadow-primary-900/40">{isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}New Material</button>
                 </div>
                 <div className="divide-y divide-white/5">
@@ -733,7 +734,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, onUpda
                     </div>
                   ))}
                   {vaultDocs.length === 0 && (
-                    <div className="p-12 text-center text-slate-500 italic text-sm">No documents uploaded to your vault yet.</div>
+                    <div className="p-12 text-center text-slate-500 italic text-sm">No documents uploaded to your school files yet.</div>
                   )}
                 </div>
               </div>

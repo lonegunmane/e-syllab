@@ -491,9 +491,18 @@ export const serverDb = {
           "distanceMeters" REAL,
           signature TEXT,
           "offlineHash" TEXT,
+          "lockError" TEXT,
+          "lockReason" TEXT,
+          "confirmedOnChain" BOOLEAN DEFAULT FALSE,
+          slot INTEGER,
           "createdAt" TEXT NOT NULL
         )
       `);
+
+      await p.query(`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS "lockError" TEXT;`);
+      await p.query(`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS "lockReason" TEXT;`);
+      await p.query(`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS "confirmedOnChain" BOOLEAN DEFAULT FALSE;`);
+      await p.query(`ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS slot INTEGER;`);
 
       await p.query(`
         CREATE TABLE IF NOT EXISTS school_config (
@@ -2567,6 +2576,10 @@ export const serverDb = {
     distanceMeters?: number | null;
     signature?: string;
     offlineHash?: string;
+    lockError?: string | null;
+    lockReason?: string | null;
+    confirmedOnChain?: boolean;
+    slot?: number | null;
   }): Promise<{ id: string; saved: boolean }> {
     const id = record.id || this.generateId();
     const now = new Date().toISOString();
@@ -2586,6 +2599,10 @@ export const serverDb = {
       distanceMeters: record.distanceMeters !== undefined && record.distanceMeters !== null ? record.distanceMeters : null,
       signature: record.signature || null,
       offlineHash: record.offlineHash || null,
+      lockError: record.lockError || null,
+      lockReason: record.lockReason || null,
+      confirmedOnChain: Boolean(record.confirmedOnChain),
+      slot: record.slot !== undefined && record.slot !== null ? record.slot : null,
       createdAt: now,
     };
 
@@ -2595,10 +2612,16 @@ export const serverDb = {
         await p.query(
           `INSERT INTO attendance_records (
             id, "staffId", "staffName", date, time, "className", status, "schoolId",
-            latitude, longitude, "locationFlagged", "distanceMeters", signature, "offlineHash", "createdAt"
+            latitude, longitude, "locationFlagged", "distanceMeters", signature, "offlineHash",
+            "lockError", "lockReason", "confirmedOnChain", slot, "createdAt"
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-          ON CONFLICT (id) DO NOTHING`,
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+          ON CONFLICT (id) DO UPDATE SET
+            signature = EXCLUDED.signature,
+            "lockError" = EXCLUDED."lockError",
+            "lockReason" = EXCLUDED."lockReason",
+            "confirmedOnChain" = EXCLUDED."confirmedOnChain",
+            slot = EXCLUDED.slot`,
           [
             entry.id,
             entry.staffId,
@@ -2614,6 +2637,10 @@ export const serverDb = {
             entry.distanceMeters,
             entry.signature,
             entry.offlineHash,
+            entry.lockError,
+            entry.lockReason,
+            entry.confirmedOnChain,
+            entry.slot,
             now,
           ]
         );
@@ -2645,6 +2672,10 @@ export const serverDb = {
     distanceMeters: number | null;
     signature: string;
     offlineHash: string;
+    lockError?: string | null;
+    lockReason?: string | null;
+    confirmedOnChain: boolean;
+    slot?: number | null;
     createdAt: string;
   }>> {
     if (isPostgresAvailable) {
@@ -2670,6 +2701,10 @@ export const serverDb = {
           distanceMeters: row.distanceMeters !== null && row.distanceMeters !== undefined ? Number(row.distanceMeters) : (row.distancemeters !== null && row.distancemeters !== undefined ? Number(row.distancemeters) : null),
           signature: row.signature || '',
           offlineHash: row.offlineHash || row.offlinehash || '',
+          lockError: row.lockError || row.lockerror || null,
+          lockReason: row.lockReason || row.lockreason || null,
+          confirmedOnChain: Boolean(row.confirmedOnChain ?? row.confirmedonchain),
+          slot: row.slot !== null && row.slot !== undefined ? Number(row.slot) : null,
           createdAt: row.createdAt || row.createdat,
         }));
       } catch (err: any) {
@@ -2682,7 +2717,15 @@ export const serverDb = {
     }
 
     const records = Array.from(memStore.attendanceRecords.values()).filter((r) => r.staffId === userId);
-    return records.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return records
+      .map(r => ({
+        ...r,
+        confirmedOnChain: Boolean(r.confirmedOnChain),
+        lockError: r.lockError || null,
+        lockReason: r.lockReason || null,
+        slot: r.slot !== undefined ? r.slot : null,
+      }))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   },
 
   async getAllAttendanceRecords(flaggedOnly: boolean = false): Promise<Array<{
@@ -2700,6 +2743,10 @@ export const serverDb = {
     distanceMeters: number | null;
     signature: string;
     offlineHash: string;
+    lockError?: string | null;
+    lockReason?: string | null;
+    confirmedOnChain: boolean;
+    slot?: number | null;
     createdAt: string;
   }>> {
     if (isPostgresAvailable) {
@@ -2726,6 +2773,10 @@ export const serverDb = {
           distanceMeters: row.distanceMeters !== null && row.distanceMeters !== undefined ? Number(row.distanceMeters) : (row.distancemeters !== null && row.distancemeters !== undefined ? Number(row.distancemeters) : null),
           signature: row.signature || '',
           offlineHash: row.offlineHash || row.offlinehash || '',
+          lockError: row.lockError || row.lockerror || null,
+          lockReason: row.lockReason || row.lockreason || null,
+          confirmedOnChain: Boolean(row.confirmedOnChain ?? row.confirmedonchain),
+          slot: row.slot !== null && row.slot !== undefined ? Number(row.slot) : null,
           createdAt: row.createdAt || row.createdat,
         }));
       } catch (err: any) {
@@ -2738,7 +2789,15 @@ export const serverDb = {
     }
 
     const records = Array.from(memStore.attendanceRecords.values()).filter((r) => !flaggedOnly || r.locationFlagged);
-    return records.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return records
+      .map(r => ({
+        ...r,
+        confirmedOnChain: Boolean(r.confirmedOnChain),
+        lockError: r.lockError || null,
+        lockReason: r.lockReason || null,
+        slot: r.slot !== undefined ? r.slot : null,
+      }))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   },
 
   async getStaffPerformanceMetrics(): Promise<Array<{
@@ -2990,6 +3049,10 @@ export const serverDb = {
             distanceMeters: row.distanceMeters !== null && row.distanceMeters !== undefined ? Number(row.distanceMeters) : null,
             signature: row.signature || '',
             offlineHash: row.offlineHash || row.offlinehash || '',
+            lockError: row.lockError || row.lockerror || null,
+            lockReason: row.lockReason || row.lockreason || null,
+            confirmedOnChain: Boolean(row.confirmedOnChain ?? row.confirmedonchain),
+            slot: row.slot !== null && row.slot !== undefined ? Number(row.slot) : null,
             createdAt: row.createdAt || row.createdat,
           };
         }
@@ -3017,6 +3080,54 @@ export const serverDb = {
     const mem = memStore.attendanceRecords.get(id);
     if (mem) {
       memStore.attendanceRecords.set(id, { ...mem, signature });
+      return true;
+    }
+    return true;
+  },
+
+  async updateAttendanceLockStatus(id: string, updates: {
+    signature?: string;
+    confirmedOnChain: boolean;
+    lockError?: string | null;
+    lockReason?: string | null;
+    slot?: number | null;
+  }): Promise<boolean> {
+    if (isPostgresAvailable) {
+      try {
+        const p = getPool();
+        await p.query(
+          `UPDATE attendance_records 
+           SET signature = COALESCE($1, signature), 
+               "confirmedOnChain" = $2, 
+               "lockError" = $3, 
+               "lockReason" = $4, 
+               slot = COALESCE($5, slot) 
+           WHERE id = $6`,
+          [
+            updates.signature || null,
+            Boolean(updates.confirmedOnChain),
+            updates.lockError ?? null,
+            updates.lockReason ?? null,
+            updates.slot ?? null,
+            id,
+          ]
+        );
+      } catch (err: any) {
+        if (isPostgresConnectionOrAuthError(err)) {
+          isPostgresAvailable = false;
+        }
+      }
+    }
+    const mem = memStore.attendanceRecords.get(id);
+    if (mem) {
+      memStore.attendanceRecords.set(id, {
+        ...mem,
+        signature: updates.signature !== undefined ? updates.signature : mem.signature,
+        confirmedOnChain: updates.confirmedOnChain,
+        lockError: updates.lockError !== undefined ? updates.lockError : mem.lockError,
+        lockReason: updates.lockReason !== undefined ? updates.lockReason : mem.lockReason,
+        slot: updates.slot !== undefined ? updates.slot : mem.slot,
+      });
       return true;
     }
     return true;

@@ -1,13 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Users, Calendar, Award, FileText, CheckCircle, RefreshCw,
   Loader2, Search, BarChart2, TrendingUp, Briefcase, BookOpen,
   MapPin, AlertTriangle, ShieldCheck, Filter, Clock, Hash,
   Navigation, Crosshair, ChevronRight, AlertCircle, ExternalLink,
-  Copy, Check
+  Copy, Check, X
 } from 'lucide-react';
-import { getStaffPerformance, getAdminAttendanceRecords, verifyAttendanceHash } from '../services/api';
-import { AttendanceRecordItem } from '../types';
+import { 
+  getStaffPerformance, 
+  getAdminAttendanceRecords, 
+  verifyAttendanceHash,
+  getTimetables,
+  getGrades,
+  getVaultDocuments
+} from '../services/api';
+import { AttendanceRecordItem, TimetableEntry, GradeRecord, VaultDocument, DocumentStatus } from '../types';
+import { db } from '../services/database';
+import { KpiMetricsSection } from './KpiMetricsSection';
 
 interface TeacherPerformanceData {
   id: string;
@@ -34,6 +43,13 @@ export const StaffPerformanceDashboard: React.FC = () => {
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
   const [flaggedFilter, setFlaggedFilter] = useState<'all' | 'flagged'>('all');
   const [attendanceSearch, setAttendanceSearch] = useState('');
+
+  // KPI Modal State & Details (Simple English drawers)
+  type ModalType = 'workload' | 'attendance' | 'grades' | 'vault' | null;
+  const [openModalType, setOpenModalType] = useState<ModalType>(null);
+  const [timetables, setTimetables] = useState<TimetableEntry[]>([]);
+  const [grades, setGrades] = useState<GradeRecord[]>([]);
+  const [vaultDocs, setVaultDocs] = useState<VaultDocument[]>([]);
 
   // Copy and Verify state for on-chain attendance audit
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -126,10 +142,88 @@ export const StaffPerformanceDashboard: React.FC = () => {
     }
   };
 
+  const fetchTimetables = async () => {
+    try {
+      const res = await getTimetables();
+      if (res && res.success && Array.isArray(res.timetables)) {
+        setTimetables(res.timetables);
+      } else {
+        setTimetables([]);
+      }
+    } catch {
+      setTimetables([]);
+    }
+  };
+
+  const fetchGrades = async () => {
+    try {
+      const res = await getGrades();
+      if (res && res.success && Array.isArray(res.grades)) {
+        setGrades(res.grades);
+      } else {
+        setGrades(db.getAllGrades());
+      }
+    } catch {
+      setGrades(db.getAllGrades());
+    }
+  };
+
+  const fetchVaultDocs = async () => {
+    try {
+      const res = await getVaultDocuments();
+      if (res && res.success && Array.isArray(res.documents)) {
+        setVaultDocs(res.documents);
+      } else {
+        setVaultDocs(db.getVaultDocuments());
+      }
+    } catch {
+      setVaultDocs(db.getVaultDocuments());
+    }
+  };
+
   useEffect(() => {
     fetchPerformance();
     fetchAttendanceRecords();
+    fetchTimetables();
+    fetchGrades();
+    fetchVaultDocs();
   }, []);
+
+  const thirtyDaysAgo = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d;
+  }, []);
+
+  // Filter attendance marked in the last 30 days
+  const attendanceLast30Days = useMemo(() => {
+    return attendanceRecords.filter(r => {
+      if (!r.date) return false;
+      const d = new Date(r.date);
+      return !isNaN(d.getTime()) && d >= thirtyDaysAgo;
+    });
+  }, [attendanceRecords, thirtyDaysAgo]);
+
+  // Filter grades entered in the last 30 days
+  const gradesLast30Days = useMemo(() => {
+    return grades.filter(g => {
+      const dateStr = g.recordedAt || (g as any).date || g.createdAt || (g as any).submittedAt;
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      return !isNaN(d.getTime()) && d >= thirtyDaysAgo;
+    });
+  }, [grades, thirtyDaysAgo]);
+
+  // Filter approved vault documents
+  const approvedVaultDocs = useMemo(() => {
+    return vaultDocs.filter(d => d.status === DocumentStatus.APPROVED || (d.status as string) === 'APPROVED' || (d.status as string) === 'Approved');
+  }, [vaultDocs]);
+
+  // Honest numbers: 0 until real data exists
+  const totalWorkloadCount = timetables.length;
+  const totalAttendanceCount = attendanceLast30Days.length;
+  const totalGradesCount = gradesLast30Days.length;
+  const totalApprovedVaultCount = approvedVaultDocs.length;
 
   const filteredTeachers = teachers.filter(t =>
     t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -222,52 +316,13 @@ export const StaffPerformanceDashboard: React.FC = () => {
 
       {activeSubTab === 'roster' && (
         <>
-          {/* Summary KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="glass-card p-5 rounded-2xl flex items-center gap-4">
-              <div className="p-3 bg-purple-950/60 border border-purple-500/30 text-purple-400 rounded-xl">
-                <Briefcase className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Workload</p>
-                <p className="text-xl font-bold text-white">{totalWorkload} Periods/Wk</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">Across {teachers.length} Faculty Members</p>
-              </div>
-            </div>
-
-            <div className="glass-card p-5 rounded-2xl flex items-center gap-4">
-              <div className="p-3 bg-emerald-950/60 border border-emerald-500/30 text-emerald-400 rounded-xl">
-                <TrendingUp className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attendance Marked (30d)</p>
-                <p className="text-xl font-bold text-white">{totalAttendance} Records</p>
-                <p className="text-[10px] text-emerald-400 mt-0.5">On-chain &amp; Sync Verified</p>
-              </div>
-            </div>
-
-            <div className="glass-card p-5 rounded-2xl flex items-center gap-4">
-              <div className="p-3 bg-blue-950/60 border border-blue-500/30 text-blue-400 rounded-xl">
-                <Award className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Grades Submitted (30d)</p>
-                <p className="text-xl font-bold text-white">{totalGrades} Assessments</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">Logged in Gradebook</p>
-              </div>
-            </div>
-
-            <div className="glass-card p-5 rounded-2xl flex items-center gap-4">
-              <div className="p-3 bg-amber-950/60 border border-amber-500/30 text-amber-400 rounded-xl">
-                <FileText className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Approved Vault Materials</p>
-                <p className="text-xl font-bold text-white">{totalApprovedVault} Approved</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">Repository Resources</p>
-              </div>
-            </div>
-          </div>
+          {/* Summary KPI Cards - Buttons with simple English drawer modals */}
+          <KpiMetricsSection
+            timetables={timetables}
+            attendanceRecords={attendanceRecords}
+            grades={grades}
+            vaultDocuments={vaultDocs}
+          />
 
           {/* Main Table View */}
           <div className="glass-card rounded-3xl overflow-hidden border border-white/10 space-y-4 p-6">

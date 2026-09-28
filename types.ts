@@ -253,6 +253,10 @@ export interface AttendanceRecordItem {
   signature?: string;
   txSignature?: string;
   explorerUrl?: string;
+  confirmedOnChain?: boolean;
+  lockError?: string | null;
+  lockReason?: string | null;
+  slot?: number;
   createdAt: string;
 }
 

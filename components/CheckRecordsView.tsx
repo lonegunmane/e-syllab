@@ -80,7 +80,7 @@ export const CheckRecordsView: React.FC = () => {
           checked: true,
           match: Boolean(res.match),
           locked: Boolean(res.locked),
-          message: res.message || (res.match ? (res.locked ? 'Matches record saved at school and locked on public ledger.' : 'Matches record saved at school. Waiting to lock.') : 'This record does not match school records.'),
+          message: res.message || (res.match ? (res.locked ? 'Matches record saved at school and locked permanently.' : 'Matches record saved at school. Waiting to lock.') : 'This record does not match school records.'),
           explorerUrl: res.explorerUrl,
         },
       }));
@@ -108,19 +108,19 @@ export const CheckRecordsView: React.FC = () => {
       if (res.locked > 0) {
         setLockMessage({
           type: 'success',
-          text: res.message || `Successfully locked ${res.locked} record${res.locked > 1 ? 's' : ''} on the public ledger.`,
+          text: res.message || `Successfully locked ${res.locked} record${res.locked > 1 ? 's' : ''} permanently.`,
         });
       } else {
         setLockMessage({
           type: 'info',
-          text: res.message || 'Cannot lock on public ledger right now. Saved at school.',
+          text: res.message || 'Cannot lock right now. Saved at school.',
         });
       }
       await fetchRecords();
     } catch (err: any) {
       setLockMessage({
         type: 'info',
-        text: 'Cannot lock on public ledger right now. Saved at school.',
+        text: 'Cannot lock right now. Saved at school.',
       });
     } finally {
       setLockingWaiting(false);
@@ -159,7 +159,7 @@ export const CheckRecordsView: React.FC = () => {
             Check records
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            Oversee school-wide attendance, grades, assessments, and vault documents.
+            Oversee school-wide attendance, grades, assessments, and school files.
           </p>
         </div>
 

@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { 
   Users, UserPlus, Database, Settings, Search, 
   ShieldCheck, CheckCircle, XCircle, Loader2, Mail, Lock,
-  User as UserIcon, Phone, School, Home, Save, Pencil, GraduationCap, Briefcase, Calendar, Plus, FileText, BookOpen, X, Trash2, Bell
+  User as UserIcon, Phone, School, Home, Save, Pencil, GraduationCap, Briefcase, Calendar, Plus, FileText, BookOpen, X, Trash2, Bell, Check
 } from 'lucide-react';
 import { User, UserRole, CurriculumResource, ResourceCategory, VaultDocument, DocumentStatus, AuthCredential } from '../types';
 import { db } from '../services/database';
@@ -21,6 +21,8 @@ import { NotificationSendForm } from '../components/NotificationSendForm';
 import { PasswordStrengthIndicator } from '../components/PasswordStrengthIndicator';
 import { validatePassword } from '../services/passwordValidation';
 import { CheckRecordsView } from '../components/CheckRecordsView';
+import { KpiMetricsSection } from '../components/KpiMetricsSection';
+import { normalizeGradeToForm, formsMatch } from '../services/formLabels';
 
 interface AdminDashboardProps {
   user: User;
@@ -194,7 +196,7 @@ const DocumentTracker: React.FC = () => {
             className="px-3 py-2 bg-black/20 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
           >
             <option value="ALL" className="bg-[#1a1635]">All Resource Types</option>
-            <option value="VAULT_DOCUMENT" className="bg-[#1a1635]">Vault Documents</option>
+            <option value="VAULT_DOCUMENT" className="bg-[#1a1635]">School Files</option>
             <option value="ASSIGNMENT" className="bg-[#1a1635]">Assignments</option>
             <option value="ANNOUNCEMENT" className="bg-[#1a1635]">Announcements</option>
           </select>
@@ -332,11 +334,13 @@ const UserManager: React.FC<{ role: UserRole; title: string; onDelete: () => voi
 
       if (statusFilter === 'COMPLETE' && !u.isProfileComplete) return false;
       if (statusFilter === 'PENDING' && u.isProfileComplete) return false;
-      if (statusFilter.startsWith('GRADE_')) {
-        const gradeStr = statusFilter.replace('GRADE_', 'Grade ');
+      if (statusFilter.startsWith('FORM_') || statusFilter.startsWith('GRADE_')) {
+        const formStr = statusFilter.startsWith('FORM_')
+          ? statusFilter.replace('FORM_', 'Form ')
+          : statusFilter.replace('GRADE_', 'Grade ');
         const studentGrade = u.gradeLevel || u.grade;
-        if (role === UserRole.STUDENT && studentGrade !== gradeStr) return false;
-        if (role === UserRole.TEACHER && (!u.teachingGrades || !u.teachingGrades.includes(gradeStr))) return false;
+        if (role === UserRole.STUDENT && !formsMatch(studentGrade, formStr)) return false;
+        if (role === UserRole.TEACHER && (!u.teachingGrades || !u.teachingGrades.some(g => formsMatch(g, formStr)))) return false;
       }
 
       return true;
@@ -407,10 +411,11 @@ const UserManager: React.FC<{ role: UserRole; title: string; onDelete: () => voi
             <option value="PENDING" className="bg-[#1a1635]">Pending Setup</option>
             {role === UserRole.STUDENT && (
               <>
-                <option value="GRADE_9" className="bg-[#1a1635]">Grade 9</option>
-                <option value="GRADE_10" className="bg-[#1a1635]">Grade 10</option>
-                <option value="GRADE_11" className="bg-[#1a1635]">Grade 11</option>
-                <option value="GRADE_12" className="bg-[#1a1635]">Grade 12</option>
+                <option value="FORM_1" className="bg-[#1a1635]">Form 1</option>
+                <option value="FORM_2" className="bg-[#1a1635]">Form 2</option>
+                <option value="FORM_3" className="bg-[#1a1635]">Form 3</option>
+                <option value="FORM_4" className="bg-[#1a1635]">Form 4</option>
+                <option value="FORM_5" className="bg-[#1a1635]">Form 5</option>
               </>
             )}
           </select>
@@ -549,18 +554,18 @@ const UserManager: React.FC<{ role: UserRole; title: string; onDelete: () => voi
                     {viewingUser.role === UserRole.TEACHER && viewingUser.isProfileComplete && (
                       <div className="pt-4 border-t border-white/5 space-y-3">
                         <div>
-                          <p className="text-[10px] font-bold text-primary-400 uppercase tracking-widest">Teaching Grades</p>
+                          <p className="text-[10px] font-bold text-primary-400 uppercase tracking-widest">Teaching Forms</p>
                           <div className="flex flex-wrap gap-1 mt-1">
                             {viewingUser.teachingGrades?.map(g => (
-                              <span key={g} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-slate-300">{g}</span>
+                              <span key={g} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-slate-300">{normalizeGradeToForm(g)}</span>
                             ))}
                           </div>
                         </div>
                         <div>
                           <p className="text-[10px] font-bold text-primary-400 uppercase tracking-widest">Assigned Classes</p>
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {viewingUser.teachingClasses?.map(c => (
-                              <span key={c} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-slate-300">Class {c}</span>
+                            {viewingUser.teachingClasses?.filter(c => !['D', 'E', 'Class D', 'Class E'].includes(c.trim())).map(c => (
+                              <span key={c} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-slate-300">Class {c.replace(/^Class\s*/i, '')}</span>
                             ))}
                           </div>
                         </div>
@@ -669,7 +674,7 @@ const VaultApprovals: React.FC = () => {
                                 </td>
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-2">
-                                        <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${doc.teacherName}`} className="w-5 h-5 rounded-full border border-white/10" alt="" />
+                                        <img src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${doc.teacherName}`} className="w-5 h-5 rounded-full border border-white/10" alt="" />
                                         <span className="text-slate-400 font-medium">{doc.teacherName}</span>
                                     </div>
                                 </td>
@@ -734,7 +739,7 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
     // Form state
     const [title, setTitle] = useState('');
     const [subject, setSubject] = useState('Mathematics');
-    const [gradeLevel, setGradeLevel] = useState('Grade 10');
+    const [gradeLevel, setGradeLevel] = useState('Form 3');
     const [category, setCategory] = useState<ResourceCategory>(filterCategory || ResourceCategory.DOCUMENT);
     const [description, setDescription] = useState('');
     const [fileName, setFileName] = useState('');
@@ -921,9 +926,9 @@ const CurriculumManager: React.FC<{ user: User; filterCategory?: ResourceCategor
                                 </div>
                             )}
                             <div className={filterCategory ? "col-span-full space-y-1" : "space-y-1"}>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Grade Level</label>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Target Form</label>
                                 <select value={gradeLevel} onChange={e=>setGradeLevel(e.target.value)} className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 text-white">
-                                    <option className="bg-[#1a1635]">Grade 9</option><option className="bg-[#1a1635]">Grade 10</option><option className="bg-[#1a1635]">Grade 11</option><option className="bg-[#1a1635]">Grade 12</option><option className="bg-[#1a1635]">All Grades</option>
+                                    <option className="bg-[#1a1635]">Form 1</option><option className="bg-[#1a1635]">Form 2</option><option className="bg-[#1a1635]">Form 3</option><option className="bg-[#1a1635]">Form 4</option><option className="bg-[#1a1635]">Form 5</option><option className="bg-[#1a1635]">All Forms</option>
                                 </select>
                             </div>
                             {category !== ResourceCategory.ANNOUNCEMENT && (
@@ -1112,8 +1117,8 @@ const MetricTrackerModal: React.FC<MetricTrackerModalProps> = ({ metric, onClose
         };
       case 'DOCUMENTS':
         return {
-          title: 'Documents & Vault Repository',
-          subtitle: 'Search and filter all curriculum, assignments, and vault submissions.',
+          title: 'Documents & School Files',
+          subtitle: 'Search and filter all curriculum, assignments, and school file submissions.',
           icon: FileText,
           color: 'text-primary-400',
           tabName: 'vault',
@@ -1194,6 +1199,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
   const [totalVaultDocs, setTotalVaultDocs] = useState(0);
   const [selectedMetricTracker, setSelectedMetricTracker] = useState<MetricType | null>(null);
   const [isCreatingStaff, setIsCreatingStaff] = useState(false);
+  const [showStaffConfirmModal, setShowStaffConfirmModal] = useState(false);
   const [staffName, setStaffName] = useState('');
   const [staffEmail, setStaffEmail] = useState('');
   const [staffPassword, setStaffPassword] = useState('');
@@ -1230,11 +1236,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
     refreshCounts();
   }, [activeTab]);
 
-  const handleCreateStaff = async (e: React.FormEvent) => {
+  // Step 1: Validate and open confirmation popup (do NOT create account yet)
+  const handleInitiateCreateStaff = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsCreatingStaff(true);
+    if (!staffName.trim() || !staffEmail.trim()) {
+      setStaffMsg({ type: 'error', text: 'Please provide both full name and email address.' });
+      return;
+    }
     setStaffMsg(null);
+    setShowStaffConfirmModal(true);
+  };
 
+  // Step 2: User confirmed in popup -> Call provision API
+  const handleConfirmCreateStaff = async () => {
+    setIsCreatingStaff(true);
     try {
         await createUserByAdmin({
             name: staffName.trim(), 
@@ -1255,14 +1270,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
           // Ignore if local registration fails or already exists
         }
 
+        setShowStaffConfirmModal(false);
         setStaffMsg({
           type: 'success', 
           text: `${staffName.trim()} can now open E-SYLLAB, enter this email, and choose their password.`
         });
-        setStaffName(''); setStaffEmail(''); setStaffPassword('');
+        setStaffName(''); 
+        setStaffEmail(''); 
+        setStaffPassword('');
         refreshCounts();
     } catch (err: any) { 
-        setStaffMsg({type: 'error', text: err.message}); 
+        setShowStaffConfirmModal(false);
+        setStaffMsg({type: 'error', text: err.message || 'Failed to create user account.'}); 
     } finally { 
         setIsCreatingStaff(false); 
     }
@@ -1347,33 +1366,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
       
       {activeTab === 'overview' && (
         <div className="space-y-8 animate-in fade-in">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Main KPI Cards: TOTAL WORKLOAD, ATTENDANCE MARKED, GRADES SUBMITTED, APPROVED VAULT MATERIALS */}
+          <KpiMetricsSection />
+
+          {/* Quick Directory Tracking Chips */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { id: 'STUDENTS', label: 'Students', value: totalStudents, change: 'Live Growth', icon: GraduationCap, color: 'text-primary-400', bg: 'bg-primary-950/40' },
               { id: 'TEACHERS', label: 'Teachers', value: totalTeachers, change: 'Staffing', icon: Briefcase, color: 'text-emerald-400', bg: 'bg-emerald-950/40' }, 
               { id: 'ADMINS', label: 'Admins', value: `${totalAdmins}/2`, change: 'Limit Control', icon: ShieldCheck, color: 'text-rose-400', bg: 'bg-rose-950/40' },
-              { id: 'DOCUMENTS', label: 'Documents', value: totalVaultDocs, change: 'Live Repo', icon: FileText, color: 'text-primary-400', bg: 'bg-primary-950/40' },
+              { id: 'DOCUMENTS', label: 'Documents', value: totalVaultDocs, change: 'Live files', icon: FileText, color: 'text-primary-400', bg: 'bg-primary-950/40' },
             ].map((kpi, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => setSelectedMetricTracker(kpi.id as MetricType)}
-                className={`glass-card p-6 rounded-2xl transition-all duration-200 text-left relative overflow-hidden group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500/50 hover:border-primary-500/50 hover:bg-white/[0.08] hover:scale-[1.02] active:scale-[0.98] ${
+                className={`glass-card p-4 rounded-xl transition-all duration-200 text-left relative overflow-hidden group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500/50 hover:border-primary-500/50 hover:bg-white/[0.08] hover:scale-[1.01] active:scale-[0.99] ${
                   selectedMetricTracker === kpi.id ? 'border-primary-500 ring-2 ring-primary-500/30 bg-primary-950/30' : ''
                 }`}
               >
-                <div className="flex justify-between items-start mb-4">
-                  <div className={`p-2 rounded-lg ${kpi.bg} ${kpi.color} group-hover:scale-110 transition-transform border border-white/5`}><kpi.icon className="w-5 h-5" /></div>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${kpi.change === 'Optimal' || kpi.change === 'Stable' ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/20' : 'bg-primary-950/40 text-primary-400 border-primary-500/20'}`}>
-                    {kpi.change}
-                  </span>
+                <div className="flex justify-between items-center mb-1.5">
+                  <div className={`p-1.5 rounded-lg ${kpi.bg} ${kpi.color} group-hover:scale-105 transition-transform border border-white/5`}>
+                    <kpi.icon className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-medium group-hover:text-primary-400 transition-colors">Directory →</span>
                 </div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{kpi.label}</p>
-                <div className="flex items-baseline justify-between mt-1">
-                  <p className="text-2xl font-bold text-white">
-                      {typeof kpi.value === 'number' ? <AnimatedCounter value={kpi.value} /> : kpi.value}
-                  </p>
-                </div>
+                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">{kpi.label}</p>
+                <p className="text-lg font-bold text-white mt-0.5">
+                  {typeof kpi.value === 'number' ? <AnimatedCounter value={kpi.value} /> : kpi.value}
+                </p>
               </button>
             ))}
           </div>
@@ -1392,12 +1413,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                 </div>
               )}
               
-              <form onSubmit={handleCreateStaff} className="space-y-4 relative z-10">
+              <form onSubmit={handleInitiateCreateStaff} className="space-y-4 relative z-10">
                 <div className="grid grid-cols-2 gap-3 mb-2">
                   <button
                     type="button"
                     onClick={() => setStaffRole(UserRole.TEACHER)}
-                    className={`py-2 px-3 rounded-xl text-[10px] font-bold uppercase tracking-wider border transition-all ${
+                    className={`py-2 px-3 rounded-xl text-[10px] font-bold uppercase tracking-wider border transition-all cursor-pointer ${
                       staffRole === UserRole.TEACHER 
                         ? 'bg-primary-600 border-primary-600 text-white shadow-md shadow-primary-900/40' 
                         : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
@@ -1409,7 +1430,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                     type="button"
                     onClick={() => setStaffRole(UserRole.ADMIN)}
                     disabled={totalAdmins >= 2}
-                    className={`py-2 px-3 rounded-xl text-[10px] font-bold uppercase tracking-wider border transition-all ${
+                    className={`py-2 px-3 rounded-xl text-[10px] font-bold uppercase tracking-wider border transition-all cursor-pointer ${
                       staffRole === UserRole.ADMIN 
                         ? 'bg-rose-600 border-rose-600 text-white shadow-md shadow-rose-900/40' 
                         : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 disabled:opacity-40'
@@ -1433,8 +1454,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                   </p>
                 </div>
                 <button 
+                  type="submit"
                   disabled={isCreatingStaff || (staffRole === UserRole.ADMIN && totalAdmins >= 2)} 
-                  className={`w-full py-3 text-white rounded-xl font-bold disabled:opacity-50 transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg ${
+                  className={`w-full py-3 text-white rounded-xl font-bold disabled:opacity-50 transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg cursor-pointer ${
                     staffRole === UserRole.ADMIN ? 'bg-rose-600 shadow-rose-950/40 hover:bg-rose-700' : 'bg-primary-600 shadow-primary-950/40 hover:bg-primary-700'
                   }`}
                 >
@@ -1443,6 +1465,95 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                 </button>
               </form>
               <Users className="absolute -bottom-10 -right-10 w-32 h-32 text-white/5 pointer-events-none" />
+
+              {/* Confirmation Popup Modal */}
+              {showStaffConfirmModal && (
+                <div 
+                  className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in"
+                  onClick={() => {
+                    if (!isCreatingStaff) setShowStaffConfirmModal(false);
+                  }}
+                >
+                  <div 
+                    className="glass-card rounded-2xl w-full max-w-[450px] p-6 border border-white/10 shadow-2xl space-y-5 animate-in zoom-in-95 my-auto"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 text-primary-400 text-xs font-bold uppercase tracking-wider mb-1">
+                        <UserPlus className="w-4 h-4" /> Add Account Confirmation
+                      </div>
+                      <h3 className="text-lg font-bold text-white">
+                        Confirm new {staffRole === UserRole.ADMIN ? 'Admin' : 'Teacher'} account
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Please check the details below before creating this account.
+                      </p>
+                    </div>
+
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3 text-sm">
+                      <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Role</span>
+                        <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase tracking-wider border ${
+                          staffRole === UserRole.ADMIN 
+                            ? 'bg-rose-950/50 text-rose-300 border-rose-500/30' 
+                            : 'bg-primary-950/50 text-primary-300 border-primary-500/30'
+                        }`}>
+                          {staffRole === UserRole.ADMIN ? 'Admin' : 'Teacher'}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Full name</span>
+                        <span className="font-semibold text-white">{staffName.trim()}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Email</span>
+                        <span className="font-mono text-xs text-slate-200">{staffEmail.trim().toLowerCase()}</span>
+                      </div>
+
+                      <div className="p-3 bg-white/5 rounded-lg border border-white/5 text-xs text-slate-300 leading-relaxed">
+                        <span className="font-semibold text-primary-400 block mb-0.5">Note:</span>
+                        No password yet. They will choose a password the first time they sign in.
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowStaffConfirmModal(false)}
+                        disabled={isCreatingStaff}
+                        className="px-4 py-2.5 bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white rounded-xl text-sm font-semibold transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        Go back
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleConfirmCreateStaff}
+                        disabled={isCreatingStaff}
+                        className={`px-5 py-2.5 text-white rounded-xl text-sm font-bold transition-all shadow-lg active:scale-95 flex items-center gap-2 cursor-pointer disabled:opacity-50 ${
+                          staffRole === UserRole.ADMIN 
+                            ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/50' 
+                            : 'bg-primary-600 hover:bg-primary-500 shadow-primary-950/50'
+                        }`}
+                      >
+                        {isCreatingStaff ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Adding account...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4" />
+                            <span>Yes, add this account</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -6,7 +6,7 @@ import {
   ChevronDown, MapPin,
 } from 'lucide-react';
 import { User } from '../types';
-import { authFetch, recordAttendanceOnline, syncAllAttendance } from '../services/api';
+import { authFetch, recordAttendanceOnline, syncAllAttendance, retryAttendanceLock } from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +25,8 @@ interface AttendanceRecord {
   slot?: number;
   syncedFromOffline: boolean;
   confirmedOnChain: boolean;
+  lockError?: string | null;
+  lockReason?: string | null;
   timestamp: string;
   explorerUrl?: string;
   latitude?: number | null;
@@ -93,8 +95,38 @@ async function getCurrentLocation(): Promise<{ latitude: number; longitude: numb
   });
 }
 
+function isValidSolanaSig(sig?: string | null): boolean {
+  if (!sig || typeof sig !== 'string') return false;
+  const s = sig.trim();
+  return (
+    s.length >= 44 &&
+    !s.startsWith('ledger-') &&
+    !s.startsWith('cred-') &&
+    !s.startsWith('queue-') &&
+    !s.startsWith('recorded-') &&
+    !s.startsWith('pending-') &&
+    !s.startsWith('dummy-') &&
+    !s.startsWith('att-') &&
+    !s.startsWith('mock-') &&
+    /^[1-9A-HJ-NP-Za-km-z]+$/.test(s)
+  );
+}
+
 function loadRecords(): AttendanceRecord[] {
-  try { return JSON.parse(localStorage.getItem(RECORDS_KEY) || '[]'); } catch { return []; }
+  try {
+    const raw = JSON.parse(localStorage.getItem(RECORDS_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw.map((r: any) => {
+      const isLocked = Boolean(r.confirmedOnChain) && isValidSolanaSig(r.signature);
+      return {
+        ...r,
+        confirmedOnChain: isLocked,
+        signature: isLocked ? r.signature : undefined,
+        lockReason: isLocked ? null : (r.lockReason || 'The school lock wallet is not set'),
+        explorerUrl: isLocked && r.signature ? `https://explorer.solana.com/tx/${r.signature}?cluster=devnet` : undefined,
+      };
+    });
+  } catch { return []; }
 }
 function saveRecords(r: AttendanceRecord[]) {
   localStorage.setItem(RECORDS_KEY, JSON.stringify(r));
@@ -123,10 +155,13 @@ function friendlyError(err: any): string {
 interface Props { user: User; }
 
 export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
-  // Pull the teacher's assigned classes directly from their profile
-  const teachingClasses: string[] = user.teachingClasses && user.teachingClasses.length > 0
+  // Pull the teacher's assigned classes, restricting strictly to Class A, Class B, Class C
+  const rawClasses = user.teachingClasses && user.teachingClasses.length > 0
     ? user.teachingClasses
-    : [];
+    : ['A', 'B', 'C'];
+  const teachingClasses: string[] = rawClasses
+    .filter(c => !['D', 'E', 'Class D', 'Class E', 'd', 'e'].includes(c.trim()))
+    .map(c => c.startsWith('Class ') ? c : `Class ${c}`);
 
   const [records, setRecords]           = useState<AttendanceRecord[]>(loadRecords);
   const [serverOnline, setServerOnline] = useState<boolean | null>(null);
@@ -143,12 +178,86 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
   // Sync status banner — shows while offline records are being submitted
   const [syncStatus, setSyncStatus]     = useState<'idle' | 'syncing' | 'done'>('idle');
   const [syncMessage, setSyncMessage]   = useState('');
+  const [retryingId, setRetryingId]     = useState<string | null>(null);
 
-  // ── Mount: check server, try initial sync ────────────────────────────────
+  // ── Load server records ───────────────────────────────────────────────────
+  const loadServerRecords = useCallback(async () => {
+    try {
+      const res = await authFetch('/api/blockchain/attendance/my-records');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.records) && data.records.length > 0) {
+          const mapped: AttendanceRecord[] = data.records.map((r: any) => {
+            const isLocked = Boolean(r.confirmedOnChain) && isValidSolanaSig(r.signature);
+            return {
+              id: r.id,
+              staffId: r.staffId,
+              staffName: r.staffName,
+              date: r.date,
+              time: r.time || '',
+              className: r.className || '',
+              status: r.status,
+              offlineHash: r.offlineHash || '',
+              signature: isLocked ? r.signature : undefined,
+              slot: isLocked ? r.slot : undefined,
+              syncedFromOffline: false,
+              confirmedOnChain: isLocked,
+              lockError: r.lockError,
+              lockReason: isLocked ? null : (r.lockReason || 'The school lock wallet is not set'),
+              timestamp: r.createdAt || new Date().toISOString(),
+              latitude: r.latitude,
+              longitude: r.longitude,
+              locationFlagged: r.locationFlagged,
+              distanceMeters: r.distanceMeters,
+              explorerUrl: isLocked && r.signature ? `https://explorer.solana.com/tx/${r.signature}?cluster=devnet` : undefined,
+            };
+          });
+          setRecords(mapped);
+        }
+      }
+    } catch (err) {
+      console.warn('[Attendance] Could not load server records:', err);
+    }
+  }, []);
+
+  // ── Retry locking a record ────────────────────────────────────────────────
+  const handleRetryLock = async (id: string) => {
+    setRetryingId(id);
+    try {
+      const res = await retryAttendanceLock(id);
+      if (res.success && res.results?.[0]?.success && isValidSolanaSig(res.results[0].signature)) {
+        const result = res.results[0];
+        setRecords(prev => prev.map(r => r.id === id ? {
+          ...r,
+          confirmedOnChain: true,
+          signature: result.signature,
+          slot: result.slot,
+          lockError: null,
+          lockReason: null,
+          explorerUrl: result.explorerUrl || `https://explorer.solana.com/tx/${result.signature}?cluster=devnet`,
+        } : r));
+      } else if (res.results?.[0]) {
+        const result = res.results[0];
+        setRecords(prev => prev.map(r => r.id === id ? {
+          ...r,
+          confirmedOnChain: false,
+          lockError: result.lockError,
+          lockReason: result.lockReason || 'The lock network is busy. Try again in a minute',
+        } : r));
+      }
+    } catch (err: any) {
+      console.warn('[Attendance] Retry error:', err);
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
+  // ── Mount: check server, load records, try initial sync ──────────────────
   useEffect(() => {
     checkServer();
+    loadServerRecords();
     syncOfflineQueue();
-  }, []);
+  }, [loadServerRecords]);
 
   useEffect(() => { saveRecords(records); }, [records]);
 
@@ -232,8 +341,9 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
         longitude:      location?.longitude ?? null,
       });
 
+      const isLocked = Boolean(data.confirmedOnChain) && isValidSolanaSig(data.signature);
       const rec: AttendanceRecord = {
-        id:                data.id || (data.confirmedOnChain && data.signature ? data.signature : `att-${Date.now()}`),
+        id:                data.id || (isLocked && data.signature ? data.signature : `att-${Date.now()}`),
         staffId:           user.id,
         staffName:         user.name,
         date:              recordedDate,
@@ -241,12 +351,14 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
         className,
         status,
         offlineHash:       data.offlineHash || '',
-        signature:         data.confirmedOnChain && data.signature ? data.signature : undefined,
-        slot:              data.slot,
+        signature:         isLocked ? data.signature : undefined,
+        slot:              isLocked ? data.slot : undefined,
         syncedFromOffline: false,
-        confirmedOnChain:  Boolean(data.confirmedOnChain),
+        confirmedOnChain:  isLocked,
+        lockError:         data.lockError || null,
+        lockReason:        isLocked ? null : (data.lockReason || 'The school lock wallet is not set'),
         timestamp:         now.toISOString(),
-        explorerUrl:       data.confirmedOnChain && data.signature ? data.explorerUrl : undefined,
+        explorerUrl:       isLocked && data.signature ? data.explorerUrl : undefined,
         latitude:          data.latitude ?? location?.latitude ?? null,
         longitude:         data.longitude ?? location?.longitude ?? null,
         locationFlagged:   data.locationFlagged ?? false,
@@ -483,40 +595,73 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
       </div>
 
       {/* Result banner */}
-      {txState === 'done' && lastRecord && (
-        <div className={`p-5 rounded-2xl border animate-in slide-in-from-top-2 ${
-          lastRecord.confirmedOnChain
-            ? 'bg-emerald-950/20 border-emerald-500/30'
-            : 'bg-amber-950/20 border-amber-500/30'
-        }`}>
-          <div className="flex items-start gap-3">
-            {lastRecord.confirmedOnChain
-              ? <CheckCircle className="w-5 h-5 text-emerald-400 mt-0.5 shrink-0" />
-              : <Clock        className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
-            }
-            <div className="flex-1">
-              <p className={`font-bold text-base ${lastRecord.confirmedOnChain ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {lastRecord.confirmedOnChain
-                  ? 'Saved. This cannot be changed.'
-                  : lastRecord.syncedFromOffline
-                  ? 'Saved on this device. Will send when internet is back.'
-                  : 'Saved at school. Waiting to lock.'}
-              </p>
-              <p className="text-xs text-slate-400 mt-1">
-                {`${user.name}${lastRecord.className ? ' · ' + lastRecord.className : ''} · ${lastRecord.date} ${lastRecord.time} · ${STATUS_CONFIG[lastRecord.status].label}`}
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <button
-                  onClick={() => setTxState('idle')}
-                  className="px-4 py-2 bg-primary-600 text-white text-xs font-bold rounded-xl hover:bg-primary-700 transition-all active:scale-95"
-                >
-                  Mark another day
-                </button>
+      {txState === 'done' && lastRecord && (() => {
+        const isLocked = Boolean(lastRecord.confirmedOnChain) && isValidSolanaSig(lastRecord.signature);
+        return (
+          <div className={`p-5 rounded-2xl border animate-in slide-in-from-top-2 ${
+            isLocked
+              ? 'bg-emerald-950/20 border-emerald-500/30'
+              : 'bg-amber-950/20 border-amber-500/30'
+          }`}>
+            <div className="flex items-start gap-3">
+              {isLocked
+                ? <CheckCircle className="w-5 h-5 text-emerald-400 mt-0.5 shrink-0" />
+                : <Clock        className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
+              }
+              <div className="flex-1">
+                <p className={`font-bold text-base ${isLocked ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {isLocked
+                    ? 'Saved. This cannot be changed.'
+                    : lastRecord.syncedFromOffline
+                    ? 'Saved on this device. Will send when internet is back.'
+                    : 'Saved at school. Waiting to lock.'}
+                </p>
+                {!isLocked && (
+                  <p className="text-xs text-amber-200/80 mt-1">
+                    {lastRecord.lockReason || 'The school lock wallet is not set'}
+                  </p>
+                )}
+                <p className="text-xs text-slate-400 mt-1">
+                  {`${user.name}${lastRecord.className ? ' · ' + lastRecord.className : ''} · ${lastRecord.date} ${lastRecord.time} · ${STATUS_CONFIG[lastRecord.status].label}`}
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  {!isLocked && !lastRecord.syncedFromOffline && (
+                    <button
+                      onClick={() => handleRetryLock(lastRecord.id)}
+                      disabled={retryingId === lastRecord.id}
+                      className="px-4 py-2 bg-amber-600/30 border border-amber-500/40 text-amber-300 text-xs font-bold rounded-xl hover:bg-amber-600/40 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {retryingId === lastRecord.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      )}
+                      Retry lock
+                    </button>
+                  )}
+                  {isLocked && lastRecord.signature && (
+                    <a
+                      href={`https://explorer.solana.com/tx/${lastRecord.signature}?cluster=devnet`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold rounded-xl hover:bg-emerald-600/40 transition-all flex items-center gap-1.5"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      View on Solana Explorer
+                    </a>
+                  )}
+                  <button
+                    onClick={() => setTxState('idle')}
+                    className="px-4 py-2 bg-primary-600 text-white text-xs font-bold rounded-xl hover:bg-primary-700 transition-all active:scale-95"
+                  >
+                    Mark another day
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Error banner */}
       {txState === 'error' && (
@@ -565,6 +710,7 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
               <div className="divide-y divide-white/5">
                 {records.map(r => {
                   const cfg = STATUS_CONFIG[r.status];
+                  const isLocked = Boolean(r.confirmedOnChain) && isValidSolanaSig(r.signature);
                   return (
                     <div
                       key={r.id}
@@ -587,18 +733,51 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
                         <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
                           {cfg.label}
                         </span>
-                        {r.confirmedOnChain ? (
-                          <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400">
-                            <CheckCircle className="w-3.5 h-3.5" /> Saved. This cannot be changed.
-                          </span>
+                        {isLocked ? (
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400">
+                              <CheckCircle className="w-3.5 h-3.5" /> Saved. This cannot be changed.
+                            </span>
+                            {r.signature && (
+                              <a
+                                href={`https://explorer.solana.com/tx/${r.signature}?cluster=devnet`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-emerald-400 hover:text-emerald-300 transition-colors"
+                                title="View on Solana Explorer"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                          </div>
                         ) : r.syncedFromOffline ? (
                           <span className="flex items-center gap-1 text-[11px] font-bold text-amber-400">
                             <Clock className="w-3.5 h-3.5" /> Saved on this device. Will send when internet is back.
                           </span>
                         ) : (
-                          <span className="flex items-center gap-1 text-[11px] font-bold text-amber-400">
-                            <Clock className="w-3.5 h-3.5" /> Saved at school. Waiting to lock.
-                          </span>
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className="flex items-center gap-1 text-[11px] font-bold text-amber-400">
+                                <Clock className="w-3.5 h-3.5" /> Saved at school. Waiting to lock.
+                              </span>
+                              <button
+                                onClick={() => handleRetryLock(r.id)}
+                                disabled={retryingId === r.id}
+                                className="px-2 py-0.5 text-[10px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded hover:bg-amber-500/20 transition-colors flex items-center gap-1 disabled:opacity-50"
+                                title="Retry locking on public ledger"
+                              >
+                                {retryingId === r.id ? (
+                                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="w-2.5 h-2.5" />
+                                )}
+                                Retry
+                              </button>
+                            </div>
+                            <span className="text-[11px] text-amber-200/80">
+                              {r.lockReason || 'The school lock wallet is not set'}
+                            </span>
+                          </div>
                         )}
                       </div>
                     </div>

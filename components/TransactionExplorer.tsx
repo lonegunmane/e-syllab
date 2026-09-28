@@ -421,8 +421,8 @@ export const TransactionExplorer: React.FC = () => {
             className="px-3 py-2 bg-black/30 border border-white/10 rounded-xl text-xs text-slate-200 outline-none focus:border-primary-500 cursor-pointer"
           >
             <option value="ALL" className="bg-[#1a1635]">All Statuses</option>
-            <option value="CONFIRMED" className="bg-[#1a1635]">CONFIRMED (On-Chain)</option>
-            <option value="PENDING" className="bg-[#1a1635]">PENDING (Local Database)</option>
+            <option value="CONFIRMED" className="bg-[#1a1635]">Checked and saved</option>
+            <option value="PENDING" className="bg-[#1a1635]">Saved at school (Waiting)</option>
           </select>
         </div>
       </div>
@@ -571,11 +571,11 @@ export const TransactionExplorer: React.FC = () => {
                       <td className="px-4 py-3.5">
                         {!isConfirmed ? (
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-950/40 border border-amber-500/20 px-2 py-0.5 rounded">
-                            <RefreshCw className="w-2.5 h-2.5" /> PENDING
+                            <RefreshCw className="w-2.5 h-2.5" /> WAITING
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded">
-                            <CheckCircle2 className="w-2.5 h-2.5" /> CONFIRMED
+                            <CheckCircle2 className="w-2.5 h-2.5" /> LOCKED
                           </span>
                         )}
                       </td>

@@ -558,6 +558,35 @@ export async function verifyAttendanceHash(data: Record<string, any>) {
   return response.json();
 }
 
+export async function retryAttendanceLock(id?: string) {
+  const response = await authFetch(`${API_BASE_URL}/blockchain/attendance/retry`, {
+    method: "POST",
+    body: JSON.stringify(id ? { id } : {}),
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("Your login has ended, please sign in again.");
+    }
+    if (response.status === 403) {
+      throw new Error("You don't have permission to perform this action");
+    }
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.lockReason || data.error || "Could not retry attendance lock");
+  }
+
+  return response.json();
+}
+
+export async function getMyAttendanceRecords() {
+  const response = await authFetch(`${API_BASE_URL}/blockchain/attendance/my-records`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Could not load attendance records");
+  }
+  return response.json();
+}
+
 // ─── Timetable API Methods ──────────────────────────────────────────────────
 export async function getTimetables(className?: string) {
   const url = className

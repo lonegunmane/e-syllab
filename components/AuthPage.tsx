@@ -526,7 +526,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                   <KeyRound className="w-4 h-4" />
                 </div>
                 <div className="flex items-center justify-center gap-2">
-                  <span className="text-xs font-bold text-white">Enter 6-Digit Security Code</span>
+                  <span className="text-xs font-bold text-white">Enter 6-Digit Email Code</span>
                   {pendingRole && (
                     <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
                       {pendingRole}
@@ -534,13 +534,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                   )}
                 </div>
                 <p className="text-xs text-slate-400">
-                  A security code was sent to <strong className="text-primary-300">{pendingEmail}</strong>
+                  An email code was sent to <strong className="text-primary-300">{pendingEmail}</strong>
                 </p>
               </div>
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-300 ml-1 uppercase tracking-wider">
-                  6-Digit Security Code
+                  6-Digit Email Code
                 </label>
                 <div className="relative">
                   <KeyRound className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-primary-400" />
@@ -594,7 +594,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                   className="text-xs text-primary-400 font-bold hover:underline flex items-center justify-center gap-1.5 mx-auto disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isResending ? 'animate-spin' : ''}`} />
-                  {isResending ? 'Sending fresh code...' : 'Resend Security Code'}
+                  {isResending ? 'Sending fresh code...' : 'Resend Email Code'}
                 </button>
               </div>
             </form>
@@ -615,7 +615,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-300 ml-1 uppercase tracking-wider">
-                  6-Digit Activation Code
+                  6-Digit Email Code
                 </label>
                 <div className="relative">
                   <KeyRound className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-primary-400" />
@@ -669,7 +669,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
                   className="text-xs text-primary-400 font-bold hover:underline flex items-center justify-center gap-1.5 mx-auto disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isResending ? 'animate-spin' : ''}`} />
-                  {isResending ? 'Sending fresh code...' : 'Resend Activation Code'}
+                  {isResending ? 'Sending fresh code...' : 'Resend Email Code'}
                 </button>
               </div>
             </form>

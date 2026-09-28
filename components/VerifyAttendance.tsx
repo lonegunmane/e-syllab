@@ -118,7 +118,7 @@ export const VerifyAttendance: React.FC = () => {
           memoData: typeof parsedMemo === 'object' ? JSON.stringify(parsedMemo, null, 2) : memoData,
           hashMatch,
           blockTime: tx.blockTime ?? undefined,
-          statusMessage: 'Verified and confirmed on Solana Devnet.',
+          statusMessage: 'Verified and confirmed permanently.',
         };
 
         setResult(verification);
@@ -152,8 +152,8 @@ export const VerifyAttendance: React.FC = () => {
           memoData: JSON.stringify(responseData.record || { offlineHash: hashToVerify, status: confirmedOnChain ? 'CONFIRMED' : 'PENDING' }, null, 2),
           hashMatch: true,
           statusMessage: confirmedOnChain
-            ? 'Record verified and confirmed on Solana Devnet.'
-            : 'Record verified against PostgreSQL school database (Pending on-chain network confirmation).',
+            ? 'Record verified and locked.'
+            : 'Record checked against school database (Waiting to lock).',
         };
 
         setResult(verification);
@@ -201,7 +201,7 @@ export const VerifyAttendance: React.FC = () => {
                 : 'bg-white/5 text-slate-400 hover:text-white'
             }`}
           >
-            Record Reference Number (Solana Tx)
+            Record Reference Number
           </button>
           <button
             onClick={() => { setInputType('hash'); setResult(null); }}
@@ -211,14 +211,14 @@ export const VerifyAttendance: React.FC = () => {
                 : 'bg-white/5 text-slate-400 hover:text-white'
             }`}
           >
-            Record Security Code (SHA-256 Hash)
+            Record Security Code
           </button>
         </div>
 
         <div className="space-y-4">
           <div>
             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
-              {inputType === 'signature' ? 'Solana Transaction Signature' : 'Record Security Hash (SHA-256)'}
+              {inputType === 'signature' ? 'Official Lock Code' : 'Record Security Code'}
             </label>
             <div className="relative mt-1">
               <input
@@ -227,8 +227,8 @@ export const VerifyAttendance: React.FC = () => {
                 onChange={e => setInputValue(e.target.value)}
                 placeholder={
                   inputType === 'signature'
-                    ? 'e.g. 5xV... (44+ character base58 signature)'
-                    : 'e.g. a9f82c0192e84d3b6... (64-character hex hash)'
+                    ? 'e.g. 5xV... (official lock code)'
+                    : 'e.g. a9f82c0192e84d3b6... (security code)'
                 }
                 className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono outline-none focus:border-primary-500 transition-colors placeholder:text-slate-600"
               />
@@ -291,7 +291,7 @@ export const VerifyAttendance: React.FC = () => {
                       ? 'bg-emerald-900/80 text-emerald-300 border border-emerald-500/40'
                       : 'bg-amber-900/80 text-amber-300 border border-amber-500/40'
                   }`}>
-                    {result.confirmedOnChain ? 'CONFIRMED ON-CHAIN' : 'SAVED LOCALLY (PENDING ON-CHAIN)'}
+                    {result.confirmedOnChain ? 'CHECKED AND LOCKED' : 'SAVED AT SCHOOL (WAITING TO LOCK)'}
                   </span>
                 )}
               </div>
@@ -324,7 +324,7 @@ export const VerifyAttendance: React.FC = () => {
                   {result.slot > 0 && (
                     <div className="flex items-center gap-2 text-xs">
                       <Database className="w-3.5 h-3.5 text-slate-500" />
-                      <span className="text-slate-400">Record Slot:</span>
+                      <span className="text-slate-400">Record Number:</span>
                       <span className="font-mono text-emerald-300">#{result.slot.toLocaleString()}</span>
                     </div>
                   )}
@@ -376,7 +376,7 @@ export const VerifyAttendance: React.FC = () => {
                       className="mt-3 inline-flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 hover:underline font-medium"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      View Public Record on Solana Explorer
+                      View Public Lock on Explorer
                     </a>
                   )}
                 </div>

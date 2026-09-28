@@ -12,14 +12,14 @@ interface StudentSetupModalProps {
 
 export const StudentSetupModal: React.FC<StudentSetupModalProps> = ({ user, onComplete }) => {
   const [step, setStep] = useState(1);
-  const [selectedGrade, setSelectedGrade] = useState<string>('');
+  const [selectedForm, setSelectedForm] = useState<string>('');
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const grades = ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
-  const classes = ['A', 'B', 'C', 'D', 'E'];
+  const forms = ['Form 1', 'Form 2', 'Form 3', 'Form 4', 'Form 5'];
+  const classes = ['Class A', 'Class B', 'Class C'];
   const subjectsList = [
     'Mathematics', 
     'Science Physics', 
@@ -45,14 +45,14 @@ export const StudentSetupModal: React.FC<StudentSetupModalProps> = ({ user, onCo
     try {
       const result = await updateProfile({
         isProfileComplete: true,
-        grade: selectedGrade,
+        grade: selectedForm,
         className: selectedClass,
         enrolledSubjects: selectedSubjects,
       });
 
       const updatedUser: User = (result && result.user) ? result.user : {
         ...user,
-        grade: selectedGrade,
+        grade: selectedForm,
         className: selectedClass,
         enrolledSubjects: selectedSubjects,
         isProfileComplete: true,
@@ -110,21 +110,21 @@ export const StudentSetupModal: React.FC<StudentSetupModalProps> = ({ user, onCo
               >
                 <div className="flex items-center gap-2 text-emerald-400">
                   <GraduationCap className="w-5 h-5" />
-                  <span className="text-sm font-bold uppercase tracking-widest">Step 1: Your Grade</span>
+                  <span className="text-sm font-bold uppercase tracking-widest">Step 1: Your Form</span>
                 </div>
-                <h3 className="text-xl font-semibold text-white">Which grade are you in?</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  {grades.map(grade => (
+                <h3 className="text-xl font-semibold text-white">Which form are you in?</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {forms.map(form => (
                     <button
-                      key={grade}
-                      onClick={() => setSelectedGrade(grade)}
-                      className={`p-6 rounded-2xl border text-left transition-all duration-300 group ${
-                        selectedGrade === grade
+                      key={form}
+                      onClick={() => setSelectedForm(form)}
+                      className={`p-5 rounded-2xl border text-left transition-all duration-300 group ${
+                        selectedForm === form
                           ? 'bg-emerald-600/20 border-emerald-500/50 text-white shadow-[0_0_20px_rgba(16,185,129,0.1)]'
                           : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/20 hover:bg-white/10'
                       }`}
                     >
-                      <span className="text-lg font-bold">{grade}</span>
+                      <span className="text-base font-bold">{form}</span>
                     </button>
                   ))}
                 </div>
@@ -144,7 +144,7 @@ export const StudentSetupModal: React.FC<StudentSetupModalProps> = ({ user, onCo
                   <span className="text-sm font-bold uppercase tracking-widest">Step 2: Your Class</span>
                 </div>
                 <h3 className="text-xl font-semibold text-white">Select your class</h3>
-                <div className="grid grid-cols-5 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   {classes.map(cls => (
                     <button
                       key={cls}
@@ -221,7 +221,7 @@ export const StudentSetupModal: React.FC<StudentSetupModalProps> = ({ user, onCo
                 handleFinish();
               }
             }}
-            disabled={isSaving || (step === 1 && !selectedGrade) || (step === 2 && !selectedClass) || (step === 3 && selectedSubjects.length === 0)}
+            disabled={isSaving || (step === 1 && !selectedForm) || (step === 2 && !selectedClass) || (step === 3 && selectedSubjects.length === 0)}
             className="px-8 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-900/40 flex items-center gap-2"
           >
             {isSaving ? (

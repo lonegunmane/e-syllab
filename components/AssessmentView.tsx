@@ -52,7 +52,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [title, setTitle] = useState('');
   const [subject, setSubject] = useState('');
-  const [className, setClassName] = useState('Grade 10');
+  const [className, setClassName] = useState('Form 3');
   const [maxScore, setMaxScore] = useState('100');
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -455,17 +455,17 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-400">Class / Grade Level *</label>
+              <label className="text-xs font-bold text-slate-400">Class / Form Level *</label>
               <select
                 value={className}
                 onChange={e => setClassName(e.target.value)}
                 className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none focus:border-primary-500 transition-colors"
               >
-                <option className="bg-[#0d0f1a]">Grade 9</option>
-                <option className="bg-[#0d0f1a]">Grade 10</option>
-                <option className="bg-[#0d0f1a]">Grade 11</option>
-                <option className="bg-[#0d0f1a]">Grade 12</option>
-                <option className="bg-[#0d0f1a]">Form 4A</option>
+                <option className="bg-[#0d0f1a]">Form 1</option>
+                <option className="bg-[#0d0f1a]">Form 2</option>
+                <option className="bg-[#0d0f1a]">Form 3</option>
+                <option className="bg-[#0d0f1a]">Form 4</option>
+                <option className="bg-[#0d0f1a]">Form 5</option>
                 <option className="bg-[#0d0f1a]">All Classes</option>
               </select>
             </div>

@@ -11,8 +11,8 @@ interface TeacherSetupModalProps {
 }
 
 export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onComplete }) => {
-  const grades = ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
-  const classes = ['A', 'B', 'C', 'D', 'E'];
+  const forms = ['Form 1', 'Form 2', 'Form 3', 'Form 4', 'Form 5'];
+  const classes = ['A', 'B', 'C'];
   const subjects = [
     'Mathematics', 
     'Science Physics', 
@@ -26,15 +26,15 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
   ];
 
   const [step, setStep] = useState(1);
-  const [selectedGrades, setSelectedGrades] = useState<string[]>(grades);
+  const [selectedForms, setSelectedForms] = useState<string[]>(forms);
   const [selectedClasses, setSelectedClasses] = useState<string[]>(classes);
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(subjects);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const toggleGrade = (grade: string) => {
-    setSelectedGrades(prev => 
-      prev.includes(grade) ? prev.filter(g => g !== grade) : [...prev, grade]
+  const toggleForm = (form: string) => {
+    setSelectedForms(prev => 
+      prev.includes(form) ? prev.filter(f => f !== form) : [...prev, form]
     );
   };
 
@@ -57,14 +57,14 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
     try {
       const result = await updateProfile({
         isProfileComplete: true,
-        teachingGrades: selectedGrades,
+        teachingGrades: selectedForms,
         teachingClasses: selectedClasses,
         teachingSubjects: selectedSubjects,
       });
 
       const updatedUser: User = (result && result.user) ? result.user : {
         ...user,
-        teachingGrades: selectedGrades,
+        teachingGrades: selectedForms,
         teachingClasses: selectedClasses,
         teachingSubjects: selectedSubjects,
         isProfileComplete: true,
@@ -122,21 +122,21 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
               >
                 <div className="flex items-center gap-2 text-primary-400">
                   <GraduationCap className="w-5 h-5" />
-                  <span className="text-sm font-bold uppercase tracking-widest">Step 1: Grade Selection</span>
+                  <span className="text-sm font-bold uppercase tracking-widest">Step 1: Form Selection</span>
                 </div>
-                <h3 className="text-xl font-semibold text-white">Which grades will you be teaching?</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  {grades.map(grade => (
+                <h3 className="text-xl font-semibold text-white">Which forms will you be teaching?</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {forms.map(form => (
                     <button
-                      key={grade}
-                      onClick={() => toggleGrade(grade)}
-                      className={`p-6 rounded-2xl border text-left transition-all duration-300 group ${
-                        selectedGrades.includes(grade)
+                      key={form}
+                      onClick={() => toggleForm(form)}
+                      className={`p-5 rounded-2xl border text-left transition-all duration-300 group ${
+                        selectedForms.includes(form)
                           ? 'bg-primary-600/20 border-primary-500/50 text-white shadow-[0_0_20px_rgba(124,58,237,0.1)]'
                           : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/20 hover:bg-white/10'
                       }`}
                     >
-                      <span className="text-lg font-bold">{grade}</span>
+                      <span className="text-base font-bold">{form}</span>
                     </button>
                   ))}
                 </div>
@@ -156,7 +156,7 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
                   <span className="text-sm font-bold uppercase tracking-widest">Step 2: Class Allocation</span>
                 </div>
                 <h3 className="text-xl font-semibold text-white">Select your assigned classes</h3>
-                <div className="grid grid-cols-5 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   {classes.map(cls => (
                     <button
                       key={cls}
@@ -233,7 +233,7 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
                 handleFinish();
               }
             }}
-            disabled={isSaving || (step === 1 && selectedGrades.length === 0) || (step === 2 && selectedClasses.length === 0) || (step === 3 && selectedSubjects.length === 0)}
+            disabled={isSaving || (step === 1 && selectedForms.length === 0) || (step === 2 && selectedClasses.length === 0) || (step === 3 && selectedSubjects.length === 0)}
             className="px-8 py-2.5 bg-primary-600 text-white rounded-xl font-bold hover:bg-primary-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-primary-900/40 flex items-center gap-2"
           >
             {isSaving ? (
