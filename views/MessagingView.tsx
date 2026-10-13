@@ -208,9 +208,9 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
 
     if (!file) return;
 
-    // Limit to 5MB for localStorage demo purposes
+    // Limit to 5MB attachments
     if (file.size > 5 * 1024 * 1024) {
-      alert('File too large for local storage preview. Browser limit is approximately 5MB-10MB total. Please limit attachments to 5MB.');
+      alert('File is too large. Please choose a file smaller than 5MB.');
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -271,7 +271,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
       <div className="w-72 border-r border-white/10 bg-white/5 flex flex-col hidden lg:flex">
         <div className="p-6 border-b border-white/10">
           <h3 className="text-sm font-bold text-white uppercase tracking-widest">Contacts</h3>
-          <p className="text-[10px] text-slate-500 mt-1">Select a person to message</p>
+          <p className="text-[10px] text-slate-400 mt-1">Select a person to message</p>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
           <button 
@@ -335,7 +335,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden md:block">Send to:</span>
+              <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest hidden md:block">Send to:</span>
               <select 
                 className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white outline-none focus:border-primary-500 transition-all cursor-pointer hover:bg-white/10"
                 value={selectedRecipientId || ''}
@@ -419,7 +419,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
                 <div className={`max-w-[80%] lg:max-w-[60%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                   <div className={`flex items-center gap-2 mb-1 px-1`}>
                     {!isMe && <span className="text-[10px] font-bold text-primary-400 uppercase tracking-wider">{msg.senderName}</span>}
-                    <span className="text-[9px] text-slate-500">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span className="text-[9px] text-slate-400 font-medium">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
                   
                   <div className={`relative px-4 py-3 rounded-2xl border ${
@@ -436,7 +436,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-medium text-white truncate">{msg.file.name}</p>
-                          <p className="text-[10px] text-slate-500">{formatSize(msg.file.size)}</p>
+                          <p className="text-[10px] text-slate-400">{formatSize(msg.file.size)}</p>
                         </div>
                         <a 
                           href={msg.file.data} 
@@ -459,13 +459,13 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
           })}
         </AnimatePresence>
         {filteredMessages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center opacity-50 space-y-4">
+          <div className="h-full flex flex-col items-center justify-center text-center opacity-70 space-y-4">
             <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center">
               <MessageSquare className="w-10 h-10 text-slate-400" />
             </div>
             <div>
               <p className="text-white font-medium">No messages yet</p>
-              <p className="text-xs text-slate-500">Your messages will appear here.</p>
+              <p className="text-xs text-slate-400">Your messages will appear here.</p>
             </div>
           </div>
         )}
@@ -506,7 +506,7 @@ export const MessagingView: React.FC<MessagingViewProps> = ({ currentUser }) => 
               placeholder={selectedFile ? "Add a caption..." : "Type your message..."}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-4 pr-32 text-sm text-white outline-none focus:border-primary-500 transition-all placeholder:text-slate-600"
+              className="w-full bg-black/40 border border-white/10 rounded-2xl px-6 py-4 pr-32 text-sm text-white outline-none focus:border-primary-500 transition-all placeholder:text-slate-400"
             />
             <div className="absolute right-2 top-2 bottom-2 flex items-center gap-1">
               <input 

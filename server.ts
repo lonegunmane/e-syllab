@@ -225,6 +225,9 @@ const JWT_EXPIRY = '12h';
 // In-memory token blacklist for logout (in production, use Redis or a database)
 const tokenBlacklist = new Set<string>();
 
+// Real user presence map tracking last active timestamp (userId -> ISO string)
+export const userPresenceMap = new Map<string, string>();
+
 // Interface for JWT payload
 interface JwtPayload {
   userId: string;
@@ -265,6 +268,8 @@ async function authenticateToken(req: Request, res: Response, next: NextFunction
       return res.status(403).json({ success: false, error: 'This account has been deactivated' });
     }
     req.user = decoded;
+    // Record real-time user presence
+    userPresenceMap.set(decoded.userId, new Date().toISOString());
     next();
   } catch (err: any) {
     return res.status(401).json({ success: false, error: 'Your login has ended, please sign in again' });
@@ -313,7 +318,12 @@ function parseDevice(userAgent: string): string {
 // ─── Server ───────────────────────────────────────────────────────────────────
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const args = process.argv.slice(2);
+  const portArgIndex = args.indexOf('--port');
+  const portFromArg = portArgIndex !== -1 && args[portArgIndex + 1] ? Number(args[portArgIndex + 1]) : null;
+  const envPort = process.env.PORT ? Number(process.env.PORT) : null;
+  // Dev server must listen on port 3000 because Nginx listens on 8080 and proxies to 3000
+  const PORT = portFromArg || (envPort && envPort !== 8080 ? envPort : 3000);
 
   // Initialize database
   await serverDb.init();
@@ -1988,8 +1998,61 @@ function evaluateAttendanceLocation(
   app.get("/api/users", authenticateToken, async (_req, res) => {
     try {
       const allUsers = await serverDb.getAllUsers();
-      const users = allUsers.filter((u: any) => u.active !== false);
+      const users = allUsers
+        .filter((u: any) => u.active !== false)
+        .map((u: any) => ({
+          ...u,
+          lastActiveAt: userPresenceMap.get(u.id) || u.lastActiveAt || u.updatedAt || u.createdAt,
+        }));
       res.json({ success: true, users });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // GET /api/users/presence - List users with real presence and lastActiveAt timestamps
+  app.get("/api/users/presence", authenticateToken, async (req, res) => {
+    try {
+      if (req.user?.userId) {
+        userPresenceMap.set(req.user.userId, new Date().toISOString());
+      }
+      const allUsers = await serverDb.getAllUsers();
+      const usersWithPresence = await Promise.all(
+        allUsers.map(async (u: any) => {
+          let lastActive = userPresenceMap.get(u.id);
+          if (!lastActive) {
+            try {
+              const sessions = await serverDb.getUserSessions(u.id);
+              if (sessions && sessions.length > 0 && sessions[0].lastActiveAt) {
+                lastActive = sessions[0].lastActiveAt;
+              }
+            } catch (_) {}
+          }
+          if (!lastActive) {
+            lastActive = u.lastActiveAt || u.updatedAt || u.createdAt;
+          }
+          return {
+            id: u.id,
+            name: u.name,
+            role: u.role,
+            email: u.email,
+            avatar: u.avatar,
+            active: u.active !== false,
+            lastActiveAt: lastActive || null,
+          };
+        })
+      );
+
+      const activeAccounts = usersWithPresence.filter((u) => u.active !== false);
+
+      // Sort: users with most recent activity first
+      activeAccounts.sort((a, b) => {
+        const timeA = a.lastActiveAt ? new Date(a.lastActiveAt).getTime() : 0;
+        const timeB = b.lastActiveAt ? new Date(b.lastActiveAt).getTime() : 0;
+        return timeB - timeA;
+      });
+
+      res.json({ success: true, users: activeAccounts });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -1997,7 +2060,11 @@ function evaluateAttendanceLocation(
 
   // GET /api/admin/users - List all users (admin only)
   app.get("/api/admin/users", authenticateToken, authorizeRole(UserRole.ADMIN), async (_req, res) => {
-    const users = await serverDb.getAllUsers();
+    const rawUsers = await serverDb.getAllUsers();
+    const users = rawUsers.map((u: any) => ({
+      ...u,
+      lastActiveAt: userPresenceMap.get(u.id) || u.lastActiveAt || u.updatedAt || u.createdAt,
+    }));
     res.json({ success: true, users });
   });
 
@@ -3686,7 +3753,10 @@ function evaluateAttendanceLocation(
 
   // ── Vite middleware ─────────────────────────────────────────────────────────
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+    const vite = await createViteServer({
+      server: { middlewareMode: true, hmr: false },
+      appType: "spa",
+    });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(rootDir, "dist");

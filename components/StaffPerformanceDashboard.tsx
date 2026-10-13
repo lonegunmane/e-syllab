@@ -400,7 +400,7 @@ export const StaffPerformanceDashboard: React.FC = () => {
                           <td className="p-4">
                             <div className="flex items-center gap-2">
                               <span className="font-bold text-white text-sm">{teacher.attendanceCount30Days}</span>
-                              <span className="text-[10px] text-slate-400">sessions</span>
+                              <span className="text-[10px] text-slate-400">classes</span>
                             </div>
                           </td>
 
@@ -648,7 +648,7 @@ export const StaffPerformanceDashboard: React.FC = () => {
                             {hasCoords ? (
                               <span>{Number(rec.latitude).toFixed(4)}, {Number(rec.longitude).toFixed(4)}</span>
                             ) : (
-                              <span className="text-slate-600 italic">Not Captured</span>
+                              <span className="text-slate-400 italic">Not Captured</span>
                             )}
                           </td>
 
@@ -684,7 +684,7 @@ export const StaffPerformanceDashboard: React.FC = () => {
                                     type="button"
                                     onClick={() => handleCopy(rec.id, signature)}
                                     title="Copy record code"
-                                    className="p-0.5 text-slate-500 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer ml-0.5"
+                                    className="p-0.5 text-slate-400 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer ml-0.5"
                                   >
                                     {copiedId === rec.id ? (
                                       <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -695,9 +695,9 @@ export const StaffPerformanceDashboard: React.FC = () => {
                                 </div>
                               ) : rec.offlineHash ? (
                                 <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg">
-                                  <span className="text-slate-400 font-mono text-[11px]" title={rec.offlineHash}>
+                                  <span className="text-slate-300 font-mono text-[11px]" title={rec.offlineHash}>
                                     {rec.offlineHash.startsWith('queue-')
-                                      ? 'Pending Sync'
+                                      ? 'Waiting to lock'
                                       : rec.offlineHash.length > 18
                                       ? `${rec.offlineHash.slice(0, 8)}...${rec.offlineHash.slice(-8)}`
                                       : rec.offlineHash}
@@ -706,7 +706,7 @@ export const StaffPerformanceDashboard: React.FC = () => {
                                     type="button"
                                     onClick={() => handleCopy(rec.id, rec.offlineHash!)}
                                     title="Copy record code"
-                                    className="p-0.5 text-slate-500 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer ml-0.5"
+                                    className="p-0.5 text-slate-400 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer ml-0.5"
                                   >
                                     {copiedId === rec.id ? (
                                       <Check className="w-3.5 h-3.5 text-emerald-400" />

@@ -995,6 +995,15 @@ export async function getUsers() {
   return response.json();
 }
 
+export async function getUsersPresence(): Promise<{ success: boolean; users: User[] }> {
+  const response = await authFetch(`${API_BASE_URL}/users/presence`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to fetch active users");
+  }
+  return response.json();
+}
+
 export async function getAdminUsers() {
   const response = await authFetch(`${API_BASE_URL}/admin/users`);
   if (!response.ok) {

@@ -443,12 +443,12 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
       {/* Page header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <CalendarCheck className="w-6 h-6 text-primary-400" />
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <CalendarCheck className="w-6 h-6 text-primary-600 dark:text-primary-400" />
             Mark Attendance
           </h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Your attendance is saved. If the lock is waiting, the school still has the record.
+          <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">
+            Record and manage student attendance.
           </p>
         </div>
         <div className="flex items-center gap-1.5 text-xs mt-1">
@@ -493,15 +493,15 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
       {/* Recorded by teacher info card */}
       <div className="glass-card px-5 py-3 rounded-2xl flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-emerald-950/40 border border-emerald-500/20 flex items-center justify-center">
-            <UserCheck className="w-4 h-4 text-emerald-400" />
+          <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-500/20 flex items-center justify-center">
+            <UserCheck className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
           </div>
           <div>
-            <p className="text-xs text-slate-500">Recorded by</p>
-            <p className="text-sm font-bold text-white">{user.name}</p>
+            <p className="text-xs text-slate-600 dark:text-slate-400">Recorded by</p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white">{user.name}</p>
           </div>
         </div>
-        <span className="px-2.5 py-1 bg-emerald-950/40 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold rounded-full">
+        <span className="px-2.5 py-1 bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-500/20 text-emerald-800 dark:text-emerald-400 text-[11px] font-bold rounded-full">
           Secure &amp; Ready
         </span>
       </div>
@@ -511,20 +511,20 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
 
         {/* Class dropdown — populated from teacher's assigned classes */}
         <div className="space-y-1.5">
-          <label className="text-xs font-bold text-slate-400 ml-0.5">Class</label>
+          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-0.5">Class</label>
           {teachingClasses.length > 0 ? (
             <select
               value={className}
               onChange={e => setClassName(e.target.value)}
-              className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none focus:border-primary-500 transition-colors"
+              className="w-full px-4 py-3 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white outline-none focus:border-primary-500 transition-colors cursor-pointer"
             >
-              <option value="" className="bg-[#0d0f1a]">Select your class…</option>
+              <option value="" className="bg-white text-slate-900 dark:bg-[#0d0f1a] dark:text-white">Select your class…</option>
               {teachingClasses.map(c => (
-                <option key={c} value={c} className="bg-[#0d0f1a]">{c}</option>
+                <option key={c} value={c} className="bg-white text-slate-900 dark:bg-[#0d0f1a] dark:text-white">{c}</option>
               ))}
             </select>
           ) : (
-            <div className="px-4 py-3 bg-amber-950/20 border border-amber-500/20 rounded-xl text-xs text-amber-400">
+            <div className="px-4 py-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-500/20 rounded-xl text-xs text-amber-800 dark:text-amber-400">
               No classes assigned to your profile yet. Ask an admin to add your teaching classes.
             </div>
           )}
@@ -533,18 +533,18 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
         {/* Date/Time (read-only) + Status */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-400 ml-0.5">Date &amp; Time</label>
-            <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-slate-300 flex items-center gap-2">
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-0.5">Date &amp; Time</label>
+            <div className="w-full px-4 py-3 bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-slate-200 flex items-center gap-2">
               <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               {friendlyDate(new Date().toISOString())} · {new Date().toTimeString().slice(0, 5)}
             </div>
-            <p className="text-[10px] text-slate-600 ml-0.5">
+            <p className="text-[10px] text-slate-600 dark:text-slate-400 ml-0.5">
               Captured automatically when you save — cannot be edited
             </p>
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-400 ml-0.5">Today's Status</label>
+            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 ml-0.5">Today's Status</label>
             <div className="grid grid-cols-2 gap-2">
               {(Object.keys(STATUS_CONFIG) as AttendanceStatus[]).map(s => {
                 const cfg      = STATUS_CONFIG[s];
@@ -553,10 +553,10 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
                   <button
                     key={s}
                     onClick={() => setStatus(s)}
-                    className={`py-2.5 px-3 rounded-xl text-sm font-bold border transition-all active:scale-95 flex items-center justify-center gap-1.5 ${
+                    className={`py-2.5 px-3 rounded-xl text-sm font-bold border transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer ${
                       selected
                         ? `${cfg.bg} ${cfg.color} ${cfg.border} shadow-lg`
-                        : 'bg-white/5 border-white/10 text-slate-500 hover:border-white/20 hover:text-slate-300'
+                        : 'bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-400 hover:border-slate-400 dark:hover:border-white/20 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
                     <span>{cfg.emoji}</span> {cfg.label}
@@ -571,7 +571,7 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
         <button
           onClick={handleSave}
           disabled={busy}
-          className="w-full py-4 bg-primary-600 text-white rounded-xl font-bold text-base flex items-center justify-center gap-2 hover:bg-primary-700 transition-all active:scale-95 shadow-lg shadow-primary-900/40 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full py-4 bg-primary-600 text-white rounded-xl font-bold text-base flex items-center justify-center gap-2 hover:bg-primary-700 transition-all active:scale-95 shadow-lg shadow-primary-900/40 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
         >
           {busy ? (
             <><Loader2 className="w-5 h-5 animate-spin" /> Saving…</>
@@ -584,84 +584,40 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
         <button
           onClick={handleSaveOffline}
           disabled={busy}
-          className="w-full py-3 bg-white/5 border border-white/10 text-slate-400 rounded-xl font-medium text-sm flex items-center justify-center gap-2 hover:border-primary-500/30 hover:text-white transition-all active:scale-95 disabled:opacity-50"
+          className="w-full py-3 bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-300 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-200 dark:hover:bg-white/10 hover:text-slate-900 dark:hover:text-white transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
         >
-          <Clock className="w-4 h-4" /> Save to device only (auto-syncs when online)
+          <Clock className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Save to device only (auto-syncs when online)
         </button>
 
-        <p className="text-[11px] text-slate-600 text-center">
+        <p className="text-[11px] text-slate-600 dark:text-slate-400 text-center font-medium">
           "Save Attendance" creates a permanent record · "Save to device only" stores it locally and secures it automatically when you reconnect
         </p>
       </div>
 
       {/* Result banner */}
-      {txState === 'done' && lastRecord && (() => {
-        const isLocked = Boolean(lastRecord.confirmedOnChain) && isValidSolanaSig(lastRecord.signature);
-        return (
-          <div className={`p-5 rounded-2xl border animate-in slide-in-from-top-2 ${
-            isLocked
-              ? 'bg-emerald-950/20 border-emerald-500/30'
-              : 'bg-amber-950/20 border-amber-500/30'
-          }`}>
-            <div className="flex items-start gap-3">
-              {isLocked
-                ? <CheckCircle className="w-5 h-5 text-emerald-400 mt-0.5 shrink-0" />
-                : <Clock        className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
-              }
-              <div className="flex-1">
-                <p className={`font-bold text-base ${isLocked ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {isLocked
-                    ? 'Saved. This cannot be changed.'
-                    : lastRecord.syncedFromOffline
-                    ? 'Saved on this device. Will send when internet is back.'
-                    : 'Saved at school. Waiting to lock.'}
-                </p>
-                {!isLocked && (
-                  <p className="text-xs text-amber-200/80 mt-1">
-                    {lastRecord.lockReason || 'The school lock wallet is not set'}
-                  </p>
-                )}
-                <p className="text-xs text-slate-400 mt-1">
-                  {`${user.name}${lastRecord.className ? ' · ' + lastRecord.className : ''} · ${lastRecord.date} ${lastRecord.time} · ${STATUS_CONFIG[lastRecord.status].label}`}
-                </p>
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  {!isLocked && !lastRecord.syncedFromOffline && (
-                    <button
-                      onClick={() => handleRetryLock(lastRecord.id)}
-                      disabled={retryingId === lastRecord.id}
-                      className="px-4 py-2 bg-amber-600/30 border border-amber-500/40 text-amber-300 text-xs font-bold rounded-xl hover:bg-amber-600/40 transition-all flex items-center gap-1.5 disabled:opacity-50"
-                    >
-                      {retryingId === lastRecord.id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-3.5 h-3.5" />
-                      )}
-                      Retry lock
-                    </button>
-                  )}
-                  {isLocked && lastRecord.signature && (
-                    <a
-                      href={`https://explorer.solana.com/tx/${lastRecord.signature}?cluster=devnet`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-4 py-2 bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold rounded-xl hover:bg-emerald-600/40 transition-all flex items-center gap-1.5"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      View on Solana Explorer
-                    </a>
-                  )}
-                  <button
-                    onClick={() => setTxState('idle')}
-                    className="px-4 py-2 bg-primary-600 text-white text-xs font-bold rounded-xl hover:bg-primary-700 transition-all active:scale-95"
-                  >
-                    Mark another day
-                  </button>
-                </div>
+      {txState === 'done' && lastRecord && (
+        <div className="p-5 rounded-2xl border animate-in slide-in-from-top-2 bg-emerald-950/20 border-emerald-500/30">
+          <div className="flex items-start gap-3">
+            <CheckCircle className="w-5 h-5 text-emerald-400 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="font-bold text-base text-emerald-400">
+                Attendance saved.
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                {`${user.name}${lastRecord.className ? ' · ' + lastRecord.className : ''} · ${lastRecord.date} ${lastRecord.time} · ${STATUS_CONFIG[lastRecord.status].label}`}
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => setTxState('idle')}
+                  className="px-4 py-2 bg-primary-600 text-white text-xs font-bold rounded-xl hover:bg-primary-700 transition-all active:scale-95"
+                >
+                  Mark another day
+                </button>
               </div>
             </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
 
       {/* Error banner */}
       {txState === 'error' && (
@@ -689,10 +645,10 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
           className="w-full p-5 flex items-center justify-between text-left hover:bg-white/5 transition-colors"
         >
           <div className="flex items-center gap-3">
-            <CalendarCheck className="w-5 h-5 text-primary-400" />
+            <CalendarCheck className="w-5 h-5 text-primary-600 dark:text-primary-400" />
             <div>
-              <p className="font-bold text-white text-sm">Attendance History</p>
-              <p className="text-xs text-slate-500">
+              <p className="font-bold text-slate-900 dark:text-white text-sm">Attendance History</p>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
                 {records.length} record{records.length !== 1 ? 's' : ''} saved
               </p>
             </div>
@@ -701,30 +657,30 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
         </button>
 
         {showHistory && (
-          <div className="border-t border-white/5">
+          <div className="border-t border-slate-200 dark:border-white/5">
             {records.length === 0 ? (
-              <div className="p-10 text-center text-slate-500 text-sm italic">
+              <div className="p-10 text-center text-slate-600 dark:text-slate-400 text-sm italic">
                 No records yet. Save your first attendance above.
               </div>
             ) : (
-              <div className="divide-y divide-white/5">
+              <div className="divide-y divide-slate-200 dark:divide-white/5">
                 {records.map(r => {
                   const cfg = STATUS_CONFIG[r.status];
                   const isLocked = Boolean(r.confirmedOnChain) && isValidSolanaSig(r.signature);
                   return (
                     <div
                       key={r.id}
-                      className="px-5 py-4 flex items-center justify-between gap-4 hover:bg-white/5 transition-colors"
+                      className="px-5 py-4 flex items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors"
                     >
                       <div className="flex items-center gap-3">
                         <div className={`w-9 h-9 rounded-xl ${cfg.bg} ${cfg.border} border flex items-center justify-center ${cfg.color} font-bold text-base shrink-0`}>
                           {cfg.emoji}
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-slate-200">
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-200">
                             {friendlyDate(r.date)}{r.time ? ` · ${r.time}` : ''}
                           </p>
-                          <p className="text-xs text-slate-500">
+                          <p className="text-xs text-slate-600 dark:text-slate-400">
                             {r.staffName}{r.className ? ` · ${r.className}` : ''}
                           </p>
                         </div>
@@ -733,52 +689,9 @@ export const BlockchainAttendance: React.FC<Props> = ({ user }) => {
                         <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
                           {cfg.label}
                         </span>
-                        {isLocked ? (
-                          <div className="flex items-center gap-2">
-                            <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400">
-                              <CheckCircle className="w-3.5 h-3.5" /> Saved. This cannot be changed.
-                            </span>
-                            {r.signature && (
-                              <a
-                                href={`https://explorer.solana.com/tx/${r.signature}?cluster=devnet`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-emerald-400 hover:text-emerald-300 transition-colors"
-                                title="View on Solana Explorer"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
-                            )}
-                          </div>
-                        ) : r.syncedFromOffline ? (
-                          <span className="flex items-center gap-1 text-[11px] font-bold text-amber-400">
-                            <Clock className="w-3.5 h-3.5" /> Saved on this device. Will send when internet is back.
-                          </span>
-                        ) : (
-                          <div className="flex flex-col items-end gap-1">
-                            <div className="flex items-center gap-2">
-                              <span className="flex items-center gap-1 text-[11px] font-bold text-amber-400">
-                                <Clock className="w-3.5 h-3.5" /> Saved at school. Waiting to lock.
-                              </span>
-                              <button
-                                onClick={() => handleRetryLock(r.id)}
-                                disabled={retryingId === r.id}
-                                className="px-2 py-0.5 text-[10px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/20 rounded hover:bg-amber-500/20 transition-colors flex items-center gap-1 disabled:opacity-50"
-                                title="Retry locking on public ledger"
-                              >
-                                {retryingId === r.id ? (
-                                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                ) : (
-                                  <RefreshCw className="w-2.5 h-2.5" />
-                                )}
-                                Retry
-                              </button>
-                            </div>
-                            <span className="text-[11px] text-amber-200/80">
-                              {r.lockReason || 'The school lock wallet is not set'}
-                            </span>
-                          </div>
-                        )}
+                        <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-400">
+                          <CheckCircle className="w-3.5 h-3.5" /> Saved.
+                        </span>
                       </div>
                     </div>
                   );

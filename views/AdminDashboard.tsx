@@ -649,7 +649,7 @@ const VaultApprovals: React.FC = () => {
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                    <thead className="bg-white/5 text-slate-500 font-bold uppercase text-[10px] tracking-widest">
+                    <thead className="bg-white/5 text-slate-300 font-bold uppercase text-[10px] tracking-widest">
                         <tr>
                             <th className="px-6 py-4">Document / Identity</th>
                             <th className="px-6 py-4">Teacher</th>
@@ -668,14 +668,14 @@ const VaultApprovals: React.FC = () => {
                                         </div>
                                         <div>
                                             <p className="font-bold text-slate-200 group-hover:text-primary-300 transition-colors">{doc.title}</p>
-                                            <p className="text-[10px] text-slate-500 font-mono">{new Date(doc.createdAt).toLocaleString()}</p>
+                                            <p className="text-[10px] text-slate-400 font-mono">{new Date(doc.createdAt).toLocaleString()}</p>
                                         </div>
                                     </div>
                                 </td>
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-2">
                                         <img src={`https://api.dicebear.com/7.x/adventurer/svg?seed=${doc.teacherName}`} className="w-5 h-5 rounded-full border border-white/10" alt="" />
-                                        <span className="text-slate-400 font-medium">{doc.teacherName}</span>
+                                        <span className="text-slate-300 font-medium">{doc.teacherName}</span>
                                     </div>
                                 </td>
                                 <td className="px-6 py-4">
@@ -684,7 +684,7 @@ const VaultApprovals: React.FC = () => {
                                     </span>
                                 </td>
                                 <td className="px-6 py-4">
-                                    <code className="text-[10px] text-slate-600 bg-black/20 px-1.5 py-0.5 rounded border border-white/5 font-mono">
+                                    <code className="text-[10px] text-slate-300 bg-black/40 px-1.5 py-0.5 rounded border border-white/10 font-mono font-medium">
                                         {doc.hash?.substring(0, 8)}...
                                     </code>
                                 </td>
@@ -1174,9 +1174,9 @@ const MetricTrackerModal: React.FC<MetricTrackerModalProps> = ({ metric, onClose
 
         {/* Footer */}
         <div className="p-4 border-t border-white/10 bg-black/20 flex justify-between items-center text-xs text-slate-400">
-          <span className="flex items-center gap-2 font-mono text-[11px]">
+          <span className="flex items-center gap-2 font-mono text-[11px] text-slate-300">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            E-SYLLAB Live Tracking Engine • Database & Solana Ledger Synchronized
+            E-SYLLAB School System • All school records up to date and secured
           </span>
           <button
             onClick={onClose}
@@ -1298,14 +1298,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
     <div className="max-w-7xl mx-auto space-y-8">
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">School home</h1>
-          <p className="text-slate-400">See students, teachers, and school records.</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">School home</h1>
+          <p className="text-slate-600 dark:text-slate-400">See students, teachers, and school records.</p>
         </div>
         <div className="flex items-center gap-4">
-           <div className="bg-white/5 backdrop-blur-md rounded-full px-4 py-2 border border-white/10 flex items-center gap-3">
+           <div className="bg-slate-100 dark:bg-white/5 backdrop-blur-md rounded-full px-4 py-2 border border-slate-300 dark:border-white/10 flex items-center gap-3">
               <div className="flex items-center gap-2 mr-2">
                 <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]"></div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Now</span>
+                <span className="text-[10px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">Active Now</span>
               </div>
               <div className="flex items-center gap-2 overflow-hidden max-w-[120px] relative">
                 <motion.div 
@@ -1320,18 +1320,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                   {[...activeUsers, ...(activeUsers.length > 3 ? activeUsers : [])].map((u, idx) => (
                     <div 
                       key={`${u.id}-${idx}`} 
-                      className="w-8 h-8 rounded-full border-2 border-[#0a0a1a] bg-white/5 overflow-hidden shrink-0"
+                      className="w-8 h-8 rounded-full border-2 border-primary-900/60 bg-white/10 overflow-hidden shrink-0"
                     >
                       <img src={u.avatar} className="w-full h-full object-cover" alt={u.name} title={u.name} />
                     </div>
                   ))}
                 </motion.div>
                 {activeUsers.length > 3 && (
-                  <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-[#0a0a1a] to-transparent z-10 pointer-events-none"></div>
+                  <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-900/80 to-transparent z-10 pointer-events-none"></div>
                 )}
               </div>
               
-              <div className="w-[1px] h-4 bg-white/10 mx-1"></div>
+              <div className="w-[1px] h-4 bg-slate-300 dark:bg-white/10 mx-1"></div>
               
               <div className="flex items-center">
                 <div className="overflow-hidden w-32 relative h-8">
@@ -1345,14 +1345,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                     }}
                   >
                     {activeUsers.map((u) => (
-                      <span key={u.id} className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
+                      <span key={u.id} className="text-[10px] font-medium text-slate-700 dark:text-slate-400 flex items-center gap-1">
                         <span className="w-1 h-1 bg-primary-500 rounded-full"></span>
                         {u.name}
                       </span>
                     ))}
                     {/* Duplicate for seamless scroll */}
                     {activeUsers.map((u) => (
-                      <span key={`${u.id}-dup`} className="text-[10px] font-medium text-slate-400 flex items-center gap-1">
+                      <span key={`${u.id}-dup`} className="text-[10px] font-medium text-slate-700 dark:text-slate-400 flex items-center gap-1">
                         <span className="w-1 h-1 bg-primary-500 rounded-full"></span>
                         {u.name}
                       </span>
@@ -1402,8 +1402,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <LiveNetworkActivity />
             <div className="glass-card p-6 rounded-2xl relative overflow-hidden">
-              <h2 className="font-bold text-white mb-2 flex items-center gap-2"><UserPlus className="w-5 h-5 text-primary-400" /> Add a teacher</h2>
-              <p className="text-xs text-slate-400 mb-6 leading-relaxed">Add accounts for teachers and administrators.</p>
+              <h2 className="font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-2"><UserPlus className="w-5 h-5 text-primary-600 dark:text-primary-400" /> Add a teacher</h2>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">Add accounts for teachers and administrators.</p>
               
               {staffMsg && (
                 <div className={`text-xs p-3 rounded-xl mb-4 animate-in slide-in-from-top-2 border ${
@@ -1421,7 +1421,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                     className={`py-2 px-3 rounded-xl text-[10px] font-bold uppercase tracking-wider border transition-all cursor-pointer ${
                       staffRole === UserRole.TEACHER 
                         ? 'bg-primary-600 border-primary-600 text-white shadow-md shadow-primary-900/40' 
-                        : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                        : 'bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
                     }`}
                   >
                     Teacher
@@ -1433,7 +1433,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                     className={`py-2 px-3 rounded-xl text-[10px] font-bold uppercase tracking-wider border transition-all cursor-pointer ${
                       staffRole === UserRole.ADMIN 
                         ? 'bg-rose-600 border-rose-600 text-white shadow-md shadow-rose-900/40' 
-                        : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 disabled:opacity-40'
+                        : 'bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-40'
                     }`}
                   >
                     Admin {totalAdmins >= 2 && '(Full)'}
@@ -1441,15 +1441,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                 </div>
 
                 <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Full Name</label>
-                    <input required type="text" placeholder="Dr. John Smith" value={staffName} onChange={e=>setStaffName(e.target.value)} className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 transition-all text-white placeholder:text-slate-600" />
+                    <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">Full Name</label>
+                    <input required type="text" placeholder="Dr. John Smith" value={staffName} onChange={e=>setStaffName(e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 transition-all text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500" />
                 </div>
                 <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Email Address</label>
-                    <input required type="email" placeholder="john.smith@esyllab.edu" value={staffEmail} onChange={e=>setStaffEmail(e.target.value)} className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 transition-all text-white placeholder:text-slate-600" />
+                    <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">Email Address</label>
+                    <input required type="email" placeholder="john.smith@esyllab.edu" value={staffEmail} onChange={e=>setStaffEmail(e.target.value)} className="w-full px-4 py-2.5 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl text-sm outline-none focus:border-primary-500 transition-all text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500" />
                 </div>
-                <div className="p-3 bg-white/5 border border-white/10 rounded-xl">
-                  <p className="text-xs text-slate-400">
+                <div className="p-3 bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl">
+                  <p className="text-xs text-slate-700 dark:text-slate-300">
                     No password needed. {staffRole === UserRole.ADMIN ? 'The admin' : 'The teacher'} will enter this email on first login and choose their own password.
                   </p>
                 </div>
@@ -1479,41 +1479,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div>
-                      <div className="flex items-center gap-2 text-primary-400 text-xs font-bold uppercase tracking-wider mb-1">
+                      <div className="flex items-center gap-2 text-primary-600 dark:text-primary-400 text-xs font-bold uppercase tracking-wider mb-1">
                         <UserPlus className="w-4 h-4" /> Add Account Confirmation
                       </div>
-                      <h3 className="text-lg font-bold text-white">
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                         Confirm new {staffRole === UserRole.ADMIN ? 'Admin' : 'Teacher'} account
                       </h3>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
                         Please check the details below before creating this account.
                       </p>
                     </div>
 
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-3 text-sm">
-                      <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Role</span>
+                    <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl p-4 space-y-3 text-sm">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-white/5">
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Role</span>
                         <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase tracking-wider border ${
                           staffRole === UserRole.ADMIN 
-                            ? 'bg-rose-950/50 text-rose-300 border-rose-500/30' 
-                            : 'bg-primary-950/50 text-primary-300 border-primary-500/30'
+                            ? 'bg-rose-100 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-500/30' 
+                            : 'bg-primary-100 dark:bg-primary-950/50 text-primary-800 dark:text-primary-300 border-primary-300 dark:border-primary-500/30'
                         }`}>
                           {staffRole === UserRole.ADMIN ? 'Admin' : 'Teacher'}
                         </span>
                       </div>
                       
-                      <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Full name</span>
-                        <span className="font-semibold text-white">{staffName.trim()}</span>
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-white/5">
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Full name</span>
+                        <span className="font-semibold text-slate-900 dark:text-white">{staffName.trim()}</span>
                       </div>
 
-                      <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Email</span>
-                        <span className="font-mono text-xs text-slate-200">{staffEmail.trim().toLowerCase()}</span>
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-white/5">
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Email</span>
+                        <span className="font-mono text-xs text-slate-800 dark:text-slate-200">{staffEmail.trim().toLowerCase()}</span>
                       </div>
 
-                      <div className="p-3 bg-white/5 rounded-lg border border-white/5 text-xs text-slate-300 leading-relaxed">
-                        <span className="font-semibold text-primary-400 block mb-0.5">Note:</span>
+                      <div className="p-3 bg-slate-100 dark:bg-white/5 rounded-lg border border-slate-200 dark:border-white/5 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                        <span className="font-semibold text-primary-600 dark:text-primary-400 block mb-0.5">Note:</span>
                         No password yet. They will choose a password the first time they sign in.
                       </div>
                     </div>
@@ -1523,7 +1523,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateUs
                         type="button"
                         onClick={() => setShowStaffConfirmModal(false)}
                         disabled={isCreatingStaff}
-                        className="px-4 py-2.5 bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white rounded-xl text-sm font-semibold transition-all cursor-pointer disabled:opacity-50"
+                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/15 text-slate-800 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-xl text-sm font-semibold transition-all cursor-pointer disabled:opacity-50"
                       >
                         Go back
                       </button>

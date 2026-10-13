@@ -263,7 +263,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
     }
 
     const confirmMsg = isCurrent 
-      ? 'Logging out this device will end your current session and require you to sign in again. Continue?'
+      ? 'Logging out this device will sign you out here and require you to sign in again. Continue?'
       : 'Are you sure you want to log out this connected device?';
 
     if (!window.confirm(confirmMsg)) return;
@@ -397,7 +397,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
       setExportSuccessMessage("Personal data archive downloaded successfully! This file contains your profile, grades, attendance logs, messages, and assessment scores.");
       setTimeout(() => setExportSuccessMessage(null), 8000);
     } catch (err: any) {
-      setExportErrorMessage(err.message || "Failed to export personal data. Please try again.");
+      setExportErrorMessage("Something went wrong. Please try again.");
     } finally {
       setIsExportingData(false);
     }
@@ -589,7 +589,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                       </p>
                     </div>
                   </div>
-                  <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full text-[11px] font-bold flex items-center gap-1.5 self-start sm:self-auto">
+                  <span className="px-2.5 py-0.5 bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 rounded-full text-[11px] font-extrabold flex items-center gap-1.5 self-start sm:self-auto shadow-sm">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     Active Account
                   </span>
@@ -616,7 +616,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                   <div className="flex items-center justify-between gap-2">
                     <label className="text-[10px] font-bold text-primary-400 uppercase tracking-wider flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5" /> Avatar Selection
-                      {!isEditingProfile && <span className="text-[9px] font-normal text-slate-500 normal-case">(Locked — click Edit to change)</span>}
+                      {!isEditingProfile && <span className="text-[9px] font-normal text-slate-400 normal-case">(Locked — click Edit to change)</span>}
                     </label>
                     <label className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all duration-200 ${
                       !isEditingProfile
@@ -658,7 +658,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                             alt={av.name}
                             className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg object-cover bg-slate-900/60"
                           />
-                          <span className={`text-[9px] font-medium truncate max-w-full ${isSelected ? 'text-primary-300 font-bold' : 'text-slate-400'}`}>
+                          <span className={`text-[9px] font-medium truncate max-w-full ${isSelected ? 'text-primary-300 font-bold' : 'text-slate-300'}`}>
                             {av.name}
                           </span>
                           {isSelected && (
@@ -687,10 +687,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                     <div className="space-y-2.5">
                       <div>
                         <div className="flex items-center justify-between mb-1 ml-1">
-                          <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1 uppercase tracking-wider">
-                            <UserIcon className="w-3 h-3 text-primary-400" /> Full Name
+                          <label className="text-[10px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1 uppercase tracking-wider">
+                            <UserIcon className="w-3 h-3 text-primary-600 dark:text-primary-400" /> Full Name
                           </label>
-                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-500" />}
+                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-600 dark:text-slate-300" />}
                         </div>
                         <input
                           type="text"
@@ -700,20 +700,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                           value={formData.name}
                           onChange={handleInputChange}
                           placeholder="e.g. Kondwani Phiri"
-                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all placeholder:text-slate-600 ${
+                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all placeholder:text-slate-500 font-semibold ${
                             !isEditingProfile
-                              ? 'bg-white/[0.02] border border-white/5 text-slate-300 cursor-not-allowed opacity-90'
-                              : 'bg-white/5 border border-white/10 focus:border-primary-500 text-white'
+                              ? 'bg-slate-100 dark:bg-white/10 border border-slate-300 dark:border-white/20 text-slate-900 dark:text-white cursor-not-allowed'
+                              : 'bg-white dark:bg-white/10 border border-slate-400 dark:border-white/20 focus:border-primary-500 text-slate-900 dark:text-white'
                           }`}
                         />
                       </div>
 
                       <div>
                         <div className="flex items-center justify-between mb-1 ml-1">
-                          <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1 uppercase tracking-wider">
-                            <Phone className="w-3 h-3 text-primary-400" /> Contact Number
+                          <label className="text-[10px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1 uppercase tracking-wider">
+                            <Phone className="w-3 h-3 text-primary-600 dark:text-primary-400" /> Contact Number
                           </label>
-                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-500" />}
+                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-600 dark:text-slate-300" />}
                         </div>
                         <input
                           type="tel"
@@ -722,43 +722,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                           value={formData.contact}
                           onChange={handleInputChange}
                           placeholder="e.g. +260 97 1234567"
-                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all placeholder:text-slate-600 ${
+                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all placeholder:text-slate-500 font-semibold ${
                             !isEditingProfile
-                              ? 'bg-white/[0.02] border border-white/5 text-slate-300 cursor-not-allowed opacity-90'
-                              : 'bg-white/5 border border-white/10 focus:border-primary-500 text-white'
+                              ? 'bg-slate-100 dark:bg-white/10 border border-slate-300 dark:border-white/20 text-slate-900 dark:text-white cursor-not-allowed'
+                              : 'bg-white dark:bg-white/10 border border-slate-400 dark:border-white/20 focus:border-primary-500 text-slate-900 dark:text-white'
                           }`}
                         />
                       </div>
 
                       <div>
                         <div className="flex items-center justify-between mb-1 ml-1">
-                          <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1 uppercase tracking-wider">
-                            <UserIcon className="w-3 h-3 text-primary-400" /> Gender Preference
+                          <label className="text-[10px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1 uppercase tracking-wider">
+                            <UserIcon className="w-3 h-3 text-primary-600 dark:text-primary-400" /> Gender
                           </label>
-                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-500" />}
+                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-600 dark:text-slate-300" />}
                         </div>
                         <select
                           name="gender"
                           disabled={!isEditingProfile}
                           value={formData.gender}
                           onChange={handleInputChange}
-                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all ${
+                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all font-semibold cursor-pointer ${
                             !isEditingProfile
-                              ? 'bg-white/[0.02] border border-white/5 text-slate-300 cursor-not-allowed opacity-90'
-                              : 'bg-white/5 border border-white/10 focus:border-primary-500 text-white'
+                              ? 'bg-slate-100 dark:bg-white/10 border border-slate-300 dark:border-white/20 text-slate-900 dark:text-white cursor-not-allowed'
+                              : 'bg-white dark:bg-white/10 border border-slate-400 dark:border-white/20 focus:border-primary-500 text-slate-900 dark:text-white'
                           }`}
                         >
-                          <option value="Male" className="bg-[#1a1635] text-white">Male</option>
-                          <option value="Female" className="bg-[#1a1635] text-white">Female</option>
+                          <option value="Male" className="bg-white text-slate-900 dark:bg-[#1a1635] dark:text-white">Male</option>
+                          <option value="Female" className="bg-white text-slate-900 dark:bg-[#1a1635] dark:text-white">Female</option>
                         </select>
                       </div>
 
                       <div>
                         <div className="flex items-center justify-between mb-1 ml-1">
-                          <label className="text-[10px] font-bold text-slate-400 flex items-center gap-1 uppercase tracking-wider">
-                            <Home className="w-3 h-3 text-primary-400" /> Residential Address
+                          <label className="text-[10px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1 uppercase tracking-wider">
+                            <Home className="w-3 h-3 text-primary-600 dark:text-primary-400" /> Residential Address
                           </label>
-                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-500" />}
+                          {!isEditingProfile && <Lock className="w-2.5 h-2.5 text-slate-600 dark:text-slate-300" />}
                         </div>
                         <input
                           type="text"
@@ -767,10 +767,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                           value={formData.residentialAddress}
                           onChange={handleInputChange}
                           placeholder="e.g. Plot 412, Woodlands, Lusaka"
-                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all placeholder:text-slate-600 ${
+                          className={`w-full px-3 py-1.5 rounded-xl text-xs outline-none transition-all placeholder:text-slate-500 font-semibold ${
                             !isEditingProfile
-                              ? 'bg-white/[0.02] border border-white/5 text-slate-300 cursor-not-allowed opacity-90'
-                              : 'bg-white/5 border border-white/10 focus:border-primary-500 text-white'
+                              ? 'bg-slate-100 dark:bg-white/10 border border-slate-300 dark:border-white/20 text-slate-900 dark:text-white cursor-not-allowed'
+                              : 'bg-white dark:bg-white/10 border border-slate-400 dark:border-white/20 focus:border-primary-500 text-slate-900 dark:text-white'
                           }`}
                         />
                       </div>
@@ -920,30 +920,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 
                 {/* Card 1: Data Portability (Download My Data) */}
-                <div className="p-3.5 rounded-2xl border border-primary-500/30 bg-primary-950/20 backdrop-blur-md flex flex-col justify-between gap-2.5">
+                <div className="p-3.5 rounded-2xl border border-primary-300 dark:border-primary-500/40 bg-primary-50 dark:bg-primary-950/40 backdrop-blur-md flex flex-col justify-between gap-2.5 shadow-sm">
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <Download className="w-4 h-4 text-primary-400 shrink-0" />
-                        <h3 className="text-sm font-bold text-white">
+                        <Download className="w-4 h-4 text-primary-700 dark:text-primary-300 shrink-0" />
+                        <h3 className="text-sm font-bold text-slate-950 dark:text-white">
                           Download My Data
                         </h3>
                       </div>
-                      <span className="px-2 py-0.5 bg-primary-500/20 text-primary-300 border border-primary-500/30 rounded-md text-[9px] font-extrabold uppercase tracking-wider">
+                      <span className="px-2 py-0.5 bg-primary-100 dark:bg-primary-900/60 text-primary-900 dark:text-primary-100 border border-primary-300 dark:border-primary-500/50 rounded-md text-[9px] font-extrabold uppercase tracking-wider">
                         Your information
                       </span>
                     </div>
-                    <p className="text-xs text-slate-300 leading-relaxed">
-                      In line with Zambia's <strong>Data Protection Act No. 3 of 2021</strong>, download a file of your school records held in the school system — including profile, grades, attendance logs, messages, and assessment scores.
+                    <p className="text-xs text-slate-800 dark:text-slate-100 leading-relaxed font-medium">
+                      In accordance with Zambia's <strong>Data Protection Act No. 3 of 2021</strong>, download a readable file of your school information held in the school system — including your profile, grades, attendance, messages, and assessment scores.
                     </p>
                     {exportSuccessMessage && (
-                      <div className="text-xs text-emerald-400 font-medium flex items-center gap-1 animate-in fade-in">
+                      <div className="text-xs text-emerald-700 dark:text-emerald-300 font-bold flex items-center gap-1 animate-in fade-in">
                         <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                         <span>{exportSuccessMessage}</span>
                       </div>
                     )}
                     {exportErrorMessage && (
-                      <div className="text-xs text-rose-400 font-medium flex items-center gap-1 animate-in fade-in">
+                      <div className="text-xs text-rose-700 dark:text-rose-300 font-bold flex items-center gap-1 animate-in fade-in">
                         <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                         <span>{exportErrorMessage}</span>
                       </div>
@@ -955,7 +955,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                     type="button"
                     disabled={isExportingData}
                     onClick={handleExportData}
-                    className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-primary-950/60 hover:shadow-primary-900/80 flex items-center gap-1.5 cursor-pointer self-start active:scale-95 shrink-0 disabled:opacity-50"
+                    className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-primary-950/40 hover:shadow-primary-900/60 flex items-center gap-1.5 cursor-pointer self-start active:scale-95 shrink-0 disabled:opacity-50"
                   >
                     {isExportingData ? (
                       <>
@@ -972,20 +972,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                 </div>
 
                 {/* Card 2: Danger Zone (Delete Account) */}
-                <div className="p-3.5 rounded-2xl border border-rose-500/30 bg-rose-950/20 backdrop-blur-md flex flex-col justify-between gap-2.5">
+                <div className="p-3.5 rounded-2xl border border-rose-300 dark:border-rose-500/40 bg-rose-50 dark:bg-rose-950/40 backdrop-blur-md flex flex-col justify-between gap-2.5 shadow-sm">
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                        <h3 className="text-sm font-bold text-rose-400">
+                        <AlertTriangle className="w-4 h-4 text-rose-700 dark:text-rose-300 shrink-0" />
+                        <h3 className="text-sm font-bold text-rose-900 dark:text-rose-200">
                           Delete Account
                         </h3>
                       </div>
-                      <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-md text-[9px] font-extrabold uppercase tracking-wider">
+                      <span className="px-2 py-0.5 bg-rose-100 dark:bg-rose-900/60 text-rose-900 dark:text-rose-100 border border-rose-300 dark:border-rose-500/50 rounded-md text-[9px] font-extrabold uppercase tracking-wider">
                         Permanent
                       </span>
                     </div>
-                    <p className="text-xs text-slate-300 leading-relaxed">
+                    <p className="text-xs text-slate-800 dark:text-slate-100 leading-relaxed font-medium">
                       Permanently erase your account profile, login details, school activity, and places you are signed in from the school system. This action cannot be reversed.
                     </p>
                   </div>
@@ -997,7 +997,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                       setDeleteError(null);
                       setIsDeleteModalOpen(true);
                     }}
-                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-rose-950/60 hover:shadow-rose-900/80 flex items-center gap-1.5 cursor-pointer self-start active:scale-95 shrink-0"
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-sm font-bold transition-all shadow-md shadow-rose-950/40 hover:shadow-rose-900/60 flex items-center gap-1.5 cursor-pointer self-start active:scale-95 shrink-0"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Delete Account</span>
@@ -1324,34 +1324,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                         key={session.id}
                         className={`p-5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
                           isCurrent
-                            ? 'bg-primary-950/20 border-primary-500/40 shadow-md'
-                            : 'bg-white/5 border-white/10 hover:bg-white/[0.07]'
+                            ? 'bg-primary-50 dark:bg-primary-950/40 border-primary-400 dark:border-primary-500/50 shadow-md'
+                            : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/[0.07]'
                         }`}
                       >
                         <div className="flex items-start gap-4">
                           <div className={`p-3 rounded-2xl shrink-0 border ${
                             isCurrent
                               ? 'bg-primary-600 text-white border-primary-400/40 shadow-lg shadow-primary-950/50'
-                              : 'bg-white/5 text-slate-400 border-white/10'
+                              : 'bg-white/10 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10'
                           }`}>
                             {isMobile ? <Smartphone className="w-6 h-6" /> : <Laptop className="w-6 h-6" />}
                           </div>
 
                           <div className="space-y-1">
                             <div className="flex items-center gap-2.5 flex-wrap">
-                              <h3 className="text-sm font-bold text-white">{session.deviceInfo || 'Web Browser'}</h3>
+                              <h3 className="text-sm font-bold text-slate-900 dark:text-white">{session.deviceInfo || 'Web Browser'}</h3>
                               {isCurrent && (
-                                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-extrabold flex items-center gap-1">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-400 dark:border-emerald-500/40 text-[10px] font-extrabold flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                   This Device
                                 </span>
                               )}
                             </div>
 
-                            <div className="flex items-center gap-3 text-xs text-slate-400 flex-wrap">
+                            <div className="flex items-center gap-3 text-xs text-slate-600 dark:text-slate-300 flex-wrap">
                               <span className="flex items-center gap-1">
                                 <Globe className="w-3.5 h-3.5 text-slate-500" />
-                                {session.ipAddress || 'IP: Active'}
+                                {session.ipAddress ? session.ipAddress : 'Active now'}
                               </span>
                               <span>•</span>
                               <span>Signed in: {new Date(session.loginAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
@@ -1365,8 +1365,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                           disabled={isRevoking}
                           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer self-start sm:self-auto disabled:opacity-50 ${
                             isCurrent
-                              ? 'bg-rose-600/20 text-rose-300 border border-rose-500/30 hover:bg-rose-600/30'
-                              : 'bg-white/5 text-slate-300 border border-white/10 hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-500/30'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200 dark:bg-rose-600/20 dark:text-rose-300 dark:border-rose-500/30 dark:hover:bg-rose-600/30'
+                              : 'bg-slate-100 text-slate-800 border border-slate-300 hover:bg-rose-100 hover:text-rose-800 hover:border-rose-300 dark:bg-white/5 dark:text-slate-200 dark:border-white/10 dark:hover:bg-rose-950/40 dark:hover:text-rose-300 dark:hover:border-rose-500/30'
                           }`}
                         >
                           {isRevoking ? (
@@ -1668,7 +1668,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                     <span className="text-primary-400">3.</span> Academic Integrity &amp; Record Authenticity
                   </h3>
                   <p className="text-[11px] text-slate-300 leading-normal">
-                    All attendance entries, grade submissions, and vault documents are cryptographically tracked to preserve institutional integrity. Any unauthorized attempt to tamper with academic scores, attendance histories, or cryptographic proofs constitutes gross misconduct under school disciplinary codes.
+                    All attendance entries, grade submissions, and school files are securely tracked to preserve institutional integrity. Any unauthorized attempt to tamper with academic scores, attendance histories, or security verification codes constitutes gross misconduct under school disciplinary codes.
                   </p>
                 </div>
 
@@ -1750,7 +1750,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                   <ul className="list-disc pl-5 space-y-1 text-slate-400">
                     <li><strong className="text-white">Account Identification:</strong> Full name, institutional email address, school role, contact phone numbers, and profile avatars.</li>
                     <li><strong className="text-white">Academic &amp; Attendance Records:</strong> Daily class attendance timestamps, subject assessment scores, syllabus progression, and optional device GPS coordinates captured at the moment attendance is marked (with user permission) for geofence verification.</li>
-                    <li><strong className="text-white">Device &amp; Session Logs:</strong> Browser User-Agent, approximate IP address, and sign-in timestamps recorded for session security and unauthorized access prevention.</li>
+                    <li><strong className="text-white">Device &amp; Sign-in Records:</strong> Browser details, approximate sign-in location, and sign-in timestamps recorded for account safety and unauthorized access prevention.</li>
                   </ul>
                 </section>
 
@@ -1761,7 +1761,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                   </p>
                   <ul className="list-disc pl-5 space-y-1 text-slate-400">
                     <li>Delivering educational curriculum in accordance with ECZ national guidelines.</li>
-                    <li>Maintaining immutable school attendance registers.</li>
+                    <li>Maintaining permanent, tamper-proof school attendance registers.</li>
                     <li>Generating verified student academic report cards.</li>
                     <li>Preventing security breaches and account takeovers.</li>
                   </ul>
@@ -1775,9 +1775,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                 </section>
 
                 <section className="space-y-2">
-                  <h3 className="text-sm font-bold text-white">5. Security Safeguards &amp; Cryptographic Ledger</h3>
+                  <h3 className="text-sm font-bold text-white">5. Security Safeguards &amp; Record Protection</h3>
                   <p>
-                    We employ industry-standard encryption, password hashing via bcrypt, secure JSON Web Tokens (JWT) with blacklisting on logout, and cryptographic verification hashes for permanent attendance records.
+                    We employ industry-standard security safeguards, secure password protection, safe sign-in keys with immediate sign-out protection, and permanent security codes for school attendance records.
                   </p>
                 </section>
 
@@ -1792,7 +1792,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                         <Download className="w-4 h-4" /> Right of Access &amp; Your Information
                       </div>
                       <p className="text-[11px] text-slate-300 leading-relaxed">
-                        <strong>See &amp; Export Your Data:</strong> You have the right to obtain a full copy of all data held about you. Click <em>"Download My Data"</em> in your Profile settings to download a single structured JSON archive containing your profile, grades, attendance logs, messages, and assessment scores.
+                        <strong>See &amp; Export Your Data:</strong> You have the right to obtain a full copy of all data held about you. Click <em>"Download My Data"</em> in your Profile settings to download a readable file of your school information containing your profile, grades, attendance logs, messages, and assessment scores.
                       </p>
                     </div>
 
@@ -1956,60 +1956,60 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                       <Code2 className="w-4 h-4" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-white group-hover:text-primary-300 transition-colors">
-                        Technical &amp; System Architecture Details
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-300 transition-colors">
+                        School System Information
                       </h4>
-                      <p className="text-[11px] text-slate-400">
-                        Click to {showTechnicalDetails ? 'hide' : 'view'} detailed technical specifications for system administrators
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                        Click to {showTechnicalDetails ? 'hide' : 'view'} system information and standards
                       </p>
                     </div>
                   </div>
-                  <div className="text-slate-400 group-hover:text-white transition-colors">
+                  <div className="text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
                     {showTechnicalDetails ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                   </div>
                 </button>
 
                 {showTechnicalDetails && (
-                  <div className="mt-3 p-5 rounded-2xl bg-black/40 border border-white/10 space-y-4 animate-in slide-in-from-top-2">
-                    <p className="text-xs text-slate-400 leading-relaxed">
-                      Under the hood, E-SYLLAB uses cryptographic verification and distributed ledger technology to guarantee record authenticity:
+                  <div className="mt-3 p-5 rounded-2xl bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 space-y-4 animate-in slide-in-from-top-2">
+                    <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                      E-SYLLAB uses secure digital verification to protect school records and guarantee authenticity:
                     </p>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-                      <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                        <span className="text-slate-500 font-mono text-[10px] block uppercase">Runtime Version</span>
-                        <span className="font-mono text-emerald-400 font-bold text-xs">v2.4.0-prod</span>
-                        <p className="text-[10px] text-slate-400 mt-0.5">PWA ServiceWorker v7</p>
+                      <div className="p-3 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm">
+                        <span className="text-slate-700 dark:text-slate-400 font-mono text-[10px] block uppercase font-bold">System Version</span>
+                        <span className="font-mono text-emerald-700 dark:text-emerald-400 font-bold text-xs">v2.4.0 (Latest)</span>
+                        <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5">Updated school app</p>
                       </div>
 
-                      <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                        <span className="text-slate-500 font-mono text-[10px] block uppercase">Verification Ledger</span>
-                        <span className="font-mono text-purple-400 font-bold text-xs">Solana Devnet</span>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Ed25519 signatures &amp; SHA-256 state hashes</p>
+                      <div className="p-3 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm">
+                        <span className="text-slate-700 dark:text-slate-400 font-mono text-[10px] block uppercase font-bold">Record Protection</span>
+                        <span className="font-mono text-purple-700 dark:text-purple-300 font-bold text-xs">Protected School Records</span>
+                        <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5">Official digital signatures &amp; security checks</p>
                       </div>
 
-                      <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                        <span className="text-slate-500 font-mono text-[10px] block uppercase">Client-Side Persistence</span>
-                        <span className="font-mono text-blue-400 font-bold text-xs">IndexedDB Storage</span>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Dual-mode background sync queue</p>
+                      <div className="p-3 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm">
+                        <span className="text-slate-700 dark:text-slate-400 font-mono text-[10px] block uppercase font-bold">Offline School Storage</span>
+                        <span className="font-mono text-blue-700 dark:text-blue-300 font-bold text-xs">Internal Device Storage</span>
+                        <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5">Automatic sync when internet connects</p>
                       </div>
 
-                      <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                        <span className="text-slate-500 font-mono text-[10px] block uppercase">Curriculum Engine</span>
-                        <span className="font-mono text-amber-400 font-bold text-xs">ECZ Syllabus Spec</span>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Grades 8–12 Zambian National Framework</p>
+                      <div className="p-3 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm">
+                        <span className="text-slate-700 dark:text-slate-400 font-mono text-[10px] block uppercase font-bold">Curriculum Framework</span>
+                        <span className="font-mono text-amber-700 dark:text-amber-300 font-bold text-xs">ECZ Syllabus Standard</span>
+                        <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5">Forms 1–5 Zambian National Framework</p>
                       </div>
 
-                      <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                        <span className="text-slate-500 font-mono text-[10px] block uppercase">App Distribution</span>
-                        <span className="font-mono text-cyan-400 font-bold text-xs">PWA Manifest v2</span>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Standalone cross-platform cache</p>
+                      <div className="p-3 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm">
+                        <span className="text-slate-700 dark:text-slate-400 font-mono text-[10px] block uppercase font-bold">School App Setup</span>
+                        <span className="font-mono text-cyan-700 dark:text-cyan-300 font-bold text-xs">School App Installation</span>
+                        <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5">Works on phones, tablets, and computers</p>
                       </div>
 
-                      <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                        <span className="text-slate-500 font-mono text-[10px] block uppercase">Security &amp; Auth</span>
-                        <span className="font-mono text-emerald-400 font-bold text-xs">JWT + Protected Vault</span>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Role-Based Access Control (RBAC)</p>
+                      <div className="p-3 rounded-xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm">
+                        <span className="text-slate-700 dark:text-slate-400 font-mono text-[10px] block uppercase font-bold">Account Security</span>
+                        <span className="font-mono text-emerald-700 dark:text-emerald-300 font-bold text-xs">Protected Passwords &amp; Files</span>
+                        <p className="text-[10px] text-slate-600 dark:text-slate-300 mt-0.5">Separate access for students, teachers, and admins</p>
                       </div>
                     </div>
                   </div>
@@ -2030,32 +2030,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
       {/* ─── Confirmation Modal: Delete Account ─────────────────────────────── */}
       {isDeleteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
-          <div className="glass-card max-w-md w-full p-6 md:p-8 rounded-3xl border border-rose-500/40 shadow-2xl space-y-6 animate-in slide-in-from-bottom-2 bg-[#1a1635]">
+          <div className="glass-card max-w-md w-full p-6 md:p-8 rounded-3xl border border-rose-400 dark:border-rose-500/40 shadow-2xl space-y-6 animate-in slide-in-from-bottom-2 bg-white dark:bg-[#1a1635] text-slate-900 dark:text-white">
             
             <div className="flex items-center gap-3.5">
-              <div className="p-3 bg-rose-950/60 border border-rose-500/40 text-rose-400 rounded-2xl">
-                <AlertTriangle className="w-6 h-6 text-rose-500" />
+              <div className="p-3 bg-rose-100 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-500/40 text-rose-600 dark:text-rose-400 rounded-2xl">
+                <AlertTriangle className="w-6 h-6 text-rose-600 dark:text-rose-500" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white">Delete Your Account</h3>
-                <p className="text-xs text-rose-300">Permanent and irreversible action</p>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Delete Your Account</h3>
+                <p className="text-xs text-rose-700 dark:text-rose-300 font-semibold">Permanent and irreversible action</p>
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Are you sure you want to permanently delete your account (<strong className="text-white">{user.email}</strong>)? All your personal data and places you are signed in will be removed immediately.
+            <p className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
+              Are you sure you want to permanently delete your account (<strong className="text-slate-950 dark:text-white">{user.email}</strong>)? All your personal data and places you are signed in will be removed immediately.
             </p>
 
             {deleteError && (
-              <div className="p-3.5 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-300 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+              <div className="p-3.5 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-500/40 text-xs text-rose-900 dark:text-rose-300 flex items-center gap-2 font-bold">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
                 <span>{deleteError}</span>
               </div>
             )}
 
             <form onSubmit={handleDeleteAccountSubmit} className="space-y-4">
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5 ml-1">
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider block mb-1.5 ml-1">
                   Type your password to confirm deletion:
                 </label>
                 <div className="relative">
@@ -2066,7 +2066,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                     value={deletePassword}
                     onChange={(e) => setDeletePassword(e.target.value)}
                     placeholder="Enter account password"
-                    className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm outline-none focus:border-rose-500 text-white placeholder:text-slate-600"
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl text-sm outline-none focus:border-rose-500 text-slate-900 dark:text-white placeholder:text-slate-400 font-medium"
                     autoFocus
                   />
                 </div>
@@ -2077,7 +2077,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ user, onUpdateUser, 
                   type="button"
                   disabled={isDeletingAccount}
                   onClick={() => setIsDeleteModalOpen(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                  className="px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>

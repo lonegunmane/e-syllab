@@ -81,3 +81,34 @@ export function filterValidClasses(classes?: string[] | null): string[] {
   const filtered = classes.filter(c => !disallowed.has(c.trim()));
   return filtered.length > 0 ? filtered : ['Class A', 'Class B', 'Class C'];
 }
+
+/**
+ * Formats a student's name, form, and class into a clean label:
+ * Example: "Peter — Form 5 · Class B"
+ * Never returns "Grade Form 5" or "Grade Grade 10".
+ */
+export function formatStudentLabel(student: { name: string; grade?: string | null; gradeLevel?: string | null; className?: string | null }): string {
+  const formPart = normalizeGradeToForm(student.grade || student.gradeLevel || '');
+  let classPart = (student.className || '').trim();
+  if (classPart) {
+    // If it's just 'A', 'B', 'C', format as 'Class A'
+    if (/^[A-C]$/i.test(classPart)) {
+      classPart = `Class ${classPart.toUpperCase()}`;
+    } else if (!/^class\s+/i.test(classPart)) {
+      // Remove any prefix like '10-' from '10-A'
+      const letterMatch = classPart.match(/([A-C])$/i);
+      if (letterMatch) {
+        classPart = `Class ${letterMatch[1].toUpperCase()}`;
+      }
+    }
+  }
+
+  const details: string[] = [];
+  if (formPart) details.push(formPart);
+  if (classPart) details.push(classPart);
+
+  if (details.length > 0) {
+    return `${student.name} — ${details.join(' · ')}`;
+  }
+  return student.name;
+}

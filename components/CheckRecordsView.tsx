@@ -74,14 +74,17 @@ export const CheckRecordsView: React.FC = () => {
     setCheckingId(record.id);
     try {
       const res = await checkAdminActivity(record.id);
+      const isLocked = Boolean(res.locked && res.match && res.explorerUrl);
       setCheckResults(prev => ({
         ...prev,
         [record.id]: {
           checked: true,
           match: Boolean(res.match),
-          locked: Boolean(res.locked),
-          message: res.message || (res.match ? (res.locked ? 'Matches record saved at school and locked permanently.' : 'Matches record saved at school. Waiting to lock.') : 'This record does not match school records.'),
-          explorerUrl: res.explorerUrl,
+          locked: isLocked,
+          message: res.match
+            ? (isLocked ? 'Matches record saved at school and locked permanently.' : 'Saved at school. Waiting to lock.')
+            : 'This record does not match school records.',
+          explorerUrl: isLocked ? res.explorerUrl : undefined,
         },
       }));
     } catch (err: any) {
@@ -154,11 +157,11 @@ export const CheckRecordsView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <CheckSquare className="w-6 h-6 text-primary-400" />
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <CheckSquare className="w-6 h-6 text-primary-600 dark:text-primary-400" />
             Check records
           </h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">
             Oversee school-wide attendance, grades, assessments, and school files.
           </p>
         </div>
@@ -180,7 +183,7 @@ export const CheckRecordsView: React.FC = () => {
           <button
             onClick={fetchRecords}
             disabled={loading}
-            className="px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
+            className="px-4 py-2.5 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 border border-slate-300 dark:border-white/10 text-slate-800 dark:text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -192,20 +195,20 @@ export const CheckRecordsView: React.FC = () => {
       {lockMessage && (
         <div className={`p-4 rounded-2xl border flex items-center justify-between gap-3 text-xs font-semibold animate-in fade-in ${
           lockMessage.type === 'success'
-            ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/30'
-            : 'bg-amber-950/40 text-amber-300 border-amber-500/30'
+            ? 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30'
+            : 'bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-500/30'
         }`}>
           <div className="flex items-center gap-2">
             {lockMessage.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
             ) : (
-              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <AlertCircle className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0" />
             )}
             <span>{lockMessage.text}</span>
           </div>
           <button
             onClick={() => setLockMessage(null)}
-            className="text-slate-400 hover:text-white text-xs px-2 py-1"
+            className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs px-2 py-1 cursor-pointer"
           >
             Dismiss
           </button>
@@ -214,30 +217,30 @@ export const CheckRecordsView: React.FC = () => {
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="glass-card p-5 rounded-2xl border border-white/10">
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Total School Records</p>
-          <p className="text-2xl font-bold text-white mt-1">{records.length}</p>
-          <p className="text-xs text-slate-500 mt-0.5">Attendance, grades, assessments, and papers</p>
+        <div className="glass-card p-5 rounded-2xl border border-slate-200 dark:border-white/10">
+          <p className="text-[11px] font-bold text-slate-700 dark:text-slate-400 uppercase tracking-wider">Total School Records</p>
+          <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{records.length}</p>
+          <p className="text-xs text-slate-600 dark:text-slate-500 mt-0.5">Attendance, grades, assessments, and papers</p>
         </div>
 
-        <div className="glass-card p-5 rounded-2xl border border-white/10">
-          <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Locked</p>
-          <p className="text-2xl font-bold text-emerald-400 mt-1">{lockedCount}</p>
-          <p className="text-xs text-slate-500 mt-0.5">Saved and permanently locked</p>
+        <div className="glass-card p-5 rounded-2xl border border-slate-200 dark:border-white/10">
+          <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Locked</p>
+          <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400 mt-1">{lockedCount}</p>
+          <p className="text-xs text-slate-600 dark:text-slate-500 mt-0.5">Saved and permanently locked</p>
         </div>
 
-        <div className="glass-card p-5 rounded-2xl border border-white/10">
-          <p className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">Waiting</p>
-          <p className="text-2xl font-bold text-amber-400 mt-1">{waitingCount}</p>
-          <p className="text-xs text-slate-500 mt-0.5">Saved at school, waiting to lock</p>
+        <div className="glass-card p-5 rounded-2xl border border-slate-200 dark:border-white/10">
+          <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Waiting</p>
+          <p className="text-2xl font-bold text-amber-700 dark:text-amber-400 mt-1">{waitingCount}</p>
+          <p className="text-xs text-slate-600 dark:text-slate-500 mt-0.5">Saved at school, waiting to lock</p>
         </div>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="glass-card p-4 rounded-2xl border border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="glass-card p-4 rounded-2xl border border-slate-200 dark:border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
           {/* Type filters */}
-          <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/10 overflow-x-auto max-w-full">
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-slate-300 dark:border-white/10 overflow-x-auto max-w-full">
             {['ALL', 'Attendance', 'Grade', 'Assessment', 'Paper'].map(t => (
               <button
                 key={t}
@@ -245,7 +248,7 @@ export const CheckRecordsView: React.FC = () => {
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
                   typeFilter === t
                     ? 'bg-primary-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    : 'text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/5'
                 }`}
               >
                 {t === 'ALL' ? 'All Types' : t}
@@ -254,15 +257,15 @@ export const CheckRecordsView: React.FC = () => {
           </div>
 
           {/* Status filters */}
-          <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-slate-300 dark:border-white/10">
             {['ALL', 'Locked', 'Waiting'].map(s => (
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
                   statusFilter === s
-                    ? 'bg-white/15 text-white'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    ? 'bg-primary-600 dark:bg-white/15 text-white'
+                    : 'text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/5'
                 }`}
               >
                 {s === 'ALL' ? 'All Status' : s}
@@ -279,7 +282,7 @@ export const CheckRecordsView: React.FC = () => {
             placeholder="Search person, class, or summary…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-primary-500 transition-colors"
+            className="w-full pl-9 pr-4 py-2 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-primary-500 transition-colors"
           />
         </div>
       </div>
@@ -388,7 +391,7 @@ export const CheckRecordsView: React.FC = () => {
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
                                 >
-                                  <span>Open public proof</span>
+                                  <span>Open public record</span>
                                   <ExternalLink className="w-3 h-3" />
                                 </a>
                               )}
@@ -407,18 +410,6 @@ export const CheckRecordsView: React.FC = () => {
                                 )}
                                 Check this record
                               </button>
-
-                              {rec.confirmedOnChain && rec.explorerUrl && (
-                                <a
-                                  href={rec.explorerUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                                >
-                                  <span>Open public proof</span>
-                                  <ExternalLink className="w-3 h-3" />
-                                </a>
-                              )}
                             </div>
                           )}
                         </div>

@@ -42,7 +42,7 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
       await resetPassword(newPassword);
       onResetSuccess();
     } catch (err: any) {
-      setError(err.message || 'Failed to update password.');
+      setError(err.message || 'Something went wrong. Please try again.');
       setLoading(false);
     }
   };
@@ -53,14 +53,14 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
         <div className="w-16 h-16 bg-primary-950/40 border border-primary-500/20 rounded-2xl flex items-center justify-center text-primary-400 text-3xl mx-auto mb-6 shadow-xl shadow-primary-950/40">
           <KeyRound className="w-8 h-8" />
         </div>
-        <h1 className="text-2xl font-extrabold text-white">Set Your New Password</h1>
-        <p className="text-slate-400 mt-2 mb-6">
+        <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white">Set Your New Password</h1>
+        <p className="text-slate-600 dark:text-slate-300 mt-2 mb-6">
           For security, you must change your temporary password before proceeding.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="bg-rose-950/40 border border-rose-500/20 text-rose-400 text-sm py-2 px-3 rounded-xl text-left">
+            <div className="bg-rose-100 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-500/20 text-rose-800 dark:text-rose-300 text-sm py-2 px-3 rounded-xl text-left font-medium">
               {error}
             </div>
           )}
@@ -70,7 +70,7 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="New Password"
-              className="w-full text-center px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-primary-500 text-white placeholder:text-slate-600"
+              className="w-full text-center px-4 py-3 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl outline-none focus:border-primary-500 text-slate-900 dark:text-white placeholder:text-slate-400"
             />
             <PasswordStrengthIndicator password={newPassword} />
           </div>
@@ -80,7 +80,7 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="Confirm New Password"
-            className="w-full text-center px-4 py-3 bg-white/5 border border-white/10 rounded-xl outline-none focus:border-primary-500 text-white placeholder:text-slate-600"
+            className="w-full text-center px-4 py-3 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl outline-none focus:border-primary-500 text-slate-900 dark:text-white placeholder:text-slate-400"
           />
 
           <button
@@ -103,7 +103,7 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
 
         <button
           onClick={onLogout}
-          className="mt-6 text-[10px] uppercase tracking-widest text-slate-500 hover:text-primary-400 hover:underline flex items-center justify-center gap-2 mx-auto font-bold transition-colors cursor-pointer"
+          className="mt-6 text-[10px] uppercase tracking-widest text-slate-600 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 hover:underline flex items-center justify-center gap-2 mx-auto font-bold transition-colors cursor-pointer"
         >
           <LogOut className="w-3 h-3" />
           Log Out

@@ -18,7 +18,7 @@
   <!-- Core meta -->
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="description" content="E-SYLLAB — Blockchain-secured digital learning platform for Zambian secondary schools." />
+  <meta name="description" content="E-SYLLAB — Safe and secure digital learning platform for Zambian secondary schools." />
 
   <!-- PWA — theme and app behaviour -->
   <meta name="theme-color" content="#7c3aed" />
@@ -271,15 +271,51 @@
     }
 
     html.light .text-slate-300 {
-      color: #334155;
+      color: #334155 !important;
     }
 
     html.light .text-slate-400 {
-      color: #475569;
+      color: #334155 !important;
     }
 
     html.light .text-slate-500 {
-      color: #64748b;
+      color: #475569 !important;
+    }
+
+    /* Form labels contrast in Light & Dark modes */
+    html.light label {
+      color: #1e293b !important;
+    }
+    html.dark label {
+      color: #e2e8f0 !important;
+    }
+
+    /* Prevent light purple text on light backgrounds */
+    html.light .text-primary-100:not([class*="bg-gradient-to-br from-primary"] *):not(button.bg-primary-600 *),
+    html.light .text-primary-200:not([class*="bg-gradient-to-br from-primary"] *):not(button.bg-primary-600 *),
+    html.light .text-purple-100:not([class*="bg-gradient-to-br from-primary"] *),
+    html.light .text-purple-200:not([class*="bg-gradient-to-br from-primary"] *) {
+      color: #4c1d95 !important;
+    }
+
+    /* Prevent dark text on dark backgrounds in dark mode */
+    html.dark .text-slate-500 {
+      color: #94a3b8 !important;
+    }
+    html.dark .text-slate-600 {
+      color: #cbd5e1 !important;
+    }
+
+    /* Overdue strong contrast in both modes */
+    html.light [class*="OVERDUE"],
+    html.light [class*="overdue"] {
+      color: #881337 !important;
+      font-weight: 800 !important;
+    }
+    html.dark [class*="OVERDUE"],
+    html.dark [class*="overdue"] {
+      color: #fecdd3 !important;
+      font-weight: 800 !important;
     }
 
     html.light input:not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]),
@@ -290,24 +326,65 @@
       color: #0f172a !important;
     }
 
+    /* Dropdown Options Contrast in Both Light and Dark */
+    html.light select option {
+      background-color: #ffffff !important;
+      color: #0f172a !important;
+    }
+    html.dark select option, select option {
+      background-color: #1a1635 !important;
+      color: #f8fafc !important;
+    }
+
     html.light input::placeholder,
     html.light textarea::placeholder {
-      color: #94a3b8 !important;
+      color: #64748b !important;
     }
 
     html.light input:disabled,
     html.light select:disabled,
     html.light textarea:disabled {
       background-color: #f1f5f9 !important;
-      color: #64748b !important;
-      border-color: #e2e8f0 !important;
+      color: #475569 !important;
+      border-color: #cbd5e1 !important;
     }
 
-    html.light .text-slate-400 {
-      color: #64748b;
+    /* Notification Center Light Mode Contrast */
+    html.light .notif-drawer {
+      background-color: #ffffff !important;
+      color: #0f172a !important;
+      border-left-color: #e2e8f0 !important;
     }
-    html.light .text-slate-300 {
-      color: #334155;
+    html.light .notif-header {
+      background-color: #f8fafc !important;
+      border-bottom-color: #e2e8f0 !important;
+    }
+    html.light .notif-title {
+      color: #0f172a !important;
+    }
+    html.light .notif-subtitle {
+      color: #475569 !important;
+    }
+    html.light .notif-banner {
+      background-color: #f1f5f9 !important;
+      border-bottom-color: #e2e8f0 !important;
+      color: #0f172a !important;
+    }
+    html.light .notif-filter-bar {
+      background-color: #f8fafc !important;
+      border-bottom-color: #e2e8f0 !important;
+    }
+    html.light .notif-card {
+      background-color: #ffffff !important;
+      border-color: #e2e8f0 !important;
+      color: #0f172a !important;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
+    }
+    html.light .notif-card-title {
+      color: #0f172a !important;
+    }
+    html.light .notif-card-body {
+      color: #334155 !important;
     }
 
     /* Accent Badges in Light Mode */
@@ -320,7 +397,7 @@
     }
     html.light .text-primary-300,
     html.light .text-primary-400 {
-      color: #7c3aed;
+      color: #6d28d9;
     }
 
     html.light .bg-emerald-950\/40 {
@@ -329,7 +406,7 @@
     }
     html.light .text-emerald-400,
     html.light .text-emerald-300 {
-      color: #059669;
+      color: #047857;
     }
 
     html.light .bg-amber-950\/40 {
@@ -338,7 +415,7 @@
     }
     html.light .text-amber-400,
     html.light .text-amber-300 {
-      color: #d97706;
+      color: #b45309;
     }
 
     html.light .bg-rose-950\/40 {
@@ -347,7 +424,7 @@
     }
     html.light .text-rose-400,
     html.light .text-rose-300 {
-      color: #e11d48;
+      color: #be123c;
     }
 
     html.light .bg-blue-950\/40 {
@@ -356,7 +433,7 @@
     }
     html.light .text-blue-400,
     html.light .text-blue-300 {
-      color: #2563eb;
+      color: #1d4ed8;
     }
 
     /* ── Animations ─────────────────────────────────────────────────────────── */

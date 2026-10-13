@@ -275,34 +275,8 @@ function seedMemoryStore(): void {
     updatedAt: now,
   });
 
-  // Student
-  const student: User = {
-    id: '1',
-    email: 'student@gmail.com',
-    name: 'Alex Johnson',
-    role: UserRole.STUDENT,
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=student',
-    contact: '555-0100',
-    school: 'E-SYLLAB Headquarters',
-    gender: 'Male',
-    residentialAddress: '123 Oak Ave, City Center',
-    grade: 'Grade 10',
-    className: '10-A',
-    enrolledSubjects: ['Mathematics', 'Science Physics', 'English Literature'],
-    isProfileComplete: true,
-    active: true,
-    createdAt: now,
-    updatedAt: now,
-  };
-  memStore.users.set(student.id, student);
-  memStore.credentials.set(student.id, {
-    userId: student.id,
-    passwordHash: bcrypt.hashSync('1357', 10),
-    lastLogin: null,
-    passwordResetRequired: false,
-    createdAt: now,
-    updatedAt: now,
-  });
+  // Students: Zero demo/fake pupils seeded initially to ensure 100% real school database accounts.
+  // Pupils appear only when registered or created in the school database.
 
   // Sample Curriculum: Empty by default; only real user/admin-created curriculum is shown
   // Sample Attendance: Zero attendance rows seeded initially to ensure 100% real data

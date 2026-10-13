@@ -164,11 +164,42 @@ export const db = {
             allCredentials[credIndex].lastLogin = new Date().toISOString();
             this.saveTable(this.tables.CREDENTIALS, allCredentials);
           }
-          return { user, needsPasswordReset: !!cred.passwordResetRequired };
+          const userIndex = allUsers.findIndex(u => u.id === user.id);
+          if (userIndex > -1) {
+            allUsers[userIndex].lastActiveAt = new Date().toISOString();
+            this.saveTable(this.tables.USERS, allUsers);
+          }
+          return { user: { ...user, lastActiveAt: new Date().toISOString() }, needsPasswordReset: !!cred.passwordResetRequired };
         }
       }
     }
     return null;
+  },
+
+  getUsersWithPresence(currentUserId?: string): User[] {
+    const allUsers = (this.getTable(this.tables.USERS) as User[]).filter(u => u.active !== false);
+    const credentials = this.getTable(this.tables.CREDENTIALS) as AuthCredential[];
+    const now = new Date().toISOString();
+
+    const result = allUsers.map(u => {
+      let lastActiveAt = u.lastActiveAt;
+      if (currentUserId && u.id === currentUserId) {
+        lastActiveAt = now;
+      } else if (!lastActiveAt) {
+        const cred = credentials.find(c => c.userId === u.id);
+        lastActiveAt = cred?.lastLogin || u.updatedAt || u.createdAt || undefined;
+      }
+      return {
+        ...u,
+        lastActiveAt,
+      };
+    });
+
+    return result.sort((a, b) => {
+      const timeA = a.lastActiveAt ? new Date(a.lastActiveAt).getTime() : 0;
+      const timeB = b.lastActiveAt ? new Date(b.lastActiveAt).getTime() : 0;
+      return timeB - timeA;
+    });
   },
   
   async updatePassword(userId: string, newPassword: string): Promise<void> {

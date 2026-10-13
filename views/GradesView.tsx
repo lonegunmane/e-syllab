@@ -8,6 +8,7 @@ import { User, UserRole, GradeRecord } from '../types';
 import { db } from '../services/database';
 import { getGrades, recordGrade as apiRecordGrade, authFetch } from '../services/api';
 import { recordGrade as recordLedgerGrade } from '../services/academicLedger';
+import { FORM_OPTIONS, formatStudentLabel, normalizeGradeToForm } from '../services/formLabels';
 
 interface GradesViewProps {
   currentUser: User;
@@ -65,18 +66,42 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
 
   // Form
   const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [formLevel, setFormLevel]     = useState('Form 3');
+  const [classStream, setClassStream] = useState('Class A');
   const [subject, setSubject]         = useState('');
   const [score, setScore]             = useState('');
+  const [comment, setComment]         = useState('');
   const [term, setTerm]               = useState('Term 1');
   const [academicYear, setAcademicYear] = useState(new Date().getFullYear().toString());
 
   // Save state
   const [saveState, setSaveState]     = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
   const [saveMsg, setSaveMsg]         = useState('');
-  const [lastExplorerUrl, setLastExplorerUrl] = useState<string | null>(null);
 
   const isStudent = currentUser.role === UserRole.STUDENT;
   const isTeacher = currentUser.role === UserRole.TEACHER;
+
+  // Available subjects from teacher's profile or standard secondary curriculum
+  const availableSubjects = (currentUser.teachingSubjects && currentUser.teachingSubjects.length > 0)
+    ? currentUser.teachingSubjects
+    : [
+        'Mathematics',
+        'Science Physics',
+        'Biology',
+        'Chemistry',
+        'English Language',
+        'Physical Education',
+        'Art',
+        'Food and Nutrition',
+        'Additional Mathematics',
+        'Computer Studies',
+        'Geography',
+        'History'
+      ];
+
+  // Current year and last year options
+  const currentYearNum = new Date().getFullYear();
+  const yearOptions = [currentYearNum.toString(), (currentYearNum - 1).toString()];
 
   const refresh = async () => {
     try {
@@ -135,7 +160,8 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
 
     setSaveState('saving');
     setSaveMsg('');
-    setLastExplorerUrl(null);
+
+    const fullComment = comment.trim() || label;
 
     try {
       // Step 1: Save to server API
@@ -144,8 +170,8 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
         subject,
         score: scoreNum,
         grade,
-        comment: label,
-        feedback: label,
+        comment: fullComment,
+        feedback: fullComment,
         recordedAt: new Date().toISOString(),
       });
 
@@ -158,32 +184,23 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
         subject,
         score:       scoreNum,
         grade,
-        comment:     label,
+        comment:     fullComment,
       });
 
       await refresh();
 
       // Step 3: Record on ledger / verifiable receipt
-      setSaveMsg('Saving grade securely...');
-      const result = await recordLedgerGrade(gradeRecord, currentUser.name, 'ZMB-KAPASA-001', academicYear, term);
+      setSaveMsg('Saving grade...');
+      await recordLedgerGrade(gradeRecord, currentUser.name, 'ZMB-KAPASA-001', academicYear, term);
 
-      if (result && result.success) {
-        setSaveState('done');
-        setSaveMsg(`Grade saved successfully. ✓`);
-        setLastExplorerUrl(result.explorerUrl || null);
-        // Reset form
-        setShowForm(false);
-        setSelectedStudentId('');
-        setSubject('');
-        setScore('');
-      } else {
-        setSaveState('done');
-        setSaveMsg(`Grade saved successfully.`);
-        setShowForm(false);
-        setSelectedStudentId('');
-        setSubject('');
-        setScore('');
-      }
+      setSaveState('done');
+      setSaveMsg('Grade saved.');
+      // Reset form
+      setShowForm(false);
+      setSelectedStudentId('');
+      setSubject('');
+      setScore('');
+      setComment('');
     } catch (err: any) {
       setSaveState('error');
       setSaveMsg(err.message || 'Could not save grade. Please try again.');
@@ -323,14 +340,10 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
           }
           <div className="flex-1">
             <p className={`text-sm font-bold ${saveState === 'done' ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {saveState === 'done' ? 'Grade recorded' : 'Could not save'}
+              {saveState === 'done' ? 'Grade saved.' : 'Could not save'}
             </p>
-            <p className="text-xs text-slate-400 mt-0.5">{saveMsg}</p>
-            {lastExplorerUrl && (
-              <a href={lastExplorerUrl} target="_blank" rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 mt-2 text-xs text-primary-400 hover:underline">
-                <ExternalLink className="w-3 h-3" /> View verification details
-              </a>
+            {saveState === 'error' && (
+              <p className="text-xs text-slate-400 mt-0.5">{saveMsg}</p>
             )}
           </div>
           <button onClick={() => setSaveState('idle')} className="text-slate-500 hover:text-white text-xs">✕</button>
@@ -350,33 +363,86 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
           <div className="space-y-4">
             {/* Student */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-400">Student</label>
-              <select
-                value={selectedStudentId}
-                onChange={e => setSelectedStudentId(e.target.value)}
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none focus:border-primary-500 transition-colors"
-              >
-                <option value="" className="bg-[#0d0f1a]">Choose a student...</option>
-                {students.map(s => (
-                  <option key={s.id} value={s.id} className="bg-[#0d0f1a]">{s.name} {s.grade ? `· Grade ${s.grade}` : ''}</option>
-                ))}
-              </select>
+              <label className="text-xs font-bold text-slate-400">Student *</label>
+              {students.length === 0 ? (
+                <div className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-slate-500 italic flex items-center justify-between">
+                  <span>No pupils yet</span>
+                  <span className="text-[11px] text-amber-400 font-normal">Add pupils in school roster first</span>
+                </div>
+              ) : (
+                <select
+                  value={selectedStudentId}
+                  onChange={e => {
+                    const sid = e.target.value;
+                    setSelectedStudentId(sid);
+                    const pupil = students.find(s => s.id === sid);
+                    if (pupil) {
+                      if (pupil.grade || pupil.gradeLevel) {
+                        setFormLevel(normalizeGradeToForm(pupil.grade || pupil.gradeLevel) || 'Form 3');
+                      }
+                      if (pupil.className) {
+                        const m = pupil.className.match(/([A-C])/i);
+                        if (m) setClassStream(`Class ${m[1].toUpperCase()}`);
+                      }
+                    }
+                  }}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none focus:border-primary-500 transition-colors"
+                >
+                  <option value="" className="bg-[#0d0f1a]">Choose a student...</option>
+                  {students.map(s => (
+                    <option key={s.id} value={s.id} className="bg-[#0d0f1a]">
+                      {formatStudentLabel(s)}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
-            {/* Subject + Score */}
+            {/* Form Level + Class Stream */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-400">Subject</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Mathematics"
+                <label className="text-xs font-bold text-slate-400">Form *</label>
+                <select
+                  value={formLevel}
+                  onChange={e => setFormLevel(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none focus:border-primary-500 transition-colors"
+                >
+                  {FORM_OPTIONS.map(f => (
+                    <option key={f} value={f} className="bg-[#0d0f1a]">{f}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-400">Class *</label>
+                <select
+                  value={classStream}
+                  onChange={e => setClassStream(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none focus:border-primary-500 transition-colors"
+                >
+                  <option value="Class A" className="bg-[#0d0f1a]">Class A</option>
+                  <option value="Class B" className="bg-[#0d0f1a]">Class B</option>
+                  <option value="Class C" className="bg-[#0d0f1a]">Class C</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Subject Dropdown + Score Number Input */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-400">Subject *</label>
+                <select
                   value={subject}
                   onChange={e => setSubject(e.target.value)}
                   className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none focus:border-primary-500 transition-colors"
-                />
+                >
+                  <option value="" className="bg-[#0d0f1a]">Select subject...</option>
+                  {availableSubjects.map(sub => (
+                    <option key={sub} value={sub} className="bg-[#0d0f1a]">{sub}</option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-400">Score (0–100)</label>
+                <label className="text-xs font-bold text-slate-400">Score (0–100) *</label>
                 <input
                   type="number"
                   min="0" max="100" step="1"
@@ -388,29 +454,44 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
               </div>
             </div>
 
-            {/* Term + Year */}
+            {/* Term + Academic Year Dropdowns */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-400">Term</label>
+                <label className="text-xs font-bold text-slate-400">Term *</label>
                 <select
                   value={term}
                   onChange={e => setTerm(e.target.value)}
                   className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none focus:border-primary-500 transition-colors"
                 >
-                  <option className="bg-[#0d0f1a]">Term 1</option>
-                  <option className="bg-[#0d0f1a]">Term 2</option>
-                  <option className="bg-[#0d0f1a]">Term 3</option>
+                  <option value="Term 1" className="bg-[#0d0f1a]">Term 1</option>
+                  <option value="Term 2" className="bg-[#0d0f1a]">Term 2</option>
+                  <option value="Term 3" className="bg-[#0d0f1a]">Term 3</option>
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-400">Academic Year</label>
-                <input
-                  type="text"
+                <label className="text-xs font-bold text-slate-400">Academic Year *</label>
+                <select
                   value={academicYear}
                   onChange={e => setAcademicYear(e.target.value)}
                   className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white outline-none focus:border-primary-500 transition-colors"
-                />
+                >
+                  {yearOptions.map(yr => (
+                    <option key={yr} value={yr} className="bg-[#0d0f1a]">{yr}</option>
+                  ))}
+                </select>
               </div>
+            </div>
+
+            {/* Optional Comment Input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-400">Teacher Comment (Optional)</label>
+              <input
+                type="text"
+                placeholder="Optional remark on student's performance..."
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-slate-600 outline-none focus:border-primary-500 transition-colors"
+              />
             </div>
 
             {/* Grade preview */}
@@ -435,7 +516,7 @@ export const GradesView: React.FC<GradesViewProps> = ({ currentUser }) => {
             {/* Save button */}
             <button
               onClick={handleSave}
-              disabled={!selectedStudentId || !subject || !score || saveState === 'saving'}
+              disabled={students.length === 0 || !selectedStudentId || !subject || score === '' || saveState === 'saving'}
               className="w-full py-3.5 bg-primary-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary-700 active:scale-95 transition-all shadow-lg shadow-primary-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saveState === 'saving'

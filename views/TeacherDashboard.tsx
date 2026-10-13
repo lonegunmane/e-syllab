@@ -64,7 +64,7 @@ const DetailedStudentList: React.FC = () => {
             {students.map((s) => (
                 <tr key={s.id} className="hover:bg-white/5 group transition-colors">
                     <td className="px-6 py-4"><div className="flex items-center gap-3"><img src={s.avatar} className="w-8 h-8 rounded-full border border-white/10" /><div><p className="font-bold text-slate-200">{s.name}</p><p className="text-[10px] text-slate-500">{s.email}</p></div></div></td>
-                    <td className="px-6 py-4 font-medium text-slate-400">{s.grade || 'N/A'}</td>
+                    <td className="px-6 py-4 font-medium text-slate-400">{normalizeGradeToForm(s.grade || s.gradeLevel) || 'N/A'}</td>
                     <td className="px-6 py-4 text-slate-500 truncate max-w-[150px]">{s.residentialAddress || 'Unset'}</td>
                     <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
@@ -141,8 +141,8 @@ const DetailedStudentList: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="p-3.5 rounded-xl bg-white/5 border border-white/5 space-y-1">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Grade Level</span>
-                  <p className="text-white font-semibold">{selectedStudent.grade || selectedStudent.gradeLevel || 'Not set'}</p>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Form Level</span>
+                  <p className="text-white font-semibold">{normalizeGradeToForm(selectedStudent.grade || selectedStudent.gradeLevel) || 'Not set'}</p>
                 </div>
                 <div className="p-3.5 rounded-xl bg-white/5 border border-white/5 space-y-1">
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Class / Stream</span>

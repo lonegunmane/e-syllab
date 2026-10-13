@@ -93,8 +93,8 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
               <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-white leading-none">Welcome, {user.name}</h2>
-              <p className="text-slate-400 mt-1">Let's set up your teaching workspace.</p>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white leading-none">Welcome, {user.name}</h2>
+              <p className="text-slate-600 dark:text-slate-400 mt-1">Let's set up your teaching workspace.</p>
             </div>
           </div>
           
@@ -120,20 +120,20 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
-                <div className="flex items-center gap-2 text-primary-400">
+                <div className="flex items-center gap-2 text-primary-600 dark:text-primary-400">
                   <GraduationCap className="w-5 h-5" />
                   <span className="text-sm font-bold uppercase tracking-widest">Step 1: Form Selection</span>
                 </div>
-                <h3 className="text-xl font-semibold text-white">Which forms will you be teaching?</h3>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Which forms will you be teaching?</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {forms.map(form => (
                     <button
                       key={form}
                       onClick={() => toggleForm(form)}
-                      className={`p-5 rounded-2xl border text-left transition-all duration-300 group ${
+                      className={`p-5 rounded-2xl border text-left transition-all duration-300 group cursor-pointer ${
                         selectedForms.includes(form)
-                          ? 'bg-primary-600/20 border-primary-500/50 text-white shadow-[0_0_20px_rgba(124,58,237,0.1)]'
-                          : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/20 hover:bg-white/10'
+                          ? 'bg-primary-600 text-white border-primary-500 shadow-md'
+                          : 'bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-400 hover:border-slate-400 dark:hover:border-white/20 hover:bg-slate-200 dark:hover:bg-white/10'
                       }`}
                     >
                       <span className="text-base font-bold">{form}</span>
@@ -151,20 +151,20 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
-                <div className="flex items-center gap-2 text-primary-400">
+                <div className="flex items-center gap-2 text-primary-600 dark:text-primary-400">
                   <Users className="w-5 h-5" />
                   <span className="text-sm font-bold uppercase tracking-widest">Step 2: Class Allocation</span>
                 </div>
-                <h3 className="text-xl font-semibold text-white">Select your assigned classes</h3>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Select your assigned classes</h3>
                 <div className="grid grid-cols-3 gap-3">
                   {classes.map(cls => (
                     <button
                       key={cls}
                       onClick={() => toggleClass(cls)}
-                      className={`p-4 rounded-xl border text-center transition-all duration-300 ${
+                      className={`p-4 rounded-xl border text-center transition-all duration-300 cursor-pointer ${
                         selectedClasses.includes(cls)
                           ? 'bg-primary-600 border-primary-500 text-white shadow-lg'
-                          : 'bg-white/5 border-white/10 text-slate-400 hover:border-primary-500/30'
+                          : 'bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-400 hover:border-slate-400 dark:hover:border-primary-500/30 hover:bg-slate-200 dark:hover:bg-white/10'
                       }`}
                     >
                       <span className="text-lg font-bold">Class {cls}</span>
@@ -182,20 +182,20 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
-                <div className="flex items-center gap-2 text-primary-400">
+                <div className="flex items-center gap-2 text-primary-600 dark:text-primary-400">
                   <BookOpen className="w-5 h-5" />
                   <span className="text-sm font-bold uppercase tracking-widest">Step 3: Subject Specialization</span>
                 </div>
-                <h3 className="text-xl font-semibold text-white">Which subjects do you specialize in?</h3>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Which subjects do you specialize in?</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {subjects.map(subject => (
                     <button
                       key={subject}
                       onClick={() => toggleSubject(subject)}
-                      className={`p-4 rounded-xl border text-left transition-all duration-300 text-sm ${
+                      className={`p-4 rounded-xl border text-left transition-all duration-300 text-sm cursor-pointer ${
                         selectedSubjects.includes(subject)
-                          ? 'bg-primary-600/20 border-primary-500/50 text-white'
-                          : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                          ? 'bg-primary-600 text-white border-primary-500 shadow-md'
+                          : 'bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
                       }`}
                     >
                       <span className="font-semibold">{subject}</span>
@@ -214,12 +214,12 @@ export const TeacherSetupModal: React.FC<TeacherSetupModalProps> = ({ user, onCo
           )}
         </div>
 
-        <div className="p-8 border-t border-white/5 flex items-center justify-between bg-slate-900/50">
+        <div className="p-8 border-t border-slate-200 dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50">
           <button 
             disabled={step === 1 || isSaving}
             onClick={() => setStep(prev => prev - 1)}
             className={`px-6 py-2.5 rounded-xl font-bold transition-all ${
-              step === 1 ? 'opacity-0 pointer-events-none' : 'text-slate-400 hover:text-white hover:bg-white/5'
+              step === 1 ? 'opacity-0 pointer-events-none' : 'text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/5 cursor-pointer'
             }`}
           >
             Previous

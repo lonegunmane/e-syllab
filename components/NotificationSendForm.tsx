@@ -78,38 +78,38 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
             <Bell className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-bold text-white text-base leading-tight">Send System Notification Alert</h3>
-            <p className="text-xs text-slate-400">
-              {isAdmin ? 'Broadcast meeting & misconduct alerts to any class or specific user.' : `Dispatch alerts to your class (${teacherClass}) or individual students.`}
+            <h3 className="font-bold text-slate-900 dark:text-white text-base leading-tight">Send School Notice</h3>
+            <p className="text-xs text-slate-600 dark:text-slate-400">
+              {isAdmin ? 'Send meeting notices & disciplinary alerts to any class or specific person.' : `Send notices to your class (${teacherClass}) or individual students.`}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 bg-white/5 p-1 rounded-xl border border-white/5">
+        <div className="flex items-center gap-2 bg-slate-100 dark:bg-white/5 p-1 rounded-xl border border-slate-300 dark:border-white/5">
           <button
             type="button"
             onClick={() => setType('meeting')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              type === 'meeting' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+              type === 'meeting' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Calendar className="w-3.5 h-3.5" /> Meeting Alert
+            <Calendar className="w-3.5 h-3.5" /> Meeting Notice
           </button>
           <button
             type="button"
             onClick={() => setType('misconduct')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              type === 'misconduct' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+              type === 'misconduct' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <ShieldAlert className="w-3.5 h-3.5" /> Misconduct Alert
+            <ShieldAlert className="w-3.5 h-3.5" /> Disciplinary Notice
           </button>
         </div>
       </div>
 
       {statusMsg && (
         <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
-          statusMsg.type === 'success' ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300' : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+          statusMsg.type === 'success' ? 'bg-emerald-100 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-500/30 text-emerald-800 dark:text-emerald-300' : 'bg-rose-100 dark:bg-rose-950/40 border-rose-300 dark:border-rose-500/30 text-rose-800 dark:text-rose-300'
         }`}>
           {statusMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
           <span>{statusMsg.text}</span>
@@ -120,15 +120,15 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
         {/* Recipient Scope Target */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-              Target Scope
+            <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1.5">
+              Who receives this notice
             </label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setTargetMode('class')}
                 className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                  targetMode === 'class' ? 'bg-primary-600/30 border-primary-500 text-primary-200' : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10'
+                  targetMode === 'class' ? 'bg-primary-100 dark:bg-primary-600/30 border-primary-400 dark:border-primary-500 text-primary-900 dark:text-primary-200' : 'bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/5 text-slate-700 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
                 }`}
               >
                 Entire Class
@@ -137,10 +137,10 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
                 type="button"
                 onClick={() => setTargetMode('user')}
                 className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                  targetMode === 'user' ? 'bg-primary-600/30 border-primary-500 text-primary-200' : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10'
+                  targetMode === 'user' ? 'bg-primary-100 dark:bg-primary-600/30 border-primary-400 dark:border-primary-500 text-primary-900 dark:text-primary-200' : 'bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/5 text-slate-700 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
                 }`}
               >
-                Specific Recipient
+                One Person
               </button>
             </div>
           </div>
@@ -148,14 +148,14 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
           <div>
             {targetMode === 'class' ? (
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-                  Target Form / Class
+                <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1.5">
+                  Class / Form
                 </label>
                 {isAdmin ? (
                   <select
                     value={selectedClass}
                     onChange={e => setSelectedClass(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary-500 cursor-pointer"
+                    className="w-full bg-white dark:bg-black/40 border border-slate-300 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500 cursor-pointer"
                   >
                     <option value="Form 1">Form 1</option>
                     <option value="Form 2">Form 2</option>
@@ -168,21 +168,21 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
                     type="text"
                     disabled
                     value={teacherClass}
-                    className="w-full bg-black/20 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-400 cursor-not-allowed"
+                    className="w-full bg-slate-100 dark:bg-black/20 border border-slate-300 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-700 dark:text-slate-400 cursor-not-allowed"
                   />
                 )}
               </div>
             ) : (
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-                  Select Recipient
+                <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1.5">
+                  Select Person
                 </label>
                 <select
                   value={selectedUserId}
                   onChange={e => setSelectedUserId(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary-500 cursor-pointer"
+                  className="w-full bg-white dark:bg-black/40 border border-slate-300 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500 cursor-pointer"
                 >
-                  <option value="">-- Choose User --</option>
+                  <option value="">-- Choose Person --</option>
                   {eligibleUsers.map(u => (
                     <option key={u.id} value={u.id}>
                       {u.name} ({u.role}{u.grade ? ` - ${u.grade}` : ''})
@@ -196,8 +196,8 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
 
         {/* Title */}
         <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-            Alert Title
+          <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1.5">
+            Notice Title
           </label>
           <input
             type="text"
@@ -205,22 +205,22 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
             value={title}
             onChange={e => setTitle(e.target.value)}
             placeholder={type === 'meeting' ? 'e.g. Parent-Teacher Progress Review' : 'e.g. Disciplinary Warning - Lab Safety Violation'}
-            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary-500"
+            className="w-full bg-white dark:bg-black/40 border border-slate-300 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
           />
         </div>
 
         {/* Message */}
         <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-            Alert Details / Message
+          <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-1.5">
+            Notice Details
           </label>
           <textarea
             required
             rows={3}
             value={message}
             onChange={e => setMessage(e.target.value)}
-            placeholder="Describe the details, time/location for meetings, or incident report for misconduct..."
-            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-primary-500"
+            placeholder="Describe the details, time/location for meetings, or notes..."
+            className="w-full bg-white dark:bg-black/40 border border-slate-300 dark:border-white/10 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-primary-500"
           />
         </div>
 
@@ -233,7 +233,7 @@ export const NotificationSendForm: React.FC<NotificationSendFormProps> = ({ curr
           }`}
         >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          Dispatch {type === 'meeting' ? 'Meeting Alert' : 'Misconduct Warning'}
+          Send {type === 'meeting' ? 'Meeting Notice' : 'Disciplinary Notice'}
         </button>
       </form>
     </div>

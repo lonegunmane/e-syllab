@@ -10,7 +10,7 @@ import { UserRole, User } from '../types';
 import { db } from '../services/database';
 import { notificationService } from '../services/notificationService';
 import { NotificationCenter } from './NotificationCenter';
-import { Logo } from './Logo';
+import { Logo, LogoIcon } from './Logo';
 import { getSystemNotifications } from '../services/api';
 import { getNotificationPreferences } from '../services/settingsService';
 
@@ -34,7 +34,26 @@ const GraduationCap = (props: any) => (
 export const Layout: React.FC<LayoutProps> = ({
   children, user, onLogout, onUpdateUser, activeTab, onTabChange,
 }) => {
-  const [sidebarOpen, setSidebarOpen]           = useState(false);
+  // Menu visibility (persisted in localStorage, default true)
+  const [menuOpen, setMenuOpen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('esyllab_sidebar_open');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleMenu = () => {
+    setMenuOpen(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('esyllab_sidebar_open', String(next));
+      } catch {}
+      return next;
+    });
+  };
+
   const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
   const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
   const [unreadServerNotifsCount, setUnreadServerNotifsCount] = useState(0);
@@ -159,22 +178,38 @@ export const Layout: React.FC<LayoutProps> = ({
 
       {/* ── Sidebar backdrop (mobile) ────────────────────────────────────────── */}
       <div
-        className={`fixed inset-0 bg-slate-950/70 backdrop-blur-md z-40 lg:hidden transition-opacity ${
-          sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        className={`fixed inset-0 bg-slate-950/70 backdrop-blur-md z-40 lg:hidden transition-opacity duration-200 ${
+          menuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
-        onClick={() => setSidebarOpen(false)}
+        onClick={toggleMenu}
       />
 
-      {/* ── Sidebar (desktop always visible, mobile slide-in) ───────────────── */}
-      <aside className={`fixed inset-y-0 left-0 w-64 glass-card bg-[#1a1635]/80 backdrop-blur-xl border-r border-white/5 z-50 transform lg:translate-x-0 transition-transform ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
+      {/* ── Sidebar (desktop & mobile toggle via logo, duration-200) ─────────── */}
+      <aside
+        className={`fixed inset-y-0 left-0 w-64 glass-card bg-[#1a1635]/95 backdrop-blur-xl border-r border-white/5 z-50 transform transition-transform duration-200 ease-in-out ${
+          menuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         <div className="flex flex-col h-full">
 
-          {/* Logo */}
+          {/* Logo toggle button */}
           <div className="p-6 flex items-center justify-between">
-            <Logo size="sm" />
-            <button className="lg:hidden p-1 text-slate-500 hover:text-white" onClick={() => setSidebarOpen(false)}>
+            <button
+              type="button"
+              onClick={toggleMenu}
+              className="flex items-center gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 rounded-xl p-1 -m-1 transition-opacity hover:opacity-80 cursor-pointer"
+              aria-label={menuOpen ? 'Hide menu' : 'Show menu'}
+              title={menuOpen ? 'Hide menu' : 'Show menu'}
+            >
+              <Logo size="sm" />
+            </button>
+            <button
+              type="button"
+              className="lg:hidden p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              onClick={toggleMenu}
+              aria-label="Hide menu"
+              title="Hide menu"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -184,7 +219,7 @@ export const Layout: React.FC<LayoutProps> = ({
             {navItems.map(item => (
               <button
                 key={item.id}
-                onClick={() => { onTabChange(item.id); setSidebarOpen(false); }}
+                onClick={() => { onTabChange(item.id); }}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all group ${
                   activeTab === item.id
                     ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/40'
@@ -208,7 +243,7 @@ export const Layout: React.FC<LayoutProps> = ({
           <div className="p-4 border-t border-white/5">
             <button
               onClick={onLogout}
-              className="w-full flex items-center gap-3 px-3 py-2 text-slate-500 hover:bg-rose-950/40 hover:text-rose-400 rounded-xl transition-all group border border-transparent hover:border-rose-500/20"
+              className="w-full flex items-center gap-3 px-3 py-2 text-slate-400 hover:bg-rose-950/40 hover:text-rose-400 rounded-xl transition-all group border border-transparent hover:border-rose-500/20"
             >
               <LogOut className="w-5 h-5 group-hover:text-rose-500" />
               <span className="font-medium text-sm">Sign Out</span>
@@ -218,20 +253,45 @@ export const Layout: React.FC<LayoutProps> = ({
       </aside>
 
       {/* ── Main content ─────────────────────────────────────────────────────── */}
-      {/* pb-20 on mobile leaves space for the bottom nav bar */}
-      <main className="flex-1 lg:ml-64 flex flex-col min-h-screen pb-20 lg:pb-0">
+      {/* pb-20 on mobile leaves space for the bottom nav bar; lg:ml-64 when menuOpen else lg:ml-0 */}
+      <main
+        className={`flex-1 flex flex-col min-h-screen pb-20 lg:pb-0 transition-[margin] duration-200 ease-in-out ${
+          menuOpen ? 'lg:ml-64' : 'lg:ml-0'
+        }`}
+      >
 
         {/* Top header */}
         <header className="sticky top-0 z-30 h-16 bg-[#1a1635]/60 backdrop-blur-md border-b border-white/5 px-4 sm:px-6 flex items-center justify-between">
-          {/* Hamburger — mobile only */}
-          <button className="lg:hidden p-2 text-slate-400 hover:bg-white/5 rounded-lg" onClick={() => setSidebarOpen(true)}>
-            <Menu className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            {/* When menu is closed, show leftover pinned E logo control */}
+            {!menuOpen && (
+              <button
+                type="button"
+                onClick={toggleMenu}
+                className="flex items-center justify-center p-1.5 rounded-xl bg-primary-600/20 border border-primary-500/30 text-white hover:bg-primary-600/30 hover:border-primary-500/50 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 cursor-pointer shadow-lg shadow-primary-950/40"
+                aria-label="Show menu"
+                title="Show menu"
+              >
+                <LogoIcon size={26} />
+              </button>
+            )}
 
-          {/* Page title on mobile */}
-          <span className="lg:hidden font-bold text-white text-sm">
-            {navItems.find(i => i.id === activeTab)?.label ?? 'E-SYLLAB'}
-          </span>
+            {/* Mobile hamburger toggle */}
+            <button
+              type="button"
+              className="lg:hidden p-2 text-slate-400 hover:bg-white/5 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              onClick={toggleMenu}
+              aria-label={menuOpen ? 'Hide menu' : 'Show menu'}
+              title={menuOpen ? 'Hide menu' : 'Show menu'}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            {/* Page title on mobile */}
+            <span className="lg:hidden font-bold text-white text-sm">
+              {navItems.find(i => i.id === activeTab)?.label ?? 'E-SYLLAB'}
+            </span>
+          </div>
 
           {/* Right side */}
           <div className="flex items-center gap-3 ml-auto">
@@ -258,7 +318,7 @@ export const Layout: React.FC<LayoutProps> = ({
             <div className="flex items-center gap-2 relative">
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-semibold text-white leading-none">{user.name}</p>
-                <p className="text-[10px] uppercase tracking-widest font-bold text-slate-500 mt-0.5 capitalize">{user.role}</p>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mt-0.5 capitalize">{user.role}</p>
               </div>
               <button 
                 onClick={() => onTabChange('profile')} 
@@ -292,15 +352,15 @@ export const Layout: React.FC<LayoutProps> = ({
                 key={item.id}
                 onClick={() => onTabChange(item.id)}
                 className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all relative min-w-0 ${
-                  active ? 'text-primary-400' : 'text-slate-600 hover:text-slate-400'
+                  active ? 'text-primary-400 font-semibold' : 'text-slate-300 hover:text-white'
                 }`}
               >
                 {/* Active indicator dot */}
                 {active && (
                   <span className="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-primary-500 rounded-full" />
                 )}
-                <item.icon className={`w-5 h-5 ${active ? 'text-primary-400' : 'text-slate-600'}`} />
-                <span className={`text-[10px] font-medium truncate max-w-[56px] ${active ? 'text-primary-400' : 'text-slate-600'}`}>
+                <item.icon className={`w-5 h-5 ${active ? 'text-primary-400' : 'text-slate-300'}`} />
+                <span className={`text-[10px] font-medium truncate max-w-[56px] ${active ? 'text-primary-400' : 'text-slate-300'}`}>
                   {item.label}
                 </span>
                 {/* Badge */}
@@ -315,11 +375,12 @@ export const Layout: React.FC<LayoutProps> = ({
           {/* If there are more than 5 items, show "More" which opens the sidebar */}
           {navItems.length > 5 && (
             <button
-              onClick={() => setSidebarOpen(true)}
-              className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-slate-600 hover:text-slate-400 transition-all"
+              onClick={() => setMenuOpen(true)}
+              className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl text-slate-300 hover:text-white transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              aria-label="Show menu"
             >
-              <Menu className="w-5 h-5" />
-              <span className="text-[10px] font-medium">More</span>
+              <Menu className="w-5 h-5 text-slate-300" />
+              <span className="text-[10px] font-medium text-slate-300">More</span>
             </button>
           )}
         </div>

@@ -42,6 +42,7 @@ export interface User {
   active?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  lastActiveAt?: string;
 }
 
 export interface CurriculumResource {

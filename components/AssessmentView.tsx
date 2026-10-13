@@ -8,6 +8,7 @@ import {
 import { User, UserRole, Assessment, AssessmentScore } from '../types';
 import { authFetch } from '../services/api';
 import { db } from '../services/database';
+import { formatStudentLabel } from '../services/formLabels';
 
 interface AssessmentViewProps {
   currentUser: User;
@@ -291,10 +292,10 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
             Loading your assessment records...
           </div>
         ) : studentScores.length === 0 ? (
-          <div className="glass-card p-12 text-center text-slate-500 rounded-2xl">
+          <div className="glass-card p-12 text-center text-slate-400 rounded-2xl">
             <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
-            <p className="text-base font-semibold text-slate-300">No Assessment Scores Yet</p>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-base font-semibold text-slate-200">No Assessment Scores Yet</p>
+            <p className="text-xs text-slate-400 mt-1">
               When your teachers post test scores, they will appear here.
             </p>
           </div>
@@ -315,7 +316,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                       <h3 className="text-lg font-bold text-white mt-1">
                         {score.assessment?.title || 'Assessment Score'}
                       </h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className="text-xs text-slate-400 mt-0.5">
                         Recorded on {friendlyDate(score.createdAt)} · Class: {score.assessment?.className || 'General'}
                       </p>
                     </div>
@@ -323,7 +324,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                     <div className="flex items-center gap-3">
                       <div className="text-right">
                         <div className="text-2xl font-bold text-white">
-                          {score.score} <span className="text-xs text-slate-500">/ {maxSc}</span>
+                          {score.score} <span className="text-xs text-slate-400">/ {maxSc}</span>
                         </div>
                         <div className={`text-xs font-bold ${info.color}`}>{pct}% · {info.label}</div>
                       </div>
@@ -353,24 +354,15 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                     </div>
                   )}
 
-                  {/* Verification Badge */}
+                  {/* Record badge */}
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-1 text-xs">
                     <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
                       <Shield className="w-3.5 h-3.5" />
-                      <span>Verified Record</span>
+                      <span>Saved Record</span>
                     </div>
-                    {score.explorerUrl ? (
-                      <a
-                        href={score.explorerUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-primary-400 hover:underline font-mono text-[11px]"
-                      >
-                        Record ID: {score.offlineHash?.substring(0, 16)}... <ExternalLink className="w-3 h-3" />
-                      </a>
-                    ) : (
-                      <span className="text-slate-500 font-mono text-[11px]">
-                        Record ID: {score.offlineHash?.substring(0, 16)}...
+                    {score.offlineHash && (
+                      <span className="text-slate-400 font-mono text-[11px]">
+                        ID: {score.offlineHash.substring(0, 16)}...
                       </span>
                     )}
                   </div>
@@ -431,7 +423,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                 value={title}
                 onChange={e => setTitle(e.target.value)}
                 required
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-slate-600 outline-none focus:border-primary-500 transition-colors"
+                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-slate-400 outline-none focus:border-primary-500 transition-colors"
               />
             </div>
 
@@ -524,24 +516,24 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
 
             {/* Search filter */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input
                 type="text"
                 placeholder="Search assessments..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-600 outline-none focus:border-primary-500 transition-colors"
+                className="w-full pl-9 pr-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-400 outline-none focus:border-primary-500 transition-colors"
               />
             </div>
 
             {/* List */}
             {loadingAssessments ? (
-              <div className="p-8 text-center text-xs text-slate-500">
+              <div className="p-8 text-center text-xs text-slate-400">
                 <Loader2 className="w-5 h-5 animate-spin mx-auto text-primary-400 mb-2" />
                 Loading assessments...
               </div>
             ) : filteredAssessments.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-500">
+              <div className="p-8 text-center text-xs text-slate-400">
                 No assessments found. Click "New Assessment" above to create one.
               </div>
             ) : (
@@ -603,12 +595,12 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                 {report && (
                   <div className="flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/10 shrink-0">
                     <div className="text-center">
-                      <p className="text-[10px] text-slate-500 uppercase font-bold">Class Avg</p>
-                      <p className="text-lg font-bold text-emerald-400">{report.average} <span className="text-xs text-slate-400">/ {report.maxScore}</span></p>
+                      <p className="text-[10px] text-slate-300 uppercase font-bold">Class Avg</p>
+                      <p className="text-lg font-bold text-emerald-400">{report.average} <span className="text-xs text-slate-300">/ {report.maxScore}</span></p>
                     </div>
                     <div className="h-8 w-px bg-white/10" />
                     <div className="text-center">
-                      <p className="text-[10px] text-slate-500 uppercase font-bold">Pass Rate</p>
+                      <p className="text-[10px] text-slate-300 uppercase font-bold">Pass Rate</p>
                       <p className="text-lg font-bold text-primary-400">{report.passRate}%</p>
                     </div>
                   </div>
@@ -624,29 +616,29 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="bg-white/5 p-3 rounded-xl border border-white/5">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase">Average Score</p>
+                      <p className="text-[10px] font-bold text-slate-300 uppercase">Average Score</p>
                       <p className="text-xl font-bold text-white mt-1">{report.average}</p>
-                      <p className="text-[10px] text-slate-400">
+                      <p className="text-[10px] text-slate-300 font-medium">
                         {((report.average / (report.maxScore || 1)) * 100).toFixed(1)}% of total
                       </p>
                     </div>
 
                     <div className="bg-white/5 p-3 rounded-xl border border-white/5">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase">Highest Score</p>
+                      <p className="text-[10px] font-bold text-slate-300 uppercase">Highest Score</p>
                       <p className="text-xl font-bold text-emerald-400 mt-1">{report.highest}</p>
-                      <p className="text-[10px] text-slate-400">Top performance</p>
+                      <p className="text-[10px] text-slate-300 font-medium">Top performance</p>
                     </div>
 
                     <div className="bg-white/5 p-3 rounded-xl border border-white/5">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase">Lowest Score</p>
+                      <p className="text-[10px] font-bold text-slate-300 uppercase">Lowest Score</p>
                       <p className="text-xl font-bold text-rose-400 mt-1">{report.lowest}</p>
-                      <p className="text-[10px] text-slate-400">Needs improvement</p>
+                      <p className="text-[10px] text-slate-300 font-medium">Needs improvement</p>
                     </div>
 
                     <div className="bg-white/5 p-3 rounded-xl border border-white/5">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase">Pass Rate (≥50%)</p>
+                      <p className="text-[10px] font-bold text-slate-300 uppercase">Pass Rate (≥50%)</p>
                       <p className="text-xl font-bold text-primary-400 mt-1">{report.passRate}%</p>
-                      <p className="text-[10px] text-slate-400">{report.totalStudents} student(s)</p>
+                      <p className="text-[10px] text-slate-300 font-medium">{report.totalStudents} student(s)</p>
                     </div>
                   </div>
                 </div>
@@ -697,9 +689,9 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                             className="w-9 h-9 rounded-full bg-white/5 border border-white/10 shrink-0"
                           />
                           <div className="truncate">
-                            <p className="text-sm font-bold text-white truncate">{student.name}</p>
+                            <p className="text-sm font-bold text-white truncate">{formatStudentLabel(student)}</p>
                             <p className="text-[11px] text-slate-400 truncate">
-                              {student.email} · {student.className || student.grade || 'Student'}
+                              {student.email}
                             </p>
                           </div>
                         </div>
@@ -724,7 +716,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                                   },
                                 }));
                               }}
-                              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-600 outline-none focus:border-primary-500 transition-colors"
+                              className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-400 outline-none focus:border-primary-500 transition-colors"
                             />
                           </div>
 
@@ -741,7 +733,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({ currentUser }) =
                                 },
                               }));
                             }}
-                            className="w-full sm:w-48 px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-600 outline-none focus:border-primary-500 transition-colors"
+                            className="w-full sm:w-48 px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder:text-slate-400 outline-none focus:border-primary-500 transition-colors"
                           />
 
                           {gradeCalc && (

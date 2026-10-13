@@ -108,20 +108,20 @@ export const StudentSetupModal: React.FC<StudentSetupModalProps> = ({ user, onCo
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
-                <div className="flex items-center gap-2 text-emerald-400">
+                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
                   <GraduationCap className="w-5 h-5" />
                   <span className="text-sm font-bold uppercase tracking-widest">Step 1: Your Form</span>
                 </div>
-                <h3 className="text-xl font-semibold text-white">Which form are you in?</h3>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Which form are you in?</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {forms.map(form => (
                     <button
                       key={form}
                       onClick={() => setSelectedForm(form)}
-                      className={`p-5 rounded-2xl border text-left transition-all duration-300 group ${
+                      className={`p-5 rounded-2xl border text-left transition-all duration-300 group cursor-pointer ${
                         selectedForm === form
-                          ? 'bg-emerald-600/20 border-emerald-500/50 text-white shadow-[0_0_20px_rgba(16,185,129,0.1)]'
-                          : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/20 hover:bg-white/10'
+                          ? 'bg-emerald-600 text-white border-emerald-500 shadow-md'
+                          : 'bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-400 hover:border-slate-400 dark:hover:border-white/20 hover:bg-slate-200 dark:hover:bg-white/10'
                       }`}
                     >
                       <span className="text-base font-bold">{form}</span>
@@ -139,20 +139,20 @@ export const StudentSetupModal: React.FC<StudentSetupModalProps> = ({ user, onCo
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
-                <div className="flex items-center gap-2 text-emerald-400">
+                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
                   <Users className="w-5 h-5" />
                   <span className="text-sm font-bold uppercase tracking-widest">Step 2: Your Class</span>
                 </div>
-                <h3 className="text-xl font-semibold text-white">Select your class</h3>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Select your class</h3>
                 <div className="grid grid-cols-3 gap-3">
                   {classes.map(cls => (
                     <button
                       key={cls}
                       onClick={() => setSelectedClass(cls)}
-                      className={`p-4 rounded-xl border text-center transition-all duration-300 ${
+                      className={`p-4 rounded-xl border text-center transition-all duration-300 cursor-pointer ${
                         selectedClass === cls
                           ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg'
-                          : 'bg-white/5 border-white/10 text-slate-400 hover:border-emerald-500/30'
+                          : 'bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-400 hover:border-slate-400 dark:hover:border-emerald-500/30 hover:bg-slate-200 dark:hover:bg-white/10'
                       }`}
                     >
                       <span className="text-lg font-bold">{cls}</span>
@@ -170,20 +170,20 @@ export const StudentSetupModal: React.FC<StudentSetupModalProps> = ({ user, onCo
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-6"
               >
-                <div className="flex items-center gap-2 text-emerald-400">
+                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
                   <BookOpen className="w-5 h-5" />
                   <span className="text-sm font-bold uppercase tracking-widest">Step 3: Your Subjects</span>
                 </div>
-                <h3 className="text-xl font-semibold text-white">Which subjects are you taking?</h3>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white">Which subjects are you taking?</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {subjectsList.map(subject => (
                     <button
                       key={subject}
                       onClick={() => toggleSubject(subject)}
-                      className={`p-4 rounded-xl border text-left transition-all duration-300 text-sm ${
+                      className={`p-4 rounded-xl border text-left transition-all duration-300 text-sm cursor-pointer ${
                         selectedSubjects.includes(subject)
-                          ? 'bg-emerald-600/20 border-emerald-500/50 text-white'
-                          : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                          ? 'bg-emerald-600 text-white border-emerald-500 shadow-md'
+                          : 'bg-slate-100 dark:bg-white/5 border-slate-300 dark:border-white/10 text-slate-700 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/10'
                       }`}
                     >
                       <span className="font-semibold">{subject}</span>
@@ -202,12 +202,12 @@ export const StudentSetupModal: React.FC<StudentSetupModalProps> = ({ user, onCo
           )}
         </div>
 
-        <div className="p-8 border-t border-white/5 flex items-center justify-between bg-slate-900/50">
+        <div className="p-8 border-t border-slate-200 dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50">
           <button 
             disabled={step === 1 || isSaving}
             onClick={() => setStep(prev => prev - 1)}
             className={`px-6 py-2.5 rounded-xl font-bold transition-all ${
-              step === 1 ? 'opacity-0 pointer-events-none' : 'text-slate-400 hover:text-white hover:bg-white/5'
+              step === 1 ? 'opacity-0 pointer-events-none' : 'text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/5 cursor-pointer'
             }`}
           >
             Previous

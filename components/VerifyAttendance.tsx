@@ -66,30 +66,30 @@ export const VerifyAttendance: React.FC = () => {
       if (inputType === 'signature') {
         const signature = rawVal;
         if (!isValidSolanaSig(signature)) {
-          throw new Error('Invalid transaction reference signature format. A valid Solana signature contains base58 characters.');
+          throw new Error('Invalid reference code format. Please check the code and try again.');
         }
 
-        // Fetch transaction from Solana Devnet
+        // Fetch transaction from network
         const tx = await DEVNET_CONNECTION.getTransaction(signature, {
           commitment: 'confirmed',
           maxSupportedTransactionVersion: 0,
         });
 
         if (!tx) {
-          throw new Error('Record not found on Solana Devnet. The transaction may still be propagating or was rejected.');
+          throw new Error('Record not found. It may still be saving or the reference number may be incorrect.');
         }
 
         if (tx.meta?.err) {
-          throw new Error('Transaction was found on Solana Devnet but failed during execution.');
+          throw new Error('The record could not be verified. Please try again.');
         }
 
-        // Extract memo data from transaction logs
+        // Extract memo data from logs
         const memoLog = tx.meta?.logMessages?.find(
           msg => msg.includes('Memo') && msg.includes('{"app":"E-SYLLAB"')
         );
 
         if (!memoLog) {
-          throw new Error('No E-SYLLAB attendance attestation found in this transaction.');
+          throw new Error('No E-SYLLAB attendance record found with this reference number.');
         }
 
         const memoMatch = memoLog.match(/Memo \(len \d+\): (.+)/);
@@ -137,7 +137,7 @@ export const VerifyAttendance: React.FC = () => {
         }
 
         if (!responseData || !responseData.isValid) {
-          throw new Error(responseData?.message || 'Hash not found in the verified school database or records have been tampered with.');
+          throw new Error(responseData?.message || 'Record not found in the verified school records. Please check the code and try again.');
         }
 
         const hasRealSig = isValidSolanaSig(responseData.signature);
@@ -181,11 +181,11 @@ export const VerifyAttendance: React.FC = () => {
 
       {/* Header */}
       <div>
-        <h2 className="text-xl font-bold text-white flex items-center gap-2">
-          <Shield className="w-5 h-5 text-primary-400" />
+        <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <Shield className="w-5 h-5 text-primary-600 dark:text-primary-400" />
           Check Record Authenticity
         </h2>
-        <p className="text-slate-400 text-sm mt-0.5">
+        <p className="text-slate-600 dark:text-slate-400 text-sm mt-0.5">
           Confirm that an attendance or academic record is genuine, tamper-free, and verified.
         </p>
       </div>
@@ -195,20 +195,20 @@ export const VerifyAttendance: React.FC = () => {
         <div className="flex gap-2 mb-4">
           <button
             onClick={() => { setInputType('signature'); setResult(null); }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               inputType === 'signature'
-                ? 'bg-primary-600 text-white'
-                : 'bg-white/5 text-slate-400 hover:text-white'
+                ? 'bg-primary-600 text-white shadow-md'
+                : 'bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/5 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Record Reference Number
           </button>
           <button
             onClick={() => { setInputType('hash'); setResult(null); }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               inputType === 'hash'
-                ? 'bg-primary-600 text-white'
-                : 'bg-white/5 text-slate-400 hover:text-white'
+                ? 'bg-primary-600 text-white shadow-md'
+                : 'bg-slate-100 dark:bg-white/5 border border-slate-300 dark:border-white/5 text-slate-700 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Record Security Code
@@ -217,7 +217,7 @@ export const VerifyAttendance: React.FC = () => {
 
         <div className="space-y-4">
           <div>
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
+            <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">
               {inputType === 'signature' ? 'Official Lock Code' : 'Record Security Code'}
             </label>
             <div className="relative mt-1">
@@ -230,7 +230,7 @@ export const VerifyAttendance: React.FC = () => {
                     ? 'e.g. 5xV... (official lock code)'
                     : 'e.g. a9f82c0192e84d3b6... (security code)'
                 }
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono outline-none focus:border-primary-500 transition-colors placeholder:text-slate-600"
+                className="w-full px-4 py-3 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white font-mono outline-none focus:border-primary-500 transition-colors placeholder:text-slate-400"
               />
               {inputType === 'signature' && inputValue.length > 40 && isValidSolanaSig(inputValue) && (
                 <CheckCircle className="absolute right-3 top-3 w-5 h-5 text-emerald-400" />
@@ -240,7 +240,7 @@ export const VerifyAttendance: React.FC = () => {
 
           {inputType === 'signature' && (
             <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
+              <label className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-widest ml-1">
                 Security Code to Check (optional)
               </label>
               <input
@@ -248,7 +248,7 @@ export const VerifyAttendance: React.FC = () => {
                 value={expectedHash}
                 onChange={e => setExpectedHash(e.target.value)}
                 placeholder="Paste the security code to confirm this record matches"
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white font-mono outline-none focus:border-primary-500 transition-colors placeholder:text-slate-600 mt-1"
+                className="w-full px-4 py-3 bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 rounded-xl text-sm text-slate-900 dark:text-white font-mono outline-none focus:border-primary-500 transition-colors placeholder:text-slate-400 mt-1"
               />
             </div>
           )}
@@ -256,7 +256,7 @@ export const VerifyAttendance: React.FC = () => {
           <button
             onClick={verifyOnChain}
             disabled={isVerifying || !inputValue.trim()}
-            className="w-full py-3 bg-primary-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary-700 transition-all active:scale-95 shadow-lg shadow-primary-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3 bg-primary-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary-700 transition-all active:scale-95 shadow-lg shadow-primary-900/40 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {isVerifying ? (
               <><Loader2 className="w-4 h-4 animate-spin" /> Checking record authenticity…</>
@@ -288,10 +288,10 @@ export const VerifyAttendance: React.FC = () => {
                 {result.valid && (
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                     result.confirmedOnChain
-                      ? 'bg-emerald-900/80 text-emerald-300 border border-emerald-500/40'
-                      : 'bg-amber-900/80 text-amber-300 border border-amber-500/40'
+                      ? 'bg-emerald-100 dark:bg-emerald-900/80 text-emerald-900 dark:text-emerald-300 border border-emerald-400 dark:border-emerald-500/40'
+                      : 'bg-amber-100 dark:bg-amber-900/80 text-amber-900 dark:text-amber-300 border border-amber-400 dark:border-amber-500/40'
                   }`}>
-                    {result.confirmedOnChain ? 'CHECKED AND LOCKED' : 'SAVED AT SCHOOL (WAITING TO LOCK)'}
+                    {result.confirmedOnChain ? 'Saved. This cannot be changed.' : 'Waiting to lock'}
                   </span>
                 )}
               </div>
@@ -376,7 +376,7 @@ export const VerifyAttendance: React.FC = () => {
                       className="mt-3 inline-flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 hover:underline font-medium"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      View Public Lock on Explorer
+                      View Public Record Certificate
                     </a>
                   )}
                 </div>
@@ -403,10 +403,10 @@ export const VerifyAttendance: React.FC = () => {
                   )}
                   <div className="min-w-0">
                     <p className="text-xs font-mono text-slate-300 truncate">
-                      {v.signature ? `${v.signature.slice(0, 20)}…` : 'Local Database Record'}
+                      {v.signature ? `${v.signature.slice(0, 20)}…` : 'Local School Record'}
                     </p>
-                    <p className="text-[10px] text-slate-500">
-                      {v.slot > 0 ? `Record #${v.slot.toLocaleString()}` : 'Stored in School DB'}
+                    <p className="text-[10px] text-slate-400">
+                      {v.slot > 0 ? `Record #${v.slot.toLocaleString()}` : 'Stored in School Records'}
                     </p>
                   </div>
                 </div>
@@ -417,7 +417,7 @@ export const VerifyAttendance: React.FC = () => {
                     ? 'text-amber-400 bg-amber-950/40 border border-amber-500/20'
                     : 'text-rose-400 bg-rose-950/40 border border-rose-500/20'
                 }`}>
-                  {v.confirmedOnChain ? 'CONFIRMED' : v.valid ? 'PENDING' : 'UNVERIFIED'}
+                  {v.confirmedOnChain ? 'CONFIRMED' : v.valid ? 'SAVED' : 'UNVERIFIED'}
                 </span>
               </div>
             ))}
